@@ -1,0 +1,656 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { createBrowserClient } from "@supabase/ssr";
+import { PageHeader } from "@/components/ui/PageHeader";
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+type ClienteOpt = { id: string; nome: string };
+type VeiculoOpt = { id: string; placa: string; marca: string | null; modelo: string | null; status?: string };
+type MotoristaOpt = { id: string; nome: string; status?: string };
+
+type TipoOS = "eventual" | "recorrente";
+type StatusOS =
+  | "rascunho"
+  | "aguardando_aprovacao"
+  | "aprovada"
+  | "em_execucao"
+  | "concluida"
+  | "cancelada";
+
+type StatusPg = "pendente" | "parcial" | "pago" | "cancelado";
+
+type OsDb = {
+  id: string;
+
+  numero: number | null;
+  tipo: TipoOS;
+  status: StatusOS;
+
+  cliente_id: string | null;
+  veiculo_id: string | null;
+  motorista_id: string | null;
+
+  inicio_em: string | null;
+  fim_em: string | null;
+
+  origem: string | null;
+  destino: string | null;
+  roteiro: string | null;
+  observacoes: string | null;
+
+  qtd_passageiros: number | null;
+
+  valor_total: number | null;
+  valor_sinal: number | null;
+  forma_pagamento: string | null;
+  status_pagamento: StatusPg | null;
+
+  local_saida: string | null;
+  local_chegada: string | null;
+
+  aprovado_em: string | null;
+  aprovado_por: string | null;
+
+  created_at: string;
+  updated_at: string;
+};
+
+function isoToInputLocal(iso: string | null) {
+  if (!iso) return "";
+  // transforma ISO -> "YYYY-MM-DDTHH:mm"
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+
+function inputLocalToIso(v: string) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+export default function EditarOSPage() {
+  const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const id = params?.id;
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [statusMsg, setStatusMsg] = useState("");
+
+  const [os, setOs] = useState<OsDb | null>(null);
+
+  // combos
+  const [clientes, setClientes] = useState<ClienteOpt[]>([]);
+  const [veiculos, setVeiculos] = useState<VeiculoOpt[]>([]);
+  const [motoristas, setMotoristas] = useState<MotoristaOpt[]>([]);
+
+  const [buscaCliente, setBuscaCliente] = useState("");
+  const [buscaVeiculo, setBuscaVeiculo] = useState("");
+  const [buscaMotorista, setBuscaMotorista] = useState("");
+
+  // campos
+  const [tipo, setTipo] = useState<TipoOS>("eventual");
+  const [status, setStatus] = useState<StatusOS>("rascunho");
+
+  const [clienteId, setClienteId] = useState("");
+  const [veiculoId, setVeiculoId] = useState("");
+  const [motoristaId, setMotoristaId] = useState("");
+
+  const [inicioEm, setInicioEm] = useState("");
+  const [fimEm, setFimEm] = useState("");
+
+  const [origem, setOrigem] = useState("");
+  const [destino, setDestino] = useState("");
+  const [roteiro, setRoteiro] = useState("");
+
+  const [qtdPassageiros, setQtdPassageiros] = useState("0");
+
+  const [valorTotal, setValorTotal] = useState("0");
+  const [valorSinal, setValorSinal] = useState("0");
+  const [formaPagamento, setFormaPagamento] = useState("");
+  const [statusPagamento, setStatusPagamento] = useState<StatusPg>("pendente");
+
+  const [localSaida, setLocalSaida] = useState("");
+  const [localChegada, setLocalChegada] = useState("");
+  const [observacoes, setObservacoes] = useState("");
+
+  async function carregarCombos() {
+    const c = await supabase.from("clientes").select("id, nome").order("nome");
+    setClientes((c.data ?? []) as ClienteOpt[]);
+
+    const v = await supabase
+      .from("veiculos")
+      .select("id, placa, marca, modelo, status")
+      .order("placa");
+    setVeiculos((v.data ?? []) as any);
+
+    const m = await supabase
+      .from("motoristas")
+      .select("id, nome, status")
+      .order("nome");
+    setMotoristas((m.data ?? []) as any);
+  }
+
+  async function carregarOS() {
+    if (!id) return;
+
+    setLoading(true);
+    setStatusMsg("Carregando OS...");
+
+    const { data, error } = await supabase
+      .from("ordens_servico")
+      .select(
+        "id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, aprovado_em, aprovado_por, created_at, updated_at"
+      )
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) {
+      setStatusMsg("❌ Erro ao carregar: " + error.message);
+      setOs(null);
+      setLoading(false);
+      return;
+    }
+
+    if (!data) {
+      setStatusMsg("⚠️ OS não encontrada (ou você não tem acesso).");
+      setOs(null);
+      setLoading(false);
+      return;
+    }
+
+    const o = data as OsDb;
+    setOs(o);
+
+    setTipo(o.tipo ?? "eventual");
+    setStatus(o.status ?? "rascunho");
+
+    setClienteId(o.cliente_id ?? "");
+    setVeiculoId(o.veiculo_id ?? "");
+    setMotoristaId(o.motorista_id ?? "");
+
+    setInicioEm(isoToInputLocal(o.inicio_em));
+    setFimEm(isoToInputLocal(o.fim_em));
+
+    setOrigem(o.origem ?? "");
+    setDestino(o.destino ?? "");
+    setRoteiro(o.roteiro ?? "");
+
+    setQtdPassageiros(
+      typeof o.qtd_passageiros === "number" ? String(o.qtd_passageiros) : "0"
+    );
+
+    setValorTotal(typeof o.valor_total === "number" ? String(o.valor_total) : "0");
+    setValorSinal(typeof o.valor_sinal === "number" ? String(o.valor_sinal) : "0");
+    setFormaPagamento(o.forma_pagamento ?? "");
+    setStatusPagamento((o.status_pagamento ?? "pendente") as StatusPg);
+
+    setLocalSaida(o.local_saida ?? "");
+    setLocalChegada(o.local_chegada ?? "");
+    setObservacoes(o.observacoes ?? "");
+
+    setStatusMsg("");
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    (async () => {
+      await carregarCombos();
+      await carregarOS();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  const clientesFiltrados = useMemo(() => {
+    const q = buscaCliente.trim().toLowerCase();
+    if (!q) return clientes;
+    return clientes.filter((x) => x.nome.toLowerCase().includes(q));
+  }, [clientes, buscaCliente]);
+
+  const veiculosFiltrados = useMemo(() => {
+    const q = buscaVeiculo.trim().toLowerCase();
+    if (!q) return veiculos;
+    return veiculos.filter((x) => {
+      const alvo = [x.placa, x.marca ?? "", x.modelo ?? ""].join(" ").toLowerCase();
+      return alvo.includes(q);
+    });
+  }, [veiculos, buscaVeiculo]);
+
+  const motoristasFiltrados = useMemo(() => {
+    const q = buscaMotorista.trim().toLowerCase();
+    if (!q) return motoristas;
+    return motoristas.filter((x) => x.nome.toLowerCase().includes(q));
+  }, [motoristas, buscaMotorista]);
+
+  function toInt(v: string, fallback = 0) {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.trunc(n) : fallback;
+  }
+
+  function toMoney(v: string, fallback = 0) {
+    const normalized = v.replace(",", ".").trim();
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  async function salvar(e: React.FormEvent) {
+    e.preventDefault();
+    if (!id) return;
+
+    if (!clienteId) {
+      alert("Selecione um cliente.");
+      return;
+    }
+
+    setSaving(true);
+    setStatusMsg("Salvando...");
+
+    const payload = {
+      tipo,
+      status,
+
+      cliente_id: clienteId || null,
+      veiculo_id: veiculoId || null,
+      motorista_id: motoristaId || null,
+
+      inicio_em: inputLocalToIso(inicioEm),
+      fim_em: inputLocalToIso(fimEm),
+
+      origem: origem.trim() || null,
+      destino: destino.trim() || null,
+      roteiro: roteiro.trim() || null,
+
+      qtd_passageiros: toInt(qtdPassageiros, 0),
+
+      valor_total: toMoney(valorTotal, 0),
+      valor_sinal: toMoney(valorSinal, 0),
+      forma_pagamento: formaPagamento.trim() || null,
+      status_pagamento: statusPagamento,
+
+      local_saida: localSaida.trim() || null,
+      local_chegada: localChegada.trim() || null,
+      observacoes: observacoes.trim() || null,
+    };
+
+    const { error } = await supabase
+      .from("ordens_servico")
+      .update(payload)
+      .eq("id", id);
+
+    setSaving(false);
+
+    if (error) {
+      setStatusMsg("❌ Erro ao salvar: " + error.message);
+      return;
+    }
+
+    router.push("/ordens-servico");
+    router.refresh();
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-xl p-6 text-slate-600">
+        Carregando...
+      </div>
+    );
+  }
+
+  if (!os) {
+    return (
+      <div className="space-y-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-6">
+          <h1 className="text-xl font-semibold">Ordem de Serviço</h1>
+          <p className="text-slate-600 text-sm">{statusMsg || "Não encontrada."}</p>
+        </div>
+
+        <Link
+          href="/ordens-servico"
+          className="inline-block border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 transition"
+        >
+          Voltar para OS
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Editar OS"
+        description={`ID: ${os.id}${os.numero ? ` • OS #${os.numero}` : ""}`}
+        actions={
+          <Link
+            href="/ordens-servico"
+            className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 transition text-sm"
+          >
+            Voltar
+          </Link>
+        }
+      />
+
+      {statusMsg ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-700">
+          {statusMsg}
+        </div>
+      ) : null}
+
+      <form
+        onSubmit={salvar}
+        className="bg-white border border-slate-200 rounded-xl p-6 space-y-6"
+      >
+        {/* Básico */}
+        <div>
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">Básico</h2>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Tipo</label>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={tipo}
+                onChange={(e) => setTipo(e.target.value as TipoOS)}
+              >
+                <option value="eventual">Eventual</option>
+                <option value="recorrente">Recorrente</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Status</label>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as StatusOS)}
+              >
+                <option value="rascunho">Rascunho</option>
+                <option value="aguardando_aprovacao">Aguardando aprovação</option>
+                <option value="aprovada">Aprovada</option>
+                <option value="em_execucao">Em execução</option>
+                <option value="concluida">Concluída</option>
+                <option value="cancelada">Cancelada</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Qtd. passageiros
+              </label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={qtdPassageiros}
+                onChange={(e) => setQtdPassageiros(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Relacionamentos */}
+        <div className="border-t pt-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">
+            Cliente / Veículo / Motorista
+          </h2>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Cliente *</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2 mb-2"
+                value={buscaCliente}
+                onChange={(e) => setBuscaCliente(e.target.value)}
+                placeholder="Buscar cliente..."
+              />
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={clienteId}
+                onChange={(e) => setClienteId(e.target.value)}
+                required
+              >
+                <option value="">Selecione...</option>
+                {clientesFiltrados.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Veículo</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2 mb-2"
+                value={buscaVeiculo}
+                onChange={(e) => setBuscaVeiculo(e.target.value)}
+                placeholder="Buscar placa/marca/modelo..."
+              />
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={veiculoId}
+                onChange={(e) => setVeiculoId(e.target.value)}
+              >
+                <option value="">(opcional)</option>
+                {veiculosFiltrados.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.placa}{" "}
+                    {v.marca || v.modelo
+                      ? `— ${[v.marca, v.modelo].filter(Boolean).join(" ")}`
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Motorista</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2 mb-2"
+                value={buscaMotorista}
+                onChange={(e) => setBuscaMotorista(e.target.value)}
+                placeholder="Buscar motorista..."
+              />
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={motoristaId}
+                onChange={(e) => setMotoristaId(e.target.value)}
+              >
+                <option value="">(opcional)</option>
+                {motoristasFiltrados.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Datas */}
+        <div className="border-t pt-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">Datas</h2>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium mb-1">Início</label>
+              <input
+                type="datetime-local"
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={inicioEm}
+                onChange={(e) => setInicioEm(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Fim</label>
+              <input
+                type="datetime-local"
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={fimEm}
+                onChange={(e) => setFimEm(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Roteiro */}
+        <div className="border-t pt-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">Roteiro</h2>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium mb-1">Origem</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={origem}
+                onChange={(e) => setOrigem(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Destino</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={destino}
+                onChange={(e) => setDestino(e.target.value)}
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Roteiro</label>
+              <textarea
+                className="w-full border border-slate-300 rounded-md px-3 py-2 min-h-[110px]"
+                value={roteiro}
+                onChange={(e) => setRoteiro(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Local de saída</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={localSaida}
+                onChange={(e) => setLocalSaida(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Local de chegada</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={localChegada}
+                onChange={(e) => setLocalChegada(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Financeiro */}
+        <div className="border-t pt-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">
+            Valores / Pagamento
+          </h2>
+
+          <div className="grid gap-4 md:grid-cols-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Valor total</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={valorTotal}
+                onChange={(e) => setValorTotal(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Sinal</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={valorSinal}
+                onChange={(e) => setValorSinal(e.target.value)}
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">
+                Forma de pagamento
+              </label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={formaPagamento}
+                onChange={(e) => setFormaPagamento(e.target.value)}
+                placeholder="pix, boleto, transferência..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Status pagamento
+              </label>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={statusPagamento}
+                onChange={(e) => setStatusPagamento(e.target.value as StatusPg)}
+              >
+                <option value="pendente">Pendente</option>
+                <option value="parcial">Parcial</option>
+                <option value="pago">Pago</option>
+                <option value="cancelado">Cancelado</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Observações */}
+        <div className="border-t pt-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">
+            Observações
+          </h2>
+
+          <textarea
+            className="w-full border border-slate-300 rounded-md px-3 py-2 min-h-[110px]"
+            value={observacoes}
+            onChange={(e) => setObservacoes(e.target.value)}
+          />
+        </div>
+
+        {/* Ações */}
+        <div className="flex gap-3">
+          <button
+            type="submit"
+            disabled={saving}
+            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition disabled:opacity-60"
+          >
+            {saving ? "Salvando..." : "Salvar alterações"}
+          </button>
+
+          <Link
+            href="/ordens-servico"
+            className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 transition"
+          >
+            Cancelar
+          </Link>
+        </div>
+
+        <div className="text-xs text-slate-500">
+          Criado em: {new Date(os.created_at).toLocaleString("pt-BR")} • Atualizado
+          em: {new Date(os.updated_at).toLocaleString("pt-BR")}
+        </div>
+      </form>
+    </div>
+  );
+}
+        
