@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase/client";
+import NotificationsDropdown from "@/components/layout/NotificationsDropdown";
 
 type Props = {
   empresaNome: string | null;
@@ -31,7 +31,7 @@ export default function Topbar({ empresaNome, usuarioNome }: Props) {
         />
       </div>
       <div className="flex items-center gap-4">
-        <button className="text-white/80 hover:text-white text-lg">🔔</button>
+        <NotificationsDropdown />
         <div className="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center text-xs">
           {usuarioNome ? usuarioNome.charAt(0).toUpperCase() : "U"}
         </div>
