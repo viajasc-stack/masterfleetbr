@@ -1,0 +1,16 @@
+name: Scheduled billing-cycle
+
+on:
+  schedule:
+    - cron: '0 0 1 * *' # run on 1st day of month at 00:00 UTC
+
+jobs:
+  billing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call billing-cycle function
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl -s -X GET "$SUPABASE_URL/functions/v1/billing-cycle" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" || true

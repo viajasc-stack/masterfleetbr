@@ -1,29 +1,46 @@
-import { Sidebar } from "@/components/layout/Sidebar";
-import { Topbar } from "@/components/layout/Topbar";
+"use client";
 
-export default function PainelLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+import { useEffect, useState } from "react";
+import Sidebar from "@/components/layout/Sidebar";
+import Topbar from "@/components/layout/Topbar";
+import { supabase } from "@/lib/supabase/client";
+
+export default function PainelLayout({ children }: { children: React.ReactNode }) {
+  const [empresaNome, setEmpresaNome] = useState<string | null>(null);
+  const [usuarioNome, setUsuarioNome] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("nome, empresa_id")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      setUsuarioNome(profile?.nome ?? null);
+
+      if (profile?.empresa_id) {
+        const { data: empresa } = await supabase
+          .from("empresas")
+          .select("nome")
+          .eq("id", profile.empresa_id)
+          .maybeSingle();
+        setEmpresaNome(empresa?.nome ?? null);
+      }
+    }
+
+    load();
+  }, []);
+
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      <div className="flex">
-        {/* Sidebar (dark) */}
-        <Sidebar />
-
-        {/* Conteúdo (claro) */}
-        <div className="flex min-h-screen flex-1 flex-col">
-          <div className="border-b border-slate-200 bg-white">
-            <Topbar />
-          </div>
-
-          <main className="mx-auto w-full max-w-[1400px] flex-1 px-6 py-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              {children}
-            </div>
-          </main>
-        </div>
+    <div className="min-h-screen bg-slate-100 flex">
+      <Sidebar />
+      <div className="flex-1 flex flex-col min-w-0">
+        <Topbar empresaNome={empresaNome} usuarioNome={usuarioNome} />
+        <main className="flex-1 p-6 overflow-auto">{children}</main>
       </div>
     </div>
   );

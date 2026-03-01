@@ -65,22 +65,27 @@ export default function NovoContratoPage() {
       .select("id, nome")
       .order("nome", { ascending: true });
 
-    if (!clientesErr && clientesData) setClientes(clientesData as Cliente[]);
-    else setClientes([]);
+    setTimeout(() => {
+      if (!clientesErr && clientesData) setClientes(clientesData as Cliente[]);
+      else setClientes([]);
+    }, 0);
 
     const { data: motoristasData, error: motoristasErr } = await supabase
       .from("motoristas")
       .select("id, nome")
       .order("nome", { ascending: true });
 
-    if (!motoristasErr && motoristasData) setMotoristas(motoristasData as Motorista[]);
-    else setMotoristas([]);
+    setTimeout(() => {
+      if (!motoristasErr && motoristasData) setMotoristas(motoristasData as Motorista[]);
+      else setMotoristas([]);
+      setLoading(false);
+    }, 0);
 
-    setLoading(false);
   }
 
   useEffect(() => {
-    carregarDados();
+    const id = setTimeout(() => { carregarDados(); }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   function toggleDia(v: number) {

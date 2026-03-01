@@ -1,70 +1,47 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+type Props = {
+  empresaNome: string | null;
+  usuarioNome: string | null;
+};
 
-function formatBreadcrumb(pathname: string) {
-  if (!pathname || pathname === "/") return "MasterFleetBR";
-
-  const parts = pathname
-    .split("?")[0]
-    .split("#")[0]
-    .split("/")
-    .filter(Boolean);
-
-  // Ex: /ordens-servico -> Ordens de Serviço
-  const pretty = parts
-    .map((p) =>
-      p
-        .replace(/-/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase())
-        .replace("Os", "OS")
-    )
-    .join(" / ");
-
-  return `MasterFleetBR / ${pretty}`;
-}
-
-export function Topbar() {
-  const pathname = usePathname();
+export default function Topbar({ empresaNome, usuarioNome }: Props) {
   const router = useRouter();
 
   async function handleLogout() {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      alert("Erro ao sair: " + error.message);
-      return;
-    }
-    router.push("/login");
+    await supabase.auth.signOut();
+    router.replace("/login?logout=1");
     router.refresh();
   }
 
   return (
-    <div className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6">
-      <div className="text-sm text-slate-600">
-        {formatBreadcrumb(pathname)}
+    <header className="h-16 border-b border-slate-800 bg-gradient-to-r from-violet-700 to-indigo-700 flex items-center justify-between px-6 gap-4">
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-white/90">{empresaNome ?? "Empresa"}</span>
+        <span className="text-white/60">•</span>
+        <span className="text-sm text-white">{usuarioNome ?? "Admin"}</span>
       </div>
-
-      <div className="flex items-center gap-3">
+      <div className="flex-1 flex items-center">
+        <input
+          className="w-full max-w-xl bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white placeholder-white/60 outline-none focus:border-white/40"
+          placeholder="Buscar em clientes, veículos, OS..."
+        />
+      </div>
+      <div className="flex items-center gap-4">
+        <button className="text-white/80 hover:text-white text-lg">🔔</button>
+        <div className="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center text-xs">
+          {usuarioNome ? usuarioNome.charAt(0).toUpperCase() : "U"}
+        </div>
         <button
-          className="text-sm px-3 py-1.5 rounded-md border border-slate-300 hover:bg-slate-50 transition"
-          onClick={() => alert("Ajuda (em breve)")}
-        >
-          Ajuda
-        </button>
-
-        <button
-          className="text-sm px-3 py-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 transition"
           onClick={handleLogout}
+          className="text-sm text-white/80 hover:text-white transition"
         >
           Sair
         </button>
       </div>
-    </div>
+    </header>
   );
 }

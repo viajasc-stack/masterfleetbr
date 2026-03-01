@@ -42,14 +42,16 @@ export default function VeiculosPage() {
       )
       .order("created_at", { ascending: false });
 
-    if (!error && data) setVeiculos(data as Veiculo[]);
-    else setVeiculos([]);
-
-    setLoading(false);
+    setTimeout(() => {
+      if (!error && data) setVeiculos(data as Veiculo[]);
+      else setVeiculos([]);
+      setLoading(false);
+    }, 0);
   }
 
   useEffect(() => {
-    carregarVeiculos();
+    const id = setTimeout(() => { carregarVeiculos(); }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   const veiculosFiltrados = useMemo(() => {

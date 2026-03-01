@@ -137,13 +137,13 @@ export default function EditarOSPage() {
       .from("veiculos")
       .select("id, placa, marca, modelo, status")
       .order("placa");
-    setVeiculos((v.data ?? []) as any);
+    setVeiculos((v.data ?? []) as VeiculoOpt[]);
 
     const m = await supabase
       .from("motoristas")
       .select("id, nome, status")
       .order("nome");
-    setMotoristas((m.data ?? []) as any);
+    setMotoristas((m.data ?? []) as MotoristaOpt[]);
   }
 
   async function carregarOS() {

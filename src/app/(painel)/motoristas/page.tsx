@@ -37,14 +37,16 @@ export default function MotoristasPage() {
       .select("id, nome, cpf, telefone, whatsapp, status, created_at")
       .order("created_at", { ascending: false });
 
-    if (!error && data) setMotoristas(data as Motorista[]);
-    else setMotoristas([]);
-
-    setLoading(false);
+    setTimeout(() => {
+      if (!error && data) setMotoristas(data as Motorista[]);
+      else setMotoristas([]);
+      setLoading(false);
+    }, 0);
   }
 
   useEffect(() => {
-    carregarMotoristas();
+    const id = setTimeout(() => { carregarMotoristas(); }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   const motoristasFiltrados = useMemo(() => {

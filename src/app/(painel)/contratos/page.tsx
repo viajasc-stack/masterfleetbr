@@ -76,7 +76,9 @@ export default function ContratosPage() {
       return;
     }
 
-    setContratos(contratosData as Contrato[]);
+    setTimeout(() => {
+      setContratos(contratosData as Contrato[]);
+    }, 0);
 
     // Carrega clientes (para exibir nome)
     const { data: clientesData, error: clientesErr } = await supabase
@@ -84,34 +86,38 @@ export default function ContratosPage() {
       .select("id, nome")
       .order("nome", { ascending: true });
 
-    if (!clientesErr && clientesData) {
-      const map: Record<string, string> = {};
-      (clientesData as ClienteMini[]).forEach((c) => (map[c.id] = c.nome));
-      setClientesMap(map);
-    } else {
-      setClientesMap({});
-    }
+    setTimeout(() => {
+      if (!clientesErr && clientesData) {
+        const map: Record<string, string> = {};
+        (clientesData as ClienteMini[]).forEach((c) => (map[c.id] = c.nome));
+        setClientesMap(map);
+      } else {
+        setClientesMap({});
+      }
+    }, 0);
 
     // Conta horários por contrato (para exibir quantidade)
     const { data: horariosData, error: horariosErr } = await supabase
       .from("contrato_horarios")
       .select("id, contrato_id");
 
-    if (!horariosErr && horariosData) {
-      const count: Record<string, number> = {};
-      (horariosData as HorarioMini[]).forEach((h) => {
-        count[h.contrato_id] = (count[h.contrato_id] ?? 0) + 1;
-      });
-      setHorariosCountMap(count);
-    } else {
-      setHorariosCountMap({});
-    }
-
-    setLoading(false);
+    setTimeout(() => {
+      if (!horariosErr && horariosData) {
+        const count: Record<string, number> = {};
+        (horariosData as HorarioMini[]).forEach((h) => {
+          count[h.contrato_id] = (count[h.contrato_id] ?? 0) + 1;
+        });
+        setHorariosCountMap(count);
+      } else {
+        setHorariosCountMap({});
+      }
+      setLoading(false);
+    }, 0);
   }
 
   useEffect(() => {
-    carregarContratos();
+    const id = setTimeout(() => { carregarContratos(); }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   const contratosFiltrados = useMemo(() => {

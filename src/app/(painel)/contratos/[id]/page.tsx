@@ -116,7 +116,8 @@ export default function ContratoDetalhePage() {
       setHorarios((horariosData ?? []) as Horario[]);
     }
 
-    const maxOrdem = (horariosData ?? []).reduce((m: number, x: any) => Math.max(m, x.ordem ?? 0), 0);
+    const arr = (horariosData ?? []) as { ordem?: number | null }[];
+    const maxOrdem = arr.reduce((m, x) => Math.max(m, x.ordem ?? 0), 0);
     setNovoHorario((prev) => ({ ...prev, ordem: maxOrdem + 1 }));
 
     setLoading(false);

@@ -3,17 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { supabase } from "@/lib/supabase/client";
 
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 type ClienteOpt = { id: string; nome: string };
 type VeiculoOpt = { id: string; placa: string; marca: string | null; modelo: string | null };
 type MotoristaOpt = { id: string; nome: string };
+type VeiculoRaw = { id: string; placa: string; marca: string | null; modelo: string | null; status?: string | null };
+type MotoristaRaw = { id: string; nome: string; status?: string | null };
 
 type TipoOS = "eventual" | "recorrente";
 type StatusOS =
@@ -113,7 +111,7 @@ export default function NovaOSPage() {
       .select("id, placa, marca, modelo, status")
       .order("placa");
     setVeiculos(
-      ((v.data ?? []) as any[])
+      ((v.data ?? []) as VeiculoRaw[])
         .filter((x) => (x.status || "").toLowerCase() !== "inativo")
         .map((x) => ({ id: x.id, placa: x.placa, marca: x.marca, modelo: x.modelo }))
     );
@@ -124,7 +122,7 @@ export default function NovaOSPage() {
       .select("id, nome, status")
       .order("nome");
     setMotoristas(
-      ((m.data ?? []) as any[])
+      ((m.data ?? []) as MotoristaRaw[])
         .filter((x) => (x.status || "").toLowerCase() !== "inativo")
         .map((x) => ({ id: x.id, nome: x.nome }))
     );

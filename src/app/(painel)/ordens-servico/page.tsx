@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { createBrowserClient } from "@supabase/ssr";
+import { supabase } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui/PageHeader";
 
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+type Billing = {
+  status: string;
+  plano_nome?: string | null;
+  trial_ate?: string | null;
+  proxima_cobranca?: string | null;
+};
 
 type OsRow = {
   id: string;
@@ -57,9 +59,10 @@ function formatNumeroOS(numero: number | null, createdAt: string) {
 export default function OrdensServicoPage() {
   const [osList, setOsList] = useState<OsRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [billing, setBilling] = useState<Billing | null>(null);
 
-  const [busca, setBusca] = useState("");
-  const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>("todas");
+  const [busca] = useState("");
+  const [filtroStatus] = useState<FiltroStatus>("todas");
 
   async function carregarOS() {
     setLoading(true);
@@ -77,14 +80,25 @@ export default function OrdensServicoPage() {
       )
       .order("created_at", { ascending: false });
 
-    if (!error && data) setOsList(data as OsRow[]);
+    if (!error && data) setOsList(data as unknown as OsRow[]);
     else setOsList([]);
+
+    const { data: bill } = await supabase.rpc("get_billing_current");
+    if (bill) {
+      setBilling({
+        status: bill.status ?? "trial",
+        plano_nome: bill.plano_nome ?? null,
+        trial_ate: bill.trial_ate ?? null,
+        proxima_cobranca: bill.proxima_cobranca ?? null,
+      });
+    }
 
     setLoading(false);
   }
 
   useEffect(() => {
-    carregarOS();
+    const id = setTimeout(() => { carregarOS(); }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   const filtradas = useMemo(() => {
@@ -180,6 +194,26 @@ export default function OrdensServicoPage() {
           </>
         }
       />
+
+      {billing && (
+        <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 flex items-center justify-between">
+          <div className="text-sm">
+            <span className="text-slate-600">Assinatura</span>
+            <span className={`ml-2 text-xs px-2 py-1 rounded border ${
+              billing.status === "ativa" ? "border-green-200 text-green-700 bg-green-50"
+              : billing.status === "trial" ? "border-blue-200 text-blue-700 bg-blue-50"
+              : billing.status === "past_due" ? "border-amber-200 text-amber-700 bg-amber-50"
+              : "border-red-200 text-red-700 bg-red-50"
+            }`}>{billing.status}</span>
+            {billing.plano_nome && <span className="ml-2 text-slate-600">Plano: <span className="text-slate-900 font-medium">{billing.plano_nome}</span></span>}
+            {billing.proxima_cobranca && <span className="ml-2 text-slate-600">Próx.: <span className="text-slate-900">{new Date(billing.proxima_cobranca).toLocaleDateString("pt-BR")}</span></span>}
+            {billing.trial_ate && <span className="ml-2 text-slate-600">Trial: <span className="text-slate-900">{new Date(billing.trial_ate).toLocaleDateString("pt-BR")}</span></span>}
+          </div>
+          {(billing.status === "past_due" || billing.status === "bloqueada") && (
+            <Link href="/bloqueado" className="text-xs text-amber-700 hover:underline">Regularizar</Link>
+          )}
+        </div>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-xl p-6">
         {loading ? (

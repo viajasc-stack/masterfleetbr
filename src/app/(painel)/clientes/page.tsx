@@ -32,23 +32,23 @@ export default function ClientesPage() {
 
   async function carregarClientes() {
     setLoading(true);
-
     const { data, error } = await supabase
       .from("clientes")
       .select("id, nome, tipo, email, telefone, whatsapp, ativo, created_at")
       .order("created_at", { ascending: false });
-
-    if (!error && data) {
-      setClientes(data);
-    } else {
-      setClientes([]);
-    }
-
-    setLoading(false);
+    setTimeout(() => {
+      if (!error && data) {
+        setClientes(data as Cliente[]);
+      } else {
+        setClientes([]);
+      }
+      setLoading(false);
+    }, 0);
   }
 
   useEffect(() => {
-    carregarClientes();
+    const id = setTimeout(() => { carregarClientes(); }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   const clientesFiltrados = useMemo(() => {
