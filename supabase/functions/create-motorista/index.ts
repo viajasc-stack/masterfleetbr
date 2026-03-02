@@ -28,7 +28,7 @@ serve(async (req) => {
       if (exist) return new Response(JSON.stringify({ ok: true, message: "motorista_exists", motorista: exist }), { headers: CORS });
     }
 
-    let authUser: any = null;
+    let authUserId: string | null = null;
     if (create_auth_user && email) {
       // create auth user (service role)
       try {
@@ -37,27 +37,35 @@ serve(async (req) => {
           email: String(email),
           password: pw,
           user_metadata: { nome, telefone, cpf, role: "motorista" },
-        } as any);
+        });
         if (userErr) {
           console.error("createUser error", userErr);
         } else {
-          authUser = userData;
+          authUserId = userData.user?.id ?? null;
           // create profile row
-          await supabase.from("profiles").insert({ user_id: authUser.id, nome, role: "motorista", empresa_id });
+          if (authUserId) {
+            await supabase.from("profiles").insert({ user_id: authUserId, nome, role: "motorista", empresa_id });
+          }
         }
       } catch (err) {
         console.error("auth create error", err);
       }
     }
 
-    const insertObj: any = { empresa_id, nome, cpf: cpf ?? null, telefone: telefone ?? null, email: email ?? null };
+    const insertObj = {
+      empresa_id,
+      nome,
+      cpf: cpf ?? null,
+      telefone: telefone ?? null,
+      email: email ?? null,
+    };
     const { data, error } = await supabase.from("motoristas").insert(insertObj).maybeSingle();
     if (error) {
       console.error("insert motorista error", error);
       return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: CORS });
     }
 
-    return new Response(JSON.stringify({ ok: true, motorista: data, authUser }), { headers: { ...CORS, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, motorista: data, authUserId }), { headers: { ...CORS, "Content-Type": "application/json" } });
 
   } catch (err) {
     console.error(err);

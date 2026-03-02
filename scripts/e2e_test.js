@@ -1,35 +1,42 @@
 #!/usr/bin/env node
-const { createClient } = require('@supabase/supabase-js');
-
-const API_URL = process.env.SUPABASE_URL;
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
+const API_URL = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+const SERVICE_ROLE = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || '').trim();
 
 if (!API_URL || !SERVICE_ROLE) {
-  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  console.error('Missing SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
   process.exit(2);
 }
 
-const supabase = createClient(API_URL, SERVICE_ROLE, {
-  auth: { persistSession: false }
-});
+let supabase;
+
+async function getSupabase() {
+  if (supabase) return supabase;
+  const { createClient } = await import('@supabase/supabase-js');
+  supabase = createClient(API_URL, SERVICE_ROLE, {
+    auth: { persistSession: false }
+  });
+  return supabase;
+}
 
 async function createEmpresa() {
-  const { data, error } = await supabase.from('empresas').insert({ nome: 'E2E Empresa', email: 'e2e@example.com' }).select().limit(1).single();
+  const client = await getSupabase();
+  const { data, error } = await client.from('empresas').insert({ nome: 'E2E Empresa', email: 'e2e@example.com' }).select().limit(1).single();
   if (error) throw error;
   return data;
 }
 
 async function createAssinatura(empresa_id) {
-  const { data, error } = await supabase.from('assinaturas').insert({ empresa_id, status: 'past_due' }).select().limit(1).single();
+  const client = await getSupabase();
+  const { data, error } = await client.from('assinaturas').insert({ empresa_id, status: 'past_due' }).select().limit(1).single();
   if (error) throw error;
   return data;
 }
 
 async function createFatura(empresa_id, assinatura_id) {
+  const client = await getSupabase();
   const venc = new Date();
   venc.setDate(venc.getDate() + 5);
-  const { data, error } = await supabase.from('faturas').insert({ empresa_id, assinatura_id, valor_centavos: 9900, status: 'aberta', vencimento: venc.toISOString().slice(0,10) }).select().limit(1).single();
+  const { data, error } = await client.from('faturas').insert({ empresa_id, assinatura_id, valor_centavos: 9900, status: 'aberta', vencimento: venc.toISOString().slice(0,10) }).select().limit(1).single();
   if (error) throw error;
   return data;
 }
@@ -44,13 +51,15 @@ async function createCheckout(fatura_id) {
 }
 
 async function adminMarkPaid(fatura_id) {
-  const { data, error } = await supabase.rpc('admin_mark_paid', { p_fatura_id: fatura_id });
+  const client = await getSupabase();
+  const { data, error } = await client.rpc('admin_mark_paid', { p_fatura_id: fatura_id });
   if (error) throw error;
   return data;
 }
 
 async function getAssinatura(id) {
-  const { data, error } = await supabase.from('assinaturas').select('*').eq('id', id).limit(1).maybeSingle();
+  const client = await getSupabase();
+  const { data, error } = await client.from('assinaturas').select('*').eq('id', id).limit(1).maybeSingle();
   if (error) throw error;
   return data;
 }

@@ -39,7 +39,7 @@ export default function CadastroPage() {
       });
 
       // 3) Cria empresa + profile + assinatura trial 7 dias
-      const { data: empresaId, error: rpcError } = await supabase.rpc(
+      const { error: rpcError } = await supabase.rpc(
         "criar_empresa_e_profile",
         {
           p_nome_empresa: nomeEmpresa.trim(),

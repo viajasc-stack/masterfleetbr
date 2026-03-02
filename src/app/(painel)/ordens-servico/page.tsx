@@ -39,9 +39,7 @@ type OsRow = {
 };
 
 type FiltroStatus =
-  | "rascunho"
-  | "aguardando_aprovacao"
-  | "aprovada"
+  | "pendente"
   | "em_execucao"
   | "concluida"
   | "cancelada"
@@ -132,10 +130,7 @@ export default function OrdensServicoPage() {
 
   function badgeStatus(status: string) {
     const s = (status || "").toLowerCase();
-    if (s === "rascunho") return "border-slate-200 text-slate-700 bg-slate-50";
-    if (s === "aguardando_aprovacao")
-      return "border-amber-200 text-amber-800 bg-amber-50";
-    if (s === "aprovada") return "border-blue-200 text-blue-800 bg-blue-50";
+    if (s === "pendente") return "border-amber-200 text-amber-800 bg-amber-50";
     if (s === "em_execucao")
       return "border-indigo-200 text-indigo-800 bg-indigo-50";
     if (s === "concluida") return "border-green-200 text-green-700 bg-green-50";
@@ -144,9 +139,7 @@ export default function OrdensServicoPage() {
 
   function labelStatus(status: string) {
     const s = (status || "").toLowerCase();
-    if (s === "rascunho") return "Rascunho";
-    if (s === "aguardando_aprovacao") return "Aguardando aprovação";
-    if (s === "aprovada") return "Aprovada";
+    if (s === "pendente") return "Pendente";
     if (s === "em_execucao") return "Em execução";
     if (s === "concluida") return "Concluída";
     if (s === "cancelada") return "Cancelada";

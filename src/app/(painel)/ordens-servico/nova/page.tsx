@@ -11,13 +11,11 @@ type ClienteOpt = { id: string; nome: string };
 type VeiculoOpt = { id: string; placa: string; marca: string | null; modelo: string | null };
 type MotoristaOpt = { id: string; nome: string };
 type VeiculoRaw = { id: string; placa: string; marca: string | null; modelo: string | null; status?: string | null };
-type MotoristaRaw = { id: string; nome: string; status?: string | null };
+type MotoristaRaw = { id: string; nome: string; ativo?: boolean | null };
 
 type TipoOS = "eventual" | "recorrente";
 type StatusOS =
-  | "rascunho"
-  | "aguardando_aprovacao"
-  | "aprovada"
+  | "pendente"
   | "em_execucao"
   | "concluida"
   | "cancelada";
@@ -43,7 +41,7 @@ export default function NovaOSPage() {
 
   // campos OS
   const [tipo, setTipo] = useState<TipoOS>("eventual");
-  const [status, setStatus] = useState<StatusOS>("rascunho");
+  const [status, setStatus] = useState<StatusOS>("pendente");
 
   const [clienteId, setClienteId] = useState<string>("");
   const [veiculoId, setVeiculoId] = useState<string>("");
@@ -119,11 +117,11 @@ export default function NovaOSPage() {
     // Motoristas (apenas ativos por padrão)
     const m = await supabase
       .from("motoristas")
-      .select("id, nome, status")
+      .select("id, nome, ativo")
       .order("nome");
     setMotoristas(
       ((m.data ?? []) as MotoristaRaw[])
-        .filter((x) => (x.status || "").toLowerCase() !== "inativo")
+        .filter((x) => x.ativo !== false)
         .map((x) => ({ id: x.id, nome: x.nome }))
     );
   }
@@ -133,7 +131,6 @@ export default function NovaOSPage() {
       await carregarEmpresaId();
       await carregarCombos();
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const clientesFiltrados = useMemo(() => {
@@ -286,9 +283,7 @@ export default function NovaOSPage() {
                 value={status}
                 onChange={(e) => setStatus(e.target.value as StatusOS)}
               >
-                <option value="rascunho">Rascunho</option>
-                <option value="aguardando_aprovacao">Aguardando aprovação</option>
-                <option value="aprovada">Aprovada</option>
+                <option value="pendente">Pendente</option>
                 <option value="em_execucao">Em execução</option>
                 <option value="concluida">Concluída</option>
                 <option value="cancelada">Cancelada</option>

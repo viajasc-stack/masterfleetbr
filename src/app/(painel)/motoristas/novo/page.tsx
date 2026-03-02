@@ -91,8 +91,11 @@ export default function NovoMotoristaPage() {
   }
 
   useEffect(() => {
-    carregarEmpresaId();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const id = setTimeout(() => {
+      void carregarEmpresaId();
+    }, 0);
+
+    return () => clearTimeout(id);
   }, []);
 
   function dateOrNull(v: string) {

@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { useEffect } from "react";
 
 type Notification = {
   id: string;
@@ -10,7 +9,7 @@ type Notification = {
   mensagem: string | null;
   lido: boolean;
   created_at: string;
-  meta: any;
+  meta: Record<string, unknown> | null;
 };
 
 export default function NotificationsDropdown() {
@@ -27,7 +26,7 @@ export default function NotificationsDropdown() {
   useEffect(() => {
     const channel = supabase
       .channel('public:notifications')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
         // refresh counts and items when notifications change
         fetchUnreadCount();
         if (open) fetchNotifications();

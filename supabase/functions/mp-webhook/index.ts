@@ -16,8 +16,8 @@ serve(async (req) => {
 
   try {
     const rawBody = await req.text();
-    let body: any = {};
-    try { body = rawBody ? JSON.parse(rawBody) : {}; } catch (e) { body = {}; }
+    let body: Record<string, unknown> = {};
+    try { body = rawBody ? (JSON.parse(rawBody) as Record<string, unknown>) : {}; } catch { body = {}; }
     const topic = body.type ?? body.topic;
 
     // Optional webhook signature verification
@@ -47,7 +47,8 @@ serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, msg: "topic ignorado" }), { headers: CORS });
     }
 
-    const paymentId = body.data?.id ?? body.id;
+    const paymentData = (body.data as { id?: string | number } | undefined) ?? undefined;
+    const paymentId = paymentData?.id ?? body.id;
     if (!paymentId) return new Response(JSON.stringify({ error: "payment id não encontrado" }), { status: 400, headers: CORS });
 
     const MP_ACCESS_TOKEN = Deno.env.get("MP_ACCESS_TOKEN")!;

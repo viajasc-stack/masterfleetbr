@@ -10,6 +10,11 @@ if (!supabaseUrl || !serviceRole) {
 
 const supabase = createClient(supabaseUrl, serviceRole);
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return "server_error";
+}
+
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body || !Array.isArray(body.ids)) {
@@ -23,7 +28,7 @@ export async function POST(req: Request) {
     try {
       const { data, error } = await supabase.auth.getUser(accessToken);
       if (!error && data?.user) userId = data.user.id;
-    } catch (err) {
+    } catch {
       // ignore
     }
   }
@@ -42,8 +47,8 @@ export async function POST(req: Request) {
     if (auditError) throw auditError;
 
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('mark-read error', err);
-    return NextResponse.json({ error: err.message || 'server_error' }, { status: 500 });
+    return NextResponse.json({ error: getErrorMessage(err) }, { status: 500 });
   }
 }

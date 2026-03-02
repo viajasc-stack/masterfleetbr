@@ -15,6 +15,7 @@ const GROUPS = ["Operacional", "Gestão", "Administrativo"];
 const LINKS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: "◼", group: "Operacional" },
   { href: "/ordens-servico", label: "Ordens de Serviço", icon: "◼", group: "Operacional" },
+  { href: "/orcamentos", label: "Orçamentos", icon: "◼", group: "Operacional" },
   { href: "/contratos", label: "Contratos", icon: "◼", group: "Operacional" },
   { href: "/clientes", label: "Clientes", icon: "◼", group: "Operacional" },
   { href: "/motoristas", label: "Motoristas", icon: "◼", group: "Operacional" },

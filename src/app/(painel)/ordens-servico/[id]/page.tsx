@@ -13,13 +13,11 @@ const supabase = createBrowserClient(
 
 type ClienteOpt = { id: string; nome: string };
 type VeiculoOpt = { id: string; placa: string; marca: string | null; modelo: string | null; status?: string };
-type MotoristaOpt = { id: string; nome: string; status?: string };
+type MotoristaOpt = { id: string; nome: string; ativo?: boolean | null };
 
 type TipoOS = "eventual" | "recorrente";
 type StatusOS =
-  | "rascunho"
-  | "aguardando_aprovacao"
-  | "aprovada"
+  | "pendente"
   | "em_execucao"
   | "concluida"
   | "cancelada";
@@ -105,7 +103,7 @@ export default function EditarOSPage() {
 
   // campos
   const [tipo, setTipo] = useState<TipoOS>("eventual");
-  const [status, setStatus] = useState<StatusOS>("rascunho");
+  const [status, setStatus] = useState<StatusOS>("pendente");
 
   const [clienteId, setClienteId] = useState("");
   const [veiculoId, setVeiculoId] = useState("");
@@ -141,9 +139,11 @@ export default function EditarOSPage() {
 
     const m = await supabase
       .from("motoristas")
-      .select("id, nome, status")
+      .select("id, nome, ativo")
       .order("nome");
-    setMotoristas((m.data ?? []) as MotoristaOpt[]);
+    setMotoristas(
+      ((m.data ?? []) as MotoristaOpt[]).filter((x) => x.ativo !== false)
+    );
   }
 
   async function carregarOS() {
@@ -178,7 +178,7 @@ export default function EditarOSPage() {
     setOs(o);
 
     setTipo(o.tipo ?? "eventual");
-    setStatus(o.status ?? "rascunho");
+    setStatus(o.status ?? "pendente");
 
     setClienteId(o.cliente_id ?? "");
     setVeiculoId(o.veiculo_id ?? "");
@@ -378,9 +378,7 @@ export default function EditarOSPage() {
                 value={status}
                 onChange={(e) => setStatus(e.target.value as StatusOS)}
               >
-                <option value="rascunho">Rascunho</option>
-                <option value="aguardando_aprovacao">Aguardando aprovação</option>
-                <option value="aprovada">Aprovada</option>
+                <option value="pendente">Pendente</option>
                 <option value="em_execucao">Em execução</option>
                 <option value="concluida">Concluída</option>
                 <option value="cancelada">Cancelada</option>

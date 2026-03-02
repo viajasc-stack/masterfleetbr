@@ -21,7 +21,7 @@ export default function NovoOrcamentoPage() {
     e.preventDefault();
     setLoading(true);
     const valor_centavos = valor ? Math.round(parseFloat(valor.replace(',', '.')) * 100) : null;
-    const { data, error } = await supabase.from('orcamentos').insert({ nome, descricao, tipo, valor_centavos }).select().single();
+    const { error } = await supabase.from('orcamentos').insert({ nome, descricao, tipo, valor_centavos }).select().single();
     setLoading(false);
     if (error) {
       alert('Erro ao criar orçamento: ' + error.message);

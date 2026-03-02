@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createBrowserClient } from "@supabase/ssr";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -36,7 +36,13 @@ export default function OrcamentosPage() {
     setLoading(false);
   }
 
-  useEffect(() => { carregar(); }, []);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      void carregar();
+    }, 0);
+
+    return () => clearTimeout(id);
+  }, []);
 
   const contador = orcamentos.length;
 

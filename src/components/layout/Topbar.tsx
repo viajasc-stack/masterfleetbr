@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import NotificationsDropdown from "@/components/layout/NotificationsDropdown";
+import { supabase } from "@/lib/supabase/client";
 
 type Props = {
   empresaNome: string | null;

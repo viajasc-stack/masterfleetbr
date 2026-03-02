@@ -132,7 +132,7 @@ export default function BloqueadoPage() {
     alert("Pagamento ainda não confirmado. Aguarde alguns instantes.");
   }
 
-  async function gerarCheckout(m: "cartao" | "boleto") {
+  async function gerarCheckout() {
     if (!fatura) return;
     setGerandoCheckout(true);
     setErro("");
@@ -264,35 +264,13 @@ export default function BloqueadoPage() {
               {metodo !== "pix" && (
                 <div>
                   <p className="text-sm text-slate-400">Você será redirecionado para o checkout seguro do Mercado Pago.</p>
-                  <button onClick={() => gerarCheckout(metodo)} disabled={gerandoCheckout}
+                  <button onClick={gerarCheckout} disabled={gerandoCheckout}
                     className="mt-3 w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold py-3 rounded-xl text-sm transition disabled:opacity-60">
                     {gerandoCheckout ? "Abrindo checkout..." : metodo === "cartao" ? "Pagar com Cartão" : "Pagar com Boleto"}
                   </button>
                 </div>
               )}
             </div>
-              <>
-                {fatura.pix_qr_code && (
-                  <div className="flex flex-col items-center gap-3">
-                    <p className="text-sm text-slate-400">Escaneie o QR Code</p>
-                    <Image src={fatura.pix_qr_code} alt="QR Code PIX" width={192} height={192} className="bg-white p-2 rounded-xl" />
-                  </div>
-                )}
-
-                {fatura.pix_copia_cola && (
-                  <div>
-                    <p className="text-xs text-slate-500 mb-2">PIX Copia e Cola</p>
-                    <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-400 break-all font-mono select-all">
-                      {fatura.pix_copia_cola.slice(0, 80)}...
-                    </div>
-                    <button onClick={copiarPix}
-                      className="mt-2 w-full border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 py-2 rounded-lg text-sm transition">
-                      {copiado ? "✓ Copiado!" : "Copiar código PIX"}
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
 
             <button onClick={verificarPagamento} disabled={verificando}
               className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 rounded-xl text-sm transition disabled:opacity-60">

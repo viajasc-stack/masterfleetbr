@@ -66,8 +66,11 @@ export default function NovoVeiculoPage() {
   }
 
   useEffect(() => {
-    carregarEmpresaId();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const id = setTimeout(() => {
+      void carregarEmpresaId();
+    }, 0);
+
+    return () => clearTimeout(id);
   }, []);
 
   function toIntOrNull(v: string) {
