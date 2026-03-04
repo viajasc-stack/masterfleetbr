@@ -10,6 +10,22 @@ import { supabase } from "@/lib/supabase/client";
 const CATEGORIAS_PAGAR = ["Combustível", "Manutenção", "Salários", "Impostos", "Fornecedores", "Aluguel", "Seguros", "Outros"];
 const CATEGORIAS_RECEBER = ["Frete", "Contrato", "Avulso", "Outros"];
 
+function addMonths(isoDate: string, monthsToAdd: number) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const base = new Date(y, (m - 1) + monthsToAdd, 1);
+  const lastDay = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+  const day = Math.min(d, lastDay);
+  const result = new Date(base.getFullYear(), base.getMonth(), day);
+  return result.toISOString().slice(0, 10);
+}
+
+function splitTotalEmParcelas(total: number, qtd: number) {
+  const totalCentavos = Math.round(total * 100);
+  const base = Math.floor(totalCentavos / qtd);
+  const resto = totalCentavos - base * qtd;
+  return Array.from({ length: qtd }, (_, i) => (base + (i < resto ? 1 : 0)) / 100);
+}
+
 export default function NovaContaPage() {
   const router = useRouter();
   const [form, setForm] = useState({
@@ -22,6 +38,9 @@ export default function NovaContaPage() {
   });
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
+  const [modoParcela, setModoParcela] = useState<"unica" | "carne">("unica");
+  const [quantidadeParcelas, setQuantidadeParcelas] = useState("12");
+  const [modoValorCarne, setModoValorCarne] = useState<"parcela" | "total">("parcela");
 
   function set(field: string, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -31,18 +50,68 @@ export default function NovaContaPage() {
     e.preventDefault();
     if (!form.descricao.trim()) { setErro("Descrição é obrigatória."); return; }
     if (!form.valor || parseFloat(form.valor) <= 0) { setErro("Valor inválido."); return; }
+    if (modoParcela === "carne") {
+      const qtd = Number(quantidadeParcelas);
+      if (!Number.isInteger(qtd) || qtd < 2 || qtd > 120) {
+        setErro("Quantidade de parcelas inválida (use de 2 a 120).");
+        return;
+      }
+    }
+
     setLoading(true); setErro("");
-    const { error } = await supabase.from("contas_financeiras").insert({
-      descricao: form.descricao.trim(),
-      tipo: form.tipo,
-      valor: parseFloat(form.valor),
-      data_vencimento: form.data_vencimento,
-      categoria: form.categoria || null,
-      observacoes: form.observacoes.trim() || null,
-      status: "pendente",
-    });
+
+    const valor = parseFloat(form.valor);
+    const baseDescricao = form.descricao.trim();
+    const baseObservacoes = form.observacoes.trim() || null;
+
+    let error: { message?: string } | null = null;
+    if (modoParcela === "unica") {
+      const resp = await supabase.from("contas_financeiras").insert({
+        descricao: baseDescricao,
+        tipo: form.tipo,
+        valor,
+        data_vencimento: form.data_vencimento,
+        categoria: form.categoria || null,
+        observacoes: baseObservacoes,
+        status: "pendente",
+      });
+      error = resp.error;
+    } else {
+      const qtd = Number(quantidadeParcelas);
+      const grupoId = (typeof crypto !== "undefined" && "randomUUID" in crypto)
+        ? crypto.randomUUID()
+        : `carne-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const valoresParcelas = modoValorCarne === "total"
+        ? splitTotalEmParcelas(valor, qtd)
+        : Array.from({ length: qtd }, () => valor);
+      const valorTotalCarne = modoValorCarne === "total"
+        ? valor
+        : Number((valor * qtd).toFixed(2));
+
+      const linhas = Array.from({ length: qtd }, (_, i) => ({
+        descricao: `${baseDescricao} (${i + 1}/${qtd})`,
+        tipo: form.tipo,
+        valor: valoresParcelas[i],
+        data_vencimento: addMonths(form.data_vencimento, i),
+        categoria: form.categoria || null,
+        observacoes: [
+          baseObservacoes,
+          `Carnê/parcelado: parcela ${i + 1} de ${qtd}`,
+          `Grupo: ${grupoId}`,
+        ].filter(Boolean).join(" • "),
+        status: "pendente",
+        carne_grupo_id: grupoId,
+        parcela_numero: i + 1,
+        parcela_total: qtd,
+        valor_total_carne: valorTotalCarne,
+      }));
+
+      const resp = await supabase.from("contas_financeiras").insert(linhas);
+      error = resp.error;
+    }
+
     setLoading(false);
-    if (error) { setErro(error.message); return; }
+    if (error) { setErro(error.message ?? "Erro ao salvar conta."); return; }
     router.push("/financeiro");
   }
 
@@ -70,6 +139,36 @@ export default function NovaContaPage() {
           </div>
         </div>
 
+        {form.tipo === "pagar" && (
+          <div>
+            <label className="block font-medium mb-1">Forma de lançamento</label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className={`flex items-center justify-center gap-2 border rounded-md px-3 py-2 cursor-pointer transition ${modoParcela === "unica" ? "border-blue-400 bg-blue-50 text-blue-700" : "border-slate-300"}`}>
+                <input
+                  type="radio"
+                  name="modoParcela"
+                  value="unica"
+                  checked={modoParcela === "unica"}
+                  onChange={() => setModoParcela("unica")}
+                  className="sr-only"
+                />
+                Parcela única
+              </label>
+              <label className={`flex items-center justify-center gap-2 border rounded-md px-3 py-2 cursor-pointer transition ${modoParcela === "carne" ? "border-amber-400 bg-amber-50 text-amber-700" : "border-slate-300"}`}>
+                <input
+                  type="radio"
+                  name="modoParcela"
+                  value="carne"
+                  checked={modoParcela === "carne"}
+                  onChange={() => setModoParcela("carne")}
+                  className="sr-only"
+                />
+                Carnê / parcelado
+              </label>
+            </div>
+          </div>
+        )}
+
         <div>
           <label className="block font-medium mb-1">Descrição *</label>
           <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={form.descricao}
@@ -89,6 +188,56 @@ export default function NovaContaPage() {
           </div>
         </div>
 
+        {form.tipo === "pagar" && modoParcela === "carne" && (
+          <div className="space-y-3">
+            <div>
+              <label className="block font-medium mb-1">Valor informado representa</label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className={`flex items-center justify-center gap-2 border rounded-md px-3 py-2 cursor-pointer transition ${modoValorCarne === "parcela" ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300"}`}>
+                  <input
+                    type="radio"
+                    name="modoValorCarne"
+                    value="parcela"
+                    checked={modoValorCarne === "parcela"}
+                    onChange={() => setModoValorCarne("parcela")}
+                    className="sr-only"
+                  />
+                  Valor da parcela
+                </label>
+                <label className={`flex items-center justify-center gap-2 border rounded-md px-3 py-2 cursor-pointer transition ${modoValorCarne === "total" ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300"}`}>
+                  <input
+                    type="radio"
+                    name="modoValorCarne"
+                    value="total"
+                    checked={modoValorCarne === "total"}
+                    onChange={() => setModoValorCarne("total")}
+                    className="sr-only"
+                  />
+                  Valor total do financiamento
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-medium mb-1">Quantidade de parcelas *</label>
+              <input
+                type="number"
+                min={2}
+                max={120}
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={quantidadeParcelas}
+                onChange={(e) => setQuantidadeParcelas(e.target.value)}
+                required
+              />
+            </div>
+
+            <p className="text-xs text-slate-500 mt-1">
+              O sistema criará {quantidadeParcelas || 0} contas mensais com vínculo de grupo único do carnê.
+              {modoValorCarne === "total" ? " O valor total será dividido automaticamente entre as parcelas." : " O valor informado será repetido em cada parcela."}
+            </p>
+          </div>
+        )}
+
         <div>
           <label className="block font-medium mb-1">Categoria</label>
           <select className="w-full border border-slate-300 rounded-md px-3 py-2" value={form.categoria}
@@ -107,7 +256,7 @@ export default function NovaContaPage() {
         <div className="flex gap-3 pt-2">
           <button type="submit" disabled={loading}
             className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-60 transition">
-            {loading ? "Salvando..." : "Salvar Conta"}
+            {loading ? "Salvando..." : modoParcela === "carne" && form.tipo === "pagar" ? "Salvar carnê" : "Salvar Conta"}
           </button>
           <Link href="/financeiro" className="border border-slate-300 px-6 py-2 rounded-md hover:bg-slate-50 transition">
             Cancelar

@@ -6,6 +6,18 @@ import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { supabase } from "@/lib/supabase/client";
 
+function sanitizeFileName(name: string) {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function isBucketNotFoundError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return error.message.toLowerCase().includes("bucket not found");
+}
+
 
 export default function NovoMotoristaPage() {
   const router = useRouter();
@@ -13,6 +25,7 @@ export default function NovoMotoristaPage() {
   const [loading, setLoading] = useState(false);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>("");
+  const [uploadWarning, setUploadWarning] = useState<string>("");
 
   // Identificação
   const [nome, setNome] = useState("");
@@ -53,6 +66,22 @@ export default function NovoMotoristaPage() {
   const [banco, setBanco] = useState("");
   const [agencia, setAgencia] = useState("");
   const [conta, setConta] = useState("");
+
+  // Vínculo e remuneração
+  const [vinculoTrabalho, setVinculoTrabalho] = useState<"freelancer" | "contratado">("contratado");
+  const [tipoRemuneracao, setTipoRemuneracao] = useState<
+    "fixo_extra" | "fixo_banco_horas" | "por_os_executada" | "por_diaria"
+  >("fixo_extra");
+  const [salarioBase, setSalarioBase] = useState("");
+  const [valorHoraExtra, setValorHoraExtra] = useState("");
+  const [bancoHorasSaldo, setBancoHorasSaldo] = useState("");
+  const [valorPorOs, setValorPorOs] = useState("");
+  const [valorDiaria, setValorDiaria] = useState("");
+  const [observacoesRemuneracao, setObservacoesRemuneracao] = useState("");
+
+  // Arquivos
+  const [cnhFile, setCnhFile] = useState<File | null>(null);
+  const [cursosFiles, setCursosFiles] = useState<File[]>([]);
 
   // Observações
   const [observacoes, setObservacoes] = useState("");
@@ -103,6 +132,25 @@ export default function NovoMotoristaPage() {
     return v; // coluna é date, pode enviar YYYY-MM-DD
   }
 
+  function numberOrNull(v: string) {
+    if (!v.trim()) return null;
+    const n = Number(v.replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  async function uploadArquivo(empresa: string, pasta: string, file: File) {
+    const path = `${empresa}/motoristas/novo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}/${pasta}/${sanitizeFileName(file.name)}`;
+
+    const { error } = await supabase.storage
+      .from("motoristas")
+      .upload(path, file, { upsert: false });
+
+    if (error) throw new Error(error.message);
+
+    const { data } = supabase.storage.from("motoristas").getPublicUrl(path);
+    return data.publicUrl;
+  }
+
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
 
@@ -116,61 +164,134 @@ export default function NovoMotoristaPage() {
       return;
     }
 
-    setLoading(true);
-
-    const payload = {
-      empresa_id: empresaId,
-
-      nome: nome.trim(),
-      apelido: apelido.trim() || null,
-      cpf: cpf.trim() || null,
-      rg: rg.trim() || null,
-      data_nascimento: dateOrNull(dataNascimento),
-
-      email: email.trim() || null,
-      telefone: telefone.trim() || null,
-      whatsapp: whatsapp.trim() || null,
-
-      cep: cep.trim() || null,
-      logradouro: logradouro.trim() || null,
-      numero: numero.trim() || null,
-      complemento: complemento.trim() || null,
-      bairro: bairro.trim() || null,
-      cidade: cidade.trim() || null,
-      uf: uf.trim() ? uf.trim().toUpperCase().slice(0, 2) : null,
-
-      cnh_numero: cnhNumero.trim() || null,
-      cnh_categoria: cnhCategoria.trim() || null,
-      cnh_validade: dateOrNull(cnhValidade),
-      cnh_observacoes: cnhObs.trim() || null,
-
-      status,
-      data_admissao: dateOrNull(dataAdmissao),
-      data_demissao: dateOrNull(dataDemissao),
-
-      chave_pix: chavePix.trim() || null,
-      banco: banco.trim() || null,
-      agencia: agencia.trim() || null,
-      conta: conta.trim() || null,
-
-      observacoes: observacoes.trim() || null,
-    };
-
-    const { data, error } = await supabase
-      .from("motoristas")
-      .insert(payload)
-      .select("id")
-      .single();
-
-    setLoading(false);
-
-    if (error) {
-      alert("Erro ao salvar: " + error.message);
+    if (!email.trim()) {
+      alert("Informe o e-mail do motorista.");
       return;
     }
 
-    router.push(`/motoristas/${data.id}`);
-    router.refresh();
+    if (cpf.replace(/\D/g, "").length < 11) {
+      alert("Informe um CPF válido (11 dígitos).");
+      return;
+    }
+
+    setLoading(true);
+    setUploadWarning("");
+
+    let cnhArquivoUrlFinal: string | null = null;
+    let cursosUrlsFinal: string[] = [];
+
+    try {
+      if (cnhFile && empresaId) {
+        cnhArquivoUrlFinal = await uploadArquivo(empresaId, "cnh", cnhFile);
+      }
+
+      if (cursosFiles.length > 0 && empresaId) {
+        cursosUrlsFinal = await Promise.all(cursosFiles.map((file) => uploadArquivo(empresaId, "cursos", file)));
+      }
+    } catch (uploadError) {
+      if (isBucketNotFoundError(uploadError)) {
+        setUploadWarning(
+          "Uploads ignorados porque o bucket 'motoristas' ainda não existe no Supabase. O motorista será criado sem anexos."
+        );
+      } else {
+        setLoading(false);
+        alert(`Erro no upload: ${uploadError instanceof Error ? uploadError.message : "erro desconhecido"}`);
+        return;
+      }
+    }
+
+    try {
+      const payload = {
+        empresa_id: empresaId,
+        create_auth_user: true,
+        nome: nome.trim(),
+        apelido: apelido.trim() || null,
+        cpf: cpf.trim() || null,
+        rg: rg.trim() || null,
+        data_nascimento: dateOrNull(dataNascimento),
+
+        email: email.trim(),
+        telefone: telefone.trim() || null,
+        whatsapp: whatsapp.trim() || null,
+
+        cep: cep.trim() || null,
+        logradouro: logradouro.trim() || null,
+        numero: numero.trim() || null,
+        complemento: complemento.trim() || null,
+        bairro: bairro.trim() || null,
+        cidade: cidade.trim() || null,
+        uf: uf.trim() ? uf.trim().toUpperCase().slice(0, 2) : null,
+
+        cnh_numero: cnhNumero.trim() || null,
+        cnh_categoria: cnhCategoria.trim() || null,
+        cnh_validade: dateOrNull(cnhValidade),
+        cnh_observacoes: cnhObs.trim() || null,
+        cnh_arquivo_url: cnhArquivoUrlFinal,
+        cursos_urls: cursosUrlsFinal,
+
+        status,
+        data_admissao: dateOrNull(dataAdmissao),
+        data_demissao: dateOrNull(dataDemissao),
+
+        chave_pix: chavePix.trim() || null,
+        banco: banco.trim() || null,
+        agencia: agencia.trim() || null,
+        conta: conta.trim() || null,
+
+        vinculo_trabalho: vinculoTrabalho,
+        tipo_remuneracao: tipoRemuneracao,
+        salario_base: ["fixo_extra", "fixo_banco_horas"].includes(tipoRemuneracao)
+          ? numberOrNull(salarioBase)
+          : null,
+        valor_hora_extra: tipoRemuneracao === "fixo_extra" ? numberOrNull(valorHoraExtra) : null,
+        banco_horas_saldo: tipoRemuneracao === "fixo_banco_horas" ? numberOrNull(bancoHorasSaldo) : null,
+        valor_por_os: tipoRemuneracao === "por_os_executada" ? numberOrNull(valorPorOs) : null,
+        valor_diaria: tipoRemuneracao === "por_diaria" ? numberOrNull(valorDiaria) : null,
+        observacoes_remuneracao: observacoesRemuneracao.trim() || null,
+
+        observacoes: observacoes.trim() || null,
+      };
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        alert("Sessão inválida. Faça login novamente.");
+        return;
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/create-motorista`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json().catch(async () => {
+        const raw = await response.text().catch(() => "");
+        return { error: raw || `status ${response.status}` };
+      });
+
+      if (!response.ok) {
+        alert(`Erro ao criar motorista: ${result?.error ?? result?.message ?? `status ${response.status}`}`);
+        return;
+      }
+
+      if (!result?.ok) {
+        alert(`Erro ao criar motorista: ${result?.error ?? "erro desconhecido"}`);
+        return;
+      }
+
+      alert("Motorista criado com sucesso. Login: CPF. Senha inicial: 6 primeiros dígitos do CPF. No primeiro acesso será obrigatório alterar a senha.");
+      router.push(`/motoristas/${result.motorista.id}`);
+      router.refresh();
+    } catch (err) {
+      alert(`Falha de conexão ao criar motorista: ${err instanceof Error ? err.message : "erro desconhecido"}`);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -191,6 +312,12 @@ export default function NovoMotoristaPage() {
       {statusMsg ? (
         <div className="bg-white border border-slate-200 rounded-xl p-6 text-sm text-slate-700 whitespace-pre-wrap">
           {statusMsg}
+        </div>
+      ) : null}
+
+      {uploadWarning ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          {uploadWarning}
         </div>
       ) : null}
 
@@ -226,12 +353,12 @@ export default function NovoMotoristaPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">CPF</label>
+              <label className="block text-sm font-medium mb-1">CPF *</label>
               <input
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
                 value={cpf}
                 onChange={(e) => setCpf(e.target.value)}
-                placeholder="opcional"
+                required
               />
             </div>
 
@@ -265,13 +392,13 @@ export default function NovoMotoristaPage() {
 
           <div className="grid gap-4 md:grid-cols-3">
             <div>
-              <label className="block text-sm font-medium mb-1">Email</label>
+              <label className="block text-sm font-medium mb-1">Email *</label>
               <input
                 type="email"
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="opcional"
+                required
               />
             </div>
 
@@ -476,6 +603,115 @@ export default function NovoMotoristaPage() {
           </div>
         </div>
 
+        {/* Vínculo e remuneração */}
+        <div className="border-t pt-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">
+            Vínculo e remuneração
+          </h2>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Formato de trabalho</label>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={vinculoTrabalho}
+                onChange={(e) => setVinculoTrabalho(e.target.value as "freelancer" | "contratado")}
+              >
+                <option value="contratado">Contratado</option>
+                <option value="freelancer">Freelancer</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Tipo de salário/remuneração</label>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={tipoRemuneracao}
+                onChange={(e) =>
+                  setTipoRemuneracao(
+                    e.target.value as "fixo_extra" | "fixo_banco_horas" | "por_os_executada" | "por_diaria"
+                  )
+                }
+              >
+                <option value="fixo_extra">Fixo + extra</option>
+                <option value="fixo_banco_horas">Fixo + banco de horas</option>
+                <option value="por_os_executada">Por OS executada</option>
+                <option value="por_diaria">Por diária</option>
+              </select>
+            </div>
+
+            {(tipoRemuneracao === "fixo_extra" || tipoRemuneracao === "fixo_banco_horas") && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Salário base (R$)</label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={salarioBase}
+                  onChange={(e) => setSalarioBase(e.target.value)}
+                  placeholder="Ex: 3200"
+                />
+              </div>
+            )}
+
+            {tipoRemuneracao === "fixo_extra" && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Valor hora extra (R$)</label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={valorHoraExtra}
+                  onChange={(e) => setValorHoraExtra(e.target.value)}
+                  placeholder="Ex: 25"
+                />
+              </div>
+            )}
+
+            {tipoRemuneracao === "fixo_banco_horas" && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Saldo inicial banco de horas</label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={bancoHorasSaldo}
+                  onChange={(e) => setBancoHorasSaldo(e.target.value)}
+                  placeholder="Ex: 0"
+                />
+              </div>
+            )}
+
+            {tipoRemuneracao === "por_os_executada" && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Valor por OS (R$)</label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={valorPorOs}
+                  onChange={(e) => setValorPorOs(e.target.value)}
+                  placeholder="Ex: 80"
+                />
+              </div>
+            )}
+
+            {tipoRemuneracao === "por_diaria" && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Valor da diária (R$)</label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={valorDiaria}
+                  onChange={(e) => setValorDiaria(e.target.value)}
+                  placeholder="Ex: 180"
+                />
+              </div>
+            )}
+
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium mb-1">Observações da remuneração</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={observacoesRemuneracao}
+                onChange={(e) => setObservacoesRemuneracao(e.target.value)}
+                placeholder="Regras combinadas, datas de fechamento, etc."
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Financeiro */}
         <div className="border-t pt-6">
           <h2 className="text-sm font-semibold text-slate-800 mb-4">
@@ -533,6 +769,32 @@ export default function NovoMotoristaPage() {
             onChange={(e) => setObservacoes(e.target.value)}
             placeholder="Anotações internas..."
           />
+        </div>
+
+        {/* Arquivos do motorista */}
+        <div className="border-t pt-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">Arquivos do motorista</h2>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Upload CNH (web)</label>
+              <input
+                type="file"
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => setCnhFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Upload cursos (web, múltiplos)</label>
+              <input
+                type="file"
+                multiple
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => setCursosFiles(Array.from(e.target.files ?? []))}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Ações */}

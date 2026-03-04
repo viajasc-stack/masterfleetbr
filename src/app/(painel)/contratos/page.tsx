@@ -2,13 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { createBrowserClient } from "@supabase/ssr";
 import { PageHeader } from "@/components/ui/PageHeader";
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { supabase } from "@/lib/supabase/client";
 
 type Contrato = {
   id: string;
@@ -55,6 +51,10 @@ export default function ContratosPage() {
   const [clientesMap, setClientesMap] = useState<Record<string, string>>({});
   const [horariosCountMap, setHorariosCountMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<Contrato | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const [busca, setBusca] = useState("");
   const [filtroAtivo, setFiltroAtivo] = useState<FiltroAtivo>("ativos");
@@ -78,6 +78,7 @@ export default function ContratosPage() {
 
     setTimeout(() => {
       setContratos(contratosData as Contrato[]);
+      setSelectedIds((prev) => prev.filter((id) => (contratosData as Contrato[]).some((c) => c.id === id)));
     }, 0);
 
     // Carrega clientes (para exibir nome)
@@ -148,6 +149,55 @@ export default function ContratosPage() {
       });
   }, [contratos, busca, filtroAtivo, clientesMap]);
 
+  const allFilteredSelected =
+    contratosFiltrados.length > 0 && contratosFiltrados.every((c) => selectedIds.includes(c.id));
+
+  function toggleSelecionado(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      if (checked) return prev.includes(id) ? prev : [...prev, id];
+      return prev.filter((x) => x !== id);
+    });
+  }
+
+  function toggleSelecionarTodosFiltrados(checked: boolean) {
+    if (checked) {
+      setSelectedIds((prev) => [...new Set([...prev, ...contratosFiltrados.map((c) => c.id)])]);
+      return;
+    }
+    setSelectedIds((prev) => prev.filter((id) => !contratosFiltrados.some((c) => c.id === id)));
+  }
+
+  async function excluirSelecionado() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const { error } = await supabase.from("contratos").delete().eq("id", deleteTarget.id);
+    setDeleting(false);
+
+    if (error) {
+      alert("Erro ao excluir contrato: " + error.message);
+      return;
+    }
+
+    setDeleteTarget(null);
+    await carregarContratos();
+  }
+
+  async function excluirSelecionadosEmLote() {
+    if (selectedIds.length === 0) return;
+    setDeleting(true);
+    const { error } = await supabase.from("contratos").delete().in("id", selectedIds);
+    setDeleting(false);
+
+    if (error) {
+      alert("Erro ao excluir contratos selecionados: " + error.message);
+      return;
+    }
+
+    setBulkDeleteOpen(false);
+    setSelectedIds([]);
+    await carregarContratos();
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -203,6 +253,18 @@ export default function ContratosPage() {
           Mostrando <span className="font-semibold">{contratosFiltrados.length}</span>{" "}
           de <span className="font-semibold">{contratos.length}</span> contrato(s).
         </div>
+
+        <div className="mt-3 flex items-center gap-3">
+          <span className="text-xs text-slate-500">Selecionados: {selectedIds.length}</span>
+          <button
+            type="button"
+            disabled={selectedIds.length === 0}
+            onClick={() => setBulkDeleteOpen(true)}
+            className="px-3 py-1.5 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50 disabled:opacity-50"
+          >
+            Excluir selecionados
+          </button>
+        </div>
       </div>
 
       {/* Tabela */}
@@ -216,12 +278,21 @@ export default function ContratosPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b">
+                  <th className="py-2 pr-3">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={(e) => toggleSelecionarTodosFiltrados(e.target.checked)}
+                      aria-label="Selecionar todos"
+                    />
+                  </th>
                   <th className="py-2 pr-4">Contrato</th>
                   <th className="py-2 pr-4">Cliente</th>
                   <th className="py-2 pr-4">Dias</th>
                   <th className="py-2 pr-4">Horários</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-0">Criado em</th>
+                  <th className="py-2 pr-0 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -230,6 +301,14 @@ export default function ContratosPage() {
                     key={c.id}
                     className="border-b last:border-b-0 hover:bg-slate-50 transition"
                   >
+                    <td className="py-2 pr-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(c.id)}
+                        onChange={(e) => toggleSelecionado(c.id, e.target.checked)}
+                        aria-label={`Selecionar contrato ${c.nome}`}
+                      />
+                    </td>
                     <td className="py-2 pr-4 font-medium">
                       <Link href={`/contratos/${c.id}`} className="hover:underline">
                         {c.nome}
@@ -266,6 +345,16 @@ export default function ContratosPage() {
                     <td className="py-2 pr-0">
                       {new Date(c.created_at).toLocaleString("pt-BR")}
                     </td>
+                    <td className="py-2 pr-0 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(c)}
+                        className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
+                        title="Excluir contrato"
+                      >
+                        🗑
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -273,6 +362,23 @@ export default function ContratosPage() {
           </div>
         )}
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        description={`Deseja excluir o contrato "${deleteTarget?.nome ?? ""}"?`}
+        loading={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={excluirSelecionado}
+      />
+
+      <DeleteConfirmDialog
+        open={bulkDeleteOpen}
+        title="Excluir contratos selecionados"
+        description={`Deseja excluir ${selectedIds.length} contrato(s) selecionado(s)?`}
+        loading={deleting}
+        onCancel={() => setBulkDeleteOpen(false)}
+        onConfirm={excluirSelecionadosEmLote}
+      />
     </div>
   );
 }

@@ -3,13 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { createBrowserClient } from "@supabase/ssr";
 import { PageHeader } from "@/components/ui/PageHeader";
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from "@/lib/supabase/client";
 
 type ClienteOpt = { id: string; nome: string };
 type VeiculoOpt = { id: string; placa: string; marca: string | null; modelo: string | null; status?: string };
@@ -83,8 +78,8 @@ function inputLocalToIso(v: string) {
 
 export default function EditarOSPage() {
   const router = useRouter();
-  const params = useParams<{ id: string }>();
-  const id = params?.id;
+  const params = useParams<{ id: string | string[] }>();
+  const id = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -158,7 +153,7 @@ export default function EditarOSPage() {
         "id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, aprovado_em, aprovado_por, created_at, updated_at"
       )
       .eq("id", id)
-      .maybeSingle();
+      .limit(1);
 
     if (error) {
       setStatusMsg("❌ Erro ao carregar: " + error.message);
@@ -167,14 +162,16 @@ export default function EditarOSPage() {
       return;
     }
 
-    if (!data) {
+    const row = (data ?? [])[0] as OsDb | undefined;
+
+    if (!row) {
       setStatusMsg("⚠️ OS não encontrada (ou você não tem acesso).");
       setOs(null);
       setLoading(false);
       return;
     }
 
-    const o = data as OsDb;
+    const o = row;
     setOs(o);
 
     setTipo(o.tipo ?? "eventual");

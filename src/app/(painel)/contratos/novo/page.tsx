@@ -2,13 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
 import { PageHeader } from "@/components/ui/PageHeader";
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from "@/lib/supabase/client";
 
 type Cliente = { id: string; nome: string };
 type Motorista = { id: string; nome: string };
@@ -120,10 +115,19 @@ export default function NovoContratoPage() {
     setSaving(true);
 
     // empresa_id (multiempresa) via profiles
+    const { data: sess } = await supabase.auth.getSession();
+    const userId = sess.session?.user.id;
+
+    if (!userId) {
+      setSaving(false);
+      return alert("Sessão inválida. Faça login novamente.");
+    }
+
     const { data: prof, error: profErr } = await supabase
       .from("profiles")
       .select("empresa_id")
-      .single();
+      .eq("user_id", userId)
+      .maybeSingle();
 
     if (profErr || !prof?.empresa_id) {
       console.error(profErr);
@@ -131,28 +135,84 @@ export default function NovoContratoPage() {
       return alert("Não foi possível identificar sua empresa (profiles).");
     }
 
-    const { data: contrato, error: errContrato } = await supabase
-      .from("contratos")
-      .insert({
-        empresa_id: prof.empresa_id,
-        cliente_id: clienteId,
-        nome: nome.trim(),
-        descricao: descricao.trim() || null,
-        dias_semana: diasSemana,
-        data_inicio: dataInicio || null,
-        data_fim: dataFim || null,
-        ativo,
-      })
-      .select("id")
-      .single();
+    const nomeNormalizado = nome.trim();
+    let contratoId: string | null = null;
 
-    if (errContrato || !contrato?.id) {
-      console.error(errContrato);
-      setSaving(false);
-      return alert("Erro ao criar contrato: " + (errContrato?.message ?? "desconhecido"));
+    // Reaproveita contrato "incompleto" (sem horários) para evitar duplicidade
+    const { data: candidatos } = await supabase
+      .from("contratos")
+      .select("id, created_at")
+      .eq("empresa_id", prof.empresa_id)
+      .eq("cliente_id", clienteId)
+      .eq("nome", nomeNormalizado)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    for (const c of (candidatos ?? []) as Array<{ id: string }>) {
+      const { count } = await supabase
+        .from("contrato_horarios")
+        .select("id", { count: "exact", head: true })
+        .eq("contrato_id", c.id);
+
+      if ((count ?? 0) === 0) {
+        contratoId = c.id;
+        break;
+      }
     }
 
-    const contratoId = contrato.id as string;
+    if (contratoId) {
+      const { error: errUpdateContrato } = await supabase
+        .from("contratos")
+        .update({
+          descricao: descricao.trim() || null,
+          dias_semana: diasSemana,
+          data_inicio: dataInicio || null,
+          data_fim: dataFim || null,
+          ativo,
+        })
+        .eq("id", contratoId);
+
+      if (errUpdateContrato) {
+        console.error(errUpdateContrato);
+        setSaving(false);
+        return alert("Erro ao reaproveitar contrato incompleto: " + errUpdateContrato.message);
+      }
+    } else {
+      const { data: contrato, error: errContrato } = await supabase
+        .from("contratos")
+        .insert({
+          empresa_id: prof.empresa_id,
+          cliente_id: clienteId,
+          nome: nomeNormalizado,
+          descricao: descricao.trim() || null,
+          dias_semana: diasSemana,
+          data_inicio: dataInicio || null,
+          data_fim: dataFim || null,
+          ativo,
+        })
+        .select("id")
+        .single();
+
+      if (errContrato || !contrato?.id) {
+        console.error(errContrato);
+        setSaving(false);
+        return alert("Erro ao criar contrato: " + (errContrato?.message ?? "desconhecido"));
+      }
+
+      contratoId = contrato.id as string;
+    }
+
+    // Garante consistência na regravação dos horários (evita duplicar em retries)
+    const { error: errClearHor } = await supabase
+      .from("contrato_horarios")
+      .delete()
+      .eq("contrato_id", contratoId);
+
+    if (errClearHor) {
+      console.error(errClearHor);
+      setSaving(false);
+      return alert("Contrato salvo, mas erro ao limpar horários anteriores: " + errClearHor.message);
+    }
 
     const { error: errHor } = await supabase.from("contrato_horarios").insert(
       horarios.map((h) => ({
@@ -168,7 +228,7 @@ export default function NovoContratoPage() {
     if (errHor) {
       console.error(errHor);
       setSaving(false);
-      return alert("Contrato criado, mas deu erro ao salvar horários: " + errHor.message);
+      return alert("Contrato salvo, mas deu erro ao salvar horários. Reabra e tente novamente sem criar duplicidade: " + errHor.message);
     }
 
     setSaving(false);

@@ -2,17 +2,25 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { supabase } from "@/lib/supabase/client";
 
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+function sanitizeFileName(name: string) {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function isBucketNotFoundError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return error.message.toLowerCase().includes("bucket not found");
+}
 
 type MotoristaDb = {
   id: string;
+  empresa_id: string;
 
   nome: string;
   apelido: string | null;
@@ -46,6 +54,19 @@ type MotoristaDb = {
   agencia: string | null;
   conta: string | null;
 
+  vinculo_trabalho: "freelancer" | "contratado" | null;
+  tipo_remuneracao: "fixo_extra" | "fixo_banco_horas" | "por_os_executada" | "por_diaria" | null;
+  salario_base: number | null;
+  valor_hora_extra: number | null;
+  banco_horas_saldo: number | null;
+  valor_por_os: number | null;
+  valor_diaria: number | null;
+  observacoes_remuneracao: string | null;
+
+  foto_perfil_url: string | null;
+  cnh_arquivo_url: string | null;
+  cursos_urls: string[] | null;
+
   observacoes: string | null;
 
   created_at: string;
@@ -59,7 +80,9 @@ export default function EditarMotoristaPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resettingSenha, setResettingSenha] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string>("");
+  const [uploadWarning, setUploadWarning] = useState<string>("");
 
   const [motorista, setMotorista] = useState<MotoristaDb | null>(null);
 
@@ -103,8 +126,50 @@ export default function EditarMotoristaPage() {
   const [agencia, setAgencia] = useState("");
   const [conta, setConta] = useState("");
 
+  // Vínculo e remuneração
+  const [vinculoTrabalho, setVinculoTrabalho] = useState<"freelancer" | "contratado">("contratado");
+  const [tipoRemuneracao, setTipoRemuneracao] = useState<
+    "fixo_extra" | "fixo_banco_horas" | "por_os_executada" | "por_diaria"
+  >("fixo_extra");
+  const [salarioBase, setSalarioBase] = useState("");
+  const [valorHoraExtra, setValorHoraExtra] = useState("");
+  const [bancoHorasSaldo, setBancoHorasSaldo] = useState("");
+  const [valorPorOs, setValorPorOs] = useState("");
+  const [valorDiaria, setValorDiaria] = useState("");
+  const [observacoesRemuneracao, setObservacoesRemuneracao] = useState("");
+
+  // Arquivos
+  const [fotoPerfilUrl, setFotoPerfilUrl] = useState<string | null>(null);
+  const [cnhArquivoUrl, setCnhArquivoUrl] = useState<string | null>(null);
+  const [cursosUrls, setCursosUrls] = useState<string[]>([]);
+  const [cnhFile, setCnhFile] = useState<File | null>(null);
+  const [cursosFiles, setCursosFiles] = useState<File[]>([]);
+
   // Observações
   const [observacoes, setObservacoes] = useState("");
+
+  async function carregarEmpresaId() {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const session = sessionData.session;
+
+    if (!session) {
+      setStatusMsg("❌ Você não está logado. Faça login para ver os detalhes do motorista.");
+      return null;
+    }
+
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("empresa_id")
+      .eq("user_id", session.user.id)
+      .maybeSingle();
+
+    if (error || !profile?.empresa_id) {
+      setStatusMsg("⚠️ Não foi possível identificar sua empresa.");
+      return null;
+    }
+
+    return profile.empresa_id as string;
+  }
 
   async function carregar() {
     if (!id) return;
@@ -112,12 +177,20 @@ export default function EditarMotoristaPage() {
     setLoading(true);
     setStatusMsg("Carregando motorista...");
 
+    const empresaId = await carregarEmpresaId();
+    if (!empresaId) {
+      setMotorista(null);
+      setLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("motoristas")
       .select(
-        "id, nome, apelido, cpf, rg, data_nascimento, email, telefone, whatsapp, cep, logradouro, numero, complemento, bairro, cidade, uf, cnh_numero, cnh_categoria, cnh_validade, cnh_observacoes, status, data_admissao, data_demissao, chave_pix, banco, agencia, conta, observacoes, created_at, updated_at"
+        "id, empresa_id, nome, apelido, cpf, rg, data_nascimento, email, telefone, whatsapp, cep, logradouro, numero, complemento, bairro, cidade, uf, cnh_numero, cnh_categoria, cnh_validade, cnh_observacoes, status, data_admissao, data_demissao, chave_pix, banco, agencia, conta, vinculo_trabalho, tipo_remuneracao, salario_base, valor_hora_extra, banco_horas_saldo, valor_por_os, valor_diaria, observacoes_remuneracao, foto_perfil_url, cnh_arquivo_url, cursos_urls, observacoes, created_at, updated_at"
       )
       .eq("id", id)
+      .eq("empresa_id", empresaId)
       .maybeSingle();
 
     if (error) {
@@ -168,6 +241,18 @@ export default function EditarMotoristaPage() {
     setBanco(m.banco ?? "");
     setAgencia(m.agencia ?? "");
     setConta(m.conta ?? "");
+    setVinculoTrabalho(m.vinculo_trabalho ?? "contratado");
+    setTipoRemuneracao(m.tipo_remuneracao ?? "fixo_extra");
+    setSalarioBase(m.salario_base != null ? String(m.salario_base) : "");
+    setValorHoraExtra(m.valor_hora_extra != null ? String(m.valor_hora_extra) : "");
+    setBancoHorasSaldo(m.banco_horas_saldo != null ? String(m.banco_horas_saldo) : "");
+    setValorPorOs(m.valor_por_os != null ? String(m.valor_por_os) : "");
+    setValorDiaria(m.valor_diaria != null ? String(m.valor_diaria) : "");
+    setObservacoesRemuneracao(m.observacoes_remuneracao ?? "");
+
+    setFotoPerfilUrl(m.foto_perfil_url ?? null);
+    setCnhArquivoUrl(m.cnh_arquivo_url ?? null);
+    setCursosUrls(Array.isArray(m.cursos_urls) ? m.cursos_urls : []);
 
     setObservacoes(m.observacoes ?? "");
 
@@ -185,6 +270,27 @@ export default function EditarMotoristaPage() {
     return v; // coluna date
   }
 
+  function numberOrNull(v: string) {
+    if (!v.trim()) return null;
+    const n = Number(v.replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  async function uploadArquivo(pasta: string, file: File) {
+    if (!motorista?.empresa_id || !id) throw new Error("Dados do motorista não carregados para upload");
+
+    const path = `${motorista.empresa_id}/motoristas/${id}/${pasta}/${Date.now()}-${sanitizeFileName(file.name)}`;
+
+    const { error } = await supabase.storage
+      .from("motoristas")
+      .upload(path, file, { upsert: false });
+
+    if (error) throw new Error(error.message);
+
+    const { data } = supabase.storage.from("motoristas").getPublicUrl(path);
+    return data.publicUrl;
+  }
+
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
     if (!id) return;
@@ -196,6 +302,30 @@ export default function EditarMotoristaPage() {
 
     setSaving(true);
     setStatusMsg("Salvando...");
+    setUploadWarning("");
+
+    let cnhArquivoUrlFinal = cnhArquivoUrl;
+    let cursosUrlsFinal = [...cursosUrls];
+
+    try {
+      if (cnhFile) {
+        cnhArquivoUrlFinal = await uploadArquivo("cnh", cnhFile);
+      }
+
+      if (cursosFiles.length > 0) {
+        cursosUrlsFinal = await Promise.all(cursosFiles.map((file) => uploadArquivo("cursos", file)));
+      }
+    } catch (uploadError) {
+      if (isBucketNotFoundError(uploadError)) {
+        setUploadWarning(
+          "Uploads ignorados porque o bucket 'motoristas' ainda não existe no Supabase. As alterações foram salvas sem anexos."
+        );
+      } else {
+        setSaving(false);
+        setStatusMsg(`❌ Erro no upload: ${uploadError instanceof Error ? uploadError.message : "erro desconhecido"}`);
+        return;
+      }
+    }
 
     const payload = {
       nome: nome.trim(),
@@ -229,6 +359,19 @@ export default function EditarMotoristaPage() {
       banco: banco.trim() || null,
       agencia: agencia.trim() || null,
       conta: conta.trim() || null,
+      vinculo_trabalho: vinculoTrabalho,
+      tipo_remuneracao: tipoRemuneracao,
+      salario_base: ["fixo_extra", "fixo_banco_horas"].includes(tipoRemuneracao)
+        ? numberOrNull(salarioBase)
+        : null,
+      valor_hora_extra: tipoRemuneracao === "fixo_extra" ? numberOrNull(valorHoraExtra) : null,
+      banco_horas_saldo: tipoRemuneracao === "fixo_banco_horas" ? numberOrNull(bancoHorasSaldo) : null,
+      valor_por_os: tipoRemuneracao === "por_os_executada" ? numberOrNull(valorPorOs) : null,
+      valor_diaria: tipoRemuneracao === "por_diaria" ? numberOrNull(valorDiaria) : null,
+      observacoes_remuneracao: observacoesRemuneracao.trim() || null,
+      foto_perfil_url: fotoPerfilUrl,
+      cnh_arquivo_url: cnhArquivoUrlFinal,
+      cursos_urls: cursosUrlsFinal,
 
       observacoes: observacoes.trim() || null,
     };
@@ -248,6 +391,46 @@ export default function EditarMotoristaPage() {
     // ✅ Padrão MasterFleetBR: salvar e voltar
     router.push("/motoristas");
     router.refresh();
+  }
+
+  async function resetarSenhaParaCpf() {
+    if (!motorista?.id) return;
+
+    const confirmado = window.confirm(
+      `Deseja resetar a senha de \"${motorista.nome}\" para os 6 primeiros números do CPF e exigir troca no próximo login?`
+    );
+    if (!confirmado) return;
+
+    setResettingSenha(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        alert("Sessão inválida. Faça login novamente.");
+        return;
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/reset-motorista-senha`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ motorista_id: motorista.id }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result?.ok) {
+        alert("Erro ao resetar senha: " + (result?.error ?? "erro desconhecido"));
+        return;
+      }
+
+      alert("Senha resetada com sucesso para os 6 primeiros números do CPF. No próximo login, o motorista será obrigado a alterar a senha.");
+    } catch (err) {
+      alert(`Falha de conexão ao resetar senha: ${err instanceof Error ? err.message : "erro desconhecido"}`);
+    } finally {
+      setResettingSenha(false);
+    }
   }
 
   if (loading) {
@@ -294,6 +477,12 @@ export default function EditarMotoristaPage() {
       {statusMsg ? (
         <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-700">
           {statusMsg}
+        </div>
+      ) : null}
+
+      {uploadWarning ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          {uploadWarning}
         </div>
       ) : null}
 
@@ -582,6 +771,109 @@ export default function EditarMotoristaPage() {
         {/* Financeiro */}
         <div className="border-t pt-6">
           <h2 className="text-sm font-semibold text-slate-800 mb-4">
+            Vínculo e remuneração
+          </h2>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Formato de trabalho</label>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={vinculoTrabalho}
+                onChange={(e) => setVinculoTrabalho(e.target.value as "freelancer" | "contratado")}
+              >
+                <option value="contratado">Contratado</option>
+                <option value="freelancer">Freelancer</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Tipo de salário/remuneração</label>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={tipoRemuneracao}
+                onChange={(e) =>
+                  setTipoRemuneracao(
+                    e.target.value as "fixo_extra" | "fixo_banco_horas" | "por_os_executada" | "por_diaria"
+                  )
+                }
+              >
+                <option value="fixo_extra">Fixo + extra</option>
+                <option value="fixo_banco_horas">Fixo + banco de horas</option>
+                <option value="por_os_executada">Por OS executada</option>
+                <option value="por_diaria">Por diária</option>
+              </select>
+            </div>
+
+            {(tipoRemuneracao === "fixo_extra" || tipoRemuneracao === "fixo_banco_horas") && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Salário base (R$)</label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={salarioBase}
+                  onChange={(e) => setSalarioBase(e.target.value)}
+                />
+              </div>
+            )}
+
+            {tipoRemuneracao === "fixo_extra" && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Valor hora extra (R$)</label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={valorHoraExtra}
+                  onChange={(e) => setValorHoraExtra(e.target.value)}
+                />
+              </div>
+            )}
+
+            {tipoRemuneracao === "fixo_banco_horas" && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Saldo banco de horas</label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={bancoHorasSaldo}
+                  onChange={(e) => setBancoHorasSaldo(e.target.value)}
+                />
+              </div>
+            )}
+
+            {tipoRemuneracao === "por_os_executada" && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Valor por OS (R$)</label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={valorPorOs}
+                  onChange={(e) => setValorPorOs(e.target.value)}
+                />
+              </div>
+            )}
+
+            {tipoRemuneracao === "por_diaria" && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Valor da diária (R$)</label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={valorDiaria}
+                  onChange={(e) => setValorDiaria(e.target.value)}
+                />
+              </div>
+            )}
+
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium mb-1">Observações da remuneração</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={observacoesRemuneracao}
+                onChange={(e) => setObservacoesRemuneracao(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Financeiro */}
+        <div className="border-t pt-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">
             Financeiro (opcional)
           </h2>
 
@@ -638,6 +930,55 @@ export default function EditarMotoristaPage() {
           />
         </div>
 
+        {/* Arquivos do motorista */}
+        <div className="border-t pt-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">Arquivos do motorista</h2>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium mb-1">Imagem de perfil (definida pelo app)</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2 bg-slate-50"
+                value={fotoPerfilUrl ?? ""}
+                readOnly
+                placeholder="Será enviada pelo aplicativo do motorista"
+              />
+              {fotoPerfilUrl ? (
+                <a className="text-xs text-blue-700 mt-2 inline-block" href={fotoPerfilUrl} target="_blank" rel="noreferrer">
+                  Ver imagem de perfil atual
+                </a>
+              ) : null}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Upload CNH (web)</label>
+              <input
+                type="file"
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => setCnhFile(e.target.files?.[0] ?? null)}
+              />
+              {cnhArquivoUrl ? (
+                <a className="text-xs text-blue-700 mt-2 inline-block" href={cnhArquivoUrl} target="_blank" rel="noreferrer">
+                  Ver CNH atual
+                </a>
+              ) : null}
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Upload cursos (web, múltiplos)</label>
+              <input
+                type="file"
+                multiple
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => setCursosFiles(Array.from(e.target.files ?? []))}
+              />
+              {cursosUrls.length > 0 ? (
+                <p className="text-xs text-slate-600 mt-2">{cursosUrls.length} arquivo(s) de curso já cadastrado(s).</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
         {/* Ações */}
         <div className="flex gap-3">
           <button
@@ -646,6 +987,15 @@ export default function EditarMotoristaPage() {
             className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition disabled:opacity-60"
           >
             {saving ? "Salvando..." : "Salvar alterações"}
+          </button>
+
+          <button
+            type="button"
+            onClick={resetarSenhaParaCpf}
+            disabled={resettingSenha}
+            className="border border-amber-300 text-amber-800 px-4 py-2 rounded-md hover:bg-amber-50 transition disabled:opacity-60"
+          >
+            {resettingSenha ? "Resetando senha..." : "Resetar senha (6 primeiros do CPF)"}
           </button>
 
           <Link

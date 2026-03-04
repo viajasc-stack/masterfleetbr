@@ -3,12 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { createBrowserClient } from "@supabase/ssr";
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from "@/lib/supabase/client";
 
 type Conta = {
   id: string;
@@ -33,8 +28,14 @@ export default function DetalheContaPage() {
 
   useEffect(() => {
     async function load() {
+      if (!id) return;
+
       const { data } = await supabase.from("contas_financeiras").select("*").eq("id", id).maybeSingle();
-      if (!data) { router.replace("/financeiro"); return; }
+      if (!data) {
+        router.replace("/financeiro/contas");
+        return;
+      }
+
       setConta(data as Conta);
       setLoading(false);
     }
@@ -68,8 +69,8 @@ export default function DetalheContaPage() {
   return (
     <div className="max-w-xl space-y-6">
       <div className="flex items-center gap-3">
-        <Link href="/financeiro" className="text-sm text-slate-400 hover:text-white">← Financeiro</Link>
-        <h1 className="text-xl font-semibold text-white">{conta.descricao}</h1>
+        <Link href="/financeiro/contas" className="text-sm text-slate-500 hover:text-slate-800">← Contas</Link>
+        <h1 className="text-xl font-semibold text-slate-900">{conta.descricao}</h1>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl p-6 text-sm space-y-3">
@@ -127,7 +128,7 @@ export default function DetalheContaPage() {
 
       {conta.status === "pendente" && (
         <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 text-sm">
-          <h2 className="font-semibold">Registrar {conta.tipo === "pagar" ? "pagamento" : "recebimento"}</h2>
+          <h2 className="font-semibold text-slate-900">Registrar {conta.tipo === "pagar" ? "pagamento" : "recebimento"}</h2>
           <div>
             <label className="block font-medium mb-1">Data</label>
             <input type="date" className="border border-slate-300 rounded-md px-3 py-2"
@@ -142,6 +143,9 @@ export default function DetalheContaPage() {
               className="border border-red-300 text-red-600 px-4 py-2 rounded-md hover:bg-red-50 disabled:opacity-60 transition">
               Cancelar conta
             </button>
+            <Link href="/financeiro/contas" className="border border-slate-300 text-slate-700 px-4 py-2 rounded-md hover:bg-slate-50 transition">
+              Voltar
+            </Link>
           </div>
         </div>
       )}

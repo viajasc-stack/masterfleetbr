@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
-const ROTAS_PUBLICAS = ["/", "/login", "/cadastro"];
+const ROTAS_PUBLICAS = ["/", "/login", "/cadastro", "/orcamento"];
 const ROTAS_MASTER = ["/master"];
 const ROTA_BLOQUEADO = "/bloqueado";
+const ROTA_PRIMEIRO_ACESSO = "/primeiro-acesso";
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -24,6 +25,17 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
       const { data } = await supabase.auth.getSession();
       if (!data.session) { router.replace("/login"); return; }
+
+      const isPrimeiroAcesso = pathname === ROTA_PRIMEIRO_ACESSO || pathname?.startsWith(ROTA_PRIMEIRO_ACESSO + "/");
+      const mustChangePassword = !!data.session.user.user_metadata?.must_change_password;
+      if (mustChangePassword && !isPrimeiroAcesso) {
+        router.replace(ROTA_PRIMEIRO_ACESSO);
+        return;
+      }
+      if (!mustChangePassword && isPrimeiroAcesso) {
+        router.replace("/dashboard");
+        return;
+      }
 
       const isMaster = ROTAS_MASTER.some((r) => pathname === r || pathname?.startsWith(r + "/"));
       const isBloqueado = pathname === ROTA_BLOQUEADO || pathname?.startsWith(ROTA_BLOQUEADO + "/");

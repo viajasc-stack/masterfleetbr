@@ -2,31 +2,55 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { supabase } from "@/lib/supabase/client";
 
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const TIPOS_VEICULO = ["automovel", "van", "microonibus", "onibus"] as const;
+const COMBUSTIVEIS = [
+  "alcool",
+  "gasolina_comum",
+  "gasolina_aditivada",
+  "diesel_comum",
+  "diesel_s10",
+] as const;
+
+function sanitizeFileName(name: string) {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function isBucketNotFoundError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return error.message.toLowerCase().includes("bucket not found");
+}
 
 type VeiculoDb = {
   id: string;
+  empresa_id: string;
 
   placa: string;
+  prefixo: string | null;
   renavam: string | null;
   chassi: string | null;
 
   tipo: string | null;
   marca: string | null;
   modelo: string | null;
+  imagem_url: string | null;
+  documento_veiculo_url: string | null;
+  apolice_seguro_url: string | null;
+  vistoria_url: string | null;
+  galeria_urls: string[] | null;
   ano_fabricacao: number | null;
   ano_modelo: number | null;
   cor: string | null;
 
   capacidade_passageiros: number | null;
   combustivel: string | null;
+  arla32: boolean | null;
   km_atual: number | null;
   status: "ativo" | "manutencao" | "inativo";
 
@@ -58,22 +82,37 @@ export default function EditarVeiculoPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string>("");
+  const [uploadWarning, setUploadWarning] = useState<string>("");
 
   const [veiculo, setVeiculo] = useState<VeiculoDb | null>(null);
 
   // Campos
   const [placa, setPlaca] = useState("");
+  const [prefixo, setPrefixo] = useState("");
   const [status, setStatus] = useState<"ativo" | "manutencao" | "inativo">("ativo");
 
-  const [tipo, setTipo] = useState("van");
+  const [tipo, setTipo] = useState<(typeof TIPOS_VEICULO)[number]>("van");
   const [marca, setMarca] = useState("");
   const [modelo, setModelo] = useState("");
+  const [imagemUrl, setImagemUrl] = useState<string | null>(null);
+  const [documentoVeiculoUrl, setDocumentoVeiculoUrl] = useState<string | null>(null);
+  const [apoliceSeguroUrl, setApoliceSeguroUrl] = useState<string | null>(null);
+  const [vistoriaUrl, setVistoriaUrl] = useState<string | null>(null);
+  const [galeriaUrls, setGaleriaUrls] = useState<string[]>([]);
+
+  const [imagemDestaqueFile, setImagemDestaqueFile] = useState<File | null>(null);
+  const [documentoVeiculoFile, setDocumentoVeiculoFile] = useState<File | null>(null);
+  const [apoliceSeguroFile, setApoliceSeguroFile] = useState<File | null>(null);
+  const [vistoriaFile, setVistoriaFile] = useState<File | null>(null);
+  const [galeriaFiles, setGaleriaFiles] = useState<File[]>([]);
+
   const [anoFabricacao, setAnoFabricacao] = useState("");
   const [anoModelo, setAnoModelo] = useState("");
   const [cor, setCor] = useState("");
 
   const [capacidade, setCapacidade] = useState("");
-  const [combustivel, setCombustivel] = useState("");
+  const [combustivel, setCombustivel] = useState<(typeof COMBUSTIVEIS)[number]>("diesel_s10");
+  const [usaArla32, setUsaArla32] = useState(false);
   const [kmAtual, setKmAtual] = useState("");
 
   const [renavam, setRenavam] = useState("");
@@ -95,6 +134,19 @@ export default function EditarVeiculoPage() {
     return Number.isFinite(n) ? n : null;
   }
 
+  async function uploadArquivo(empresa: string, pasta: string, file: File) {
+    const path = `${empresa}/veiculos/${Date.now()}-${Math.random().toString(36).slice(2, 8)}/${pasta}/${sanitizeFileName(file.name)}`;
+
+    const { error } = await supabase.storage
+      .from("veiculos")
+      .upload(path, file, { upsert: false });
+
+    if (error) throw new Error(error.message);
+
+    const { data } = supabase.storage.from("veiculos").getPublicUrl(path);
+    return data.publicUrl;
+  }
+
   async function carregar() {
     if (!id) return;
 
@@ -104,7 +156,7 @@ export default function EditarVeiculoPage() {
     const { data, error } = await supabase
       .from("veiculos")
       .select(
-        "id, placa, renavam, chassi, tipo, marca, modelo, ano_fabricacao, ano_modelo, cor, capacidade_passageiros, combustivel, km_atual, status, validade_documento, validade_seguro, observacoes, created_at, updated_at"
+        "id, empresa_id, placa, prefixo, renavam, chassi, tipo, marca, modelo, imagem_url, documento_veiculo_url, apolice_seguro_url, vistoria_url, galeria_urls, ano_fabricacao, ano_modelo, cor, capacidade_passageiros, combustivel, arla32, km_atual, status, validade_documento, validade_seguro, observacoes, created_at, updated_at"
       )
       .eq("id", id)
       .maybeSingle();
@@ -127,11 +179,17 @@ export default function EditarVeiculoPage() {
     setVeiculo(v);
 
     setPlaca(v.placa ?? "");
+    setPrefixo(v.prefixo ?? "");
     setStatus(v.status ?? "ativo");
 
-    setTipo(v.tipo ?? "van");
+    setTipo(TIPOS_VEICULO.includes((v.tipo ?? "") as (typeof TIPOS_VEICULO)[number]) ? (v.tipo as (typeof TIPOS_VEICULO)[number]) : "van");
     setMarca(v.marca ?? "");
     setModelo(v.modelo ?? "");
+    setImagemUrl(v.imagem_url ?? null);
+    setDocumentoVeiculoUrl(v.documento_veiculo_url ?? null);
+    setApoliceSeguroUrl(v.apolice_seguro_url ?? null);
+    setVistoriaUrl(v.vistoria_url ?? null);
+    setGaleriaUrls(Array.isArray(v.galeria_urls) ? v.galeria_urls : []);
     setAnoFabricacao(v.ano_fabricacao ? String(v.ano_fabricacao) : "");
     setAnoModelo(v.ano_modelo ? String(v.ano_modelo) : "");
     setCor(v.cor ?? "");
@@ -141,7 +199,12 @@ export default function EditarVeiculoPage() {
         ? String(v.capacidade_passageiros)
         : ""
     );
-    setCombustivel(v.combustivel ?? "");
+    setCombustivel(
+      COMBUSTIVEIS.includes((v.combustivel ?? "") as (typeof COMBUSTIVEIS)[number])
+        ? (v.combustivel as (typeof COMBUSTIVEIS)[number])
+        : "diesel_s10"
+    );
+    setUsaArla32(!!v.arla32);
     setKmAtual(typeof v.km_atual === "number" ? String(v.km_atual) : "");
 
     setRenavam(v.renavam ?? "");
@@ -163,6 +226,7 @@ export default function EditarVeiculoPage() {
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
     if (!id) return;
+    setUploadWarning("");
 
     const placaFinal = placa.trim().toUpperCase();
 
@@ -174,19 +238,68 @@ export default function EditarVeiculoPage() {
     setSaving(true);
     setStatusMsg("Salvando...");
 
+    let imagemUrlFinal = imagemUrl;
+    let documentoVeiculoUrlFinal = documentoVeiculoUrl;
+    let apoliceSeguroUrlFinal = apoliceSeguroUrl;
+    let vistoriaUrlFinal = vistoriaUrl;
+    let galeriaUrlsFinal = [...galeriaUrls];
+
+    try {
+      if (imagemDestaqueFile && veiculo?.empresa_id) {
+        imagemUrlFinal = await uploadArquivo(veiculo.empresa_id, "imagem-destaque", imagemDestaqueFile);
+      }
+
+      if (documentoVeiculoFile && veiculo?.empresa_id) {
+        documentoVeiculoUrlFinal = await uploadArquivo(veiculo.empresa_id, "documento-veiculo", documentoVeiculoFile);
+      }
+
+      if (apoliceSeguroFile && veiculo?.empresa_id) {
+        apoliceSeguroUrlFinal = await uploadArquivo(veiculo.empresa_id, "apolice-seguro", apoliceSeguroFile);
+      }
+
+      if (vistoriaFile && veiculo?.empresa_id) {
+        vistoriaUrlFinal = await uploadArquivo(veiculo.empresa_id, "vistoria", vistoriaFile);
+      }
+
+      if (galeriaFiles.length > 0 && veiculo?.empresa_id) {
+        galeriaUrlsFinal = await Promise.all(
+          galeriaFiles.map((file) => uploadArquivo(veiculo.empresa_id, "galeria", file))
+        );
+      }
+    } catch (uploadError) {
+      if (isBucketNotFoundError(uploadError)) {
+        setUploadWarning(
+          "Uploads ignorados porque o bucket 'veiculos' ainda não existe no Supabase. As alterações serão salvas sem anexos."
+        );
+      } else {
+        setSaving(false);
+        setStatusMsg(
+          `❌ Erro no upload: ${uploadError instanceof Error ? uploadError.message : "erro desconhecido"}`
+        );
+        return;
+      }
+    }
+
     const payload = {
       placa: placaFinal,
+      prefixo: prefixo.trim() || null,
       status,
 
       tipo: tipo.trim() || null,
       marca: marca.trim() || null,
       modelo: modelo.trim() || null,
+      imagem_url: imagemUrlFinal,
+      documento_veiculo_url: documentoVeiculoUrlFinal,
+      apolice_seguro_url: apoliceSeguroUrlFinal,
+      vistoria_url: vistoriaUrlFinal,
+      galeria_urls: galeriaUrlsFinal,
       ano_fabricacao: toIntOrNull(anoFabricacao),
       ano_modelo: toIntOrNull(anoModelo),
       cor: cor.trim() || null,
 
       capacidade_passageiros: toIntOrNull(capacidade) ?? 0,
-      combustivel: combustivel.trim() || null,
+      combustivel,
+      arla32: usaArla32,
       km_atual: toNumOrNull(kmAtual) ?? 0,
 
       renavam: renavam.trim() || null,
@@ -258,6 +371,12 @@ export default function EditarVeiculoPage() {
         </div>
       ) : null}
 
+      {uploadWarning ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          {uploadWarning}
+        </div>
+      ) : null}
+
       <form
         onSubmit={salvar}
         className="bg-white border border-slate-200 rounded-xl p-6 space-y-6"
@@ -270,6 +389,16 @@ export default function EditarVeiculoPage() {
 
           <div className="grid gap-4 md:grid-cols-3">
             <div>
+              <label className="block text-sm font-medium mb-1">Prefixo</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={prefixo}
+                onChange={(e) => setPrefixo(e.target.value)}
+                placeholder="Ex.: VAN-01, EXEC-7"
+              />
+            </div>
+
+            <div>
               <label className="block text-sm font-medium mb-1">Placa *</label>
               <input
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
@@ -281,12 +410,23 @@ export default function EditarVeiculoPage() {
 
             <div>
               <label className="block text-sm font-medium mb-1">Tipo</label>
-              <input
+              <select
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
                 value={tipo}
-                onChange={(e) => setTipo(e.target.value)}
-                placeholder="van, onibus, micro..."
-              />
+                onChange={(e) => setTipo(e.target.value as (typeof TIPOS_VEICULO)[number])}
+              >
+                {TIPOS_VEICULO.map((op) => (
+                  <option key={op} value={op}>
+                    {op === "automovel"
+                      ? "Automóvel"
+                      : op === "microonibus"
+                      ? "Micro-ônibus"
+                      : op === "onibus"
+                      ? "Ônibus"
+                      : "Van"}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -340,6 +480,21 @@ export default function EditarVeiculoPage() {
               />
             </div>
 
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium mb-1">Imagem de destaque</label>
+              <input
+                type="file"
+                accept="image/*"
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => setImagemDestaqueFile(e.target.files?.[0] ?? null)}
+              />
+              {imagemUrl ? (
+                <a className="text-xs text-blue-700 mt-2 inline-block" href={imagemUrl} target="_blank" rel="noreferrer">
+                  Ver imagem atual
+                </a>
+              ) : null}
+            </div>
+
             <div>
               <label className="block text-sm font-medium mb-1">
                 Ano fabricação
@@ -376,12 +531,29 @@ export default function EditarVeiculoPage() {
 
             <div>
               <label className="block text-sm font-medium mb-1">Combustível</label>
-              <input
+              <select
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
                 value={combustivel}
-                onChange={(e) => setCombustivel(e.target.value)}
-                placeholder="diesel, flex..."
-              />
+                onChange={(e) => setCombustivel(e.target.value as (typeof COMBUSTIVEIS)[number])}
+              >
+                <option value="alcool">Álcool</option>
+                <option value="gasolina_comum">Gasolina comum</option>
+                <option value="gasolina_aditivada">Gasolina aditivada</option>
+                <option value="diesel_comum">Diesel comum</option>
+                <option value="diesel_s10">Diesel S10</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Usa ARLA 32?</label>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={usaArla32 ? "sim" : "nao"}
+                onChange={(e) => setUsaArla32(e.target.value === "sim")}
+              >
+                <option value="nao">Não</option>
+                <option value="sim">Sim</option>
+              </select>
             </div>
 
             <div>
@@ -443,6 +615,62 @@ export default function EditarVeiculoPage() {
                 value={validadeSeguro}
                 onChange={(e) => setValidadeSeguro(e.target.value)}
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Documento do veículo</label>
+              <input
+                type="file"
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => setDocumentoVeiculoFile(e.target.files?.[0] ?? null)}
+              />
+              {documentoVeiculoUrl ? (
+                <a className="text-xs text-blue-700 mt-2 inline-block" href={documentoVeiculoUrl} target="_blank" rel="noreferrer">
+                  Ver documento atual
+                </a>
+              ) : null}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Apólice do seguro</label>
+              <input
+                type="file"
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => setApoliceSeguroFile(e.target.files?.[0] ?? null)}
+              />
+              {apoliceSeguroUrl ? (
+                <a className="text-xs text-blue-700 mt-2 inline-block" href={apoliceSeguroUrl} target="_blank" rel="noreferrer">
+                  Ver apólice atual
+                </a>
+              ) : null}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Vistoria</label>
+              <input
+                type="file"
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => setVistoriaFile(e.target.files?.[0] ?? null)}
+              />
+              {vistoriaUrl ? (
+                <a className="text-xs text-blue-700 mt-2 inline-block" href={vistoriaUrl} target="_blank" rel="noreferrer">
+                  Ver vistoria atual
+                </a>
+              ) : null}
+            </div>
+
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium mb-1">Galeria do veículo (múltiplas imagens)</label>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => setGaleriaFiles(Array.from(e.target.files ?? []))}
+              />
+              {galeriaUrls.length > 0 ? (
+                <p className="text-xs text-slate-600 mt-2">{galeriaUrls.length} imagem(ns) já cadastrada(s).</p>
+              ) : null}
             </div>
           </div>
         </div>

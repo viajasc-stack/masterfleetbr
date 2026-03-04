@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
 
 type Billing = {
   status: string;
@@ -58,6 +59,10 @@ export default function OrdensServicoPage() {
   const [osList, setOsList] = useState<OsRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [billing, setBilling] = useState<Billing | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<OsRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const [busca] = useState("");
   const [filtroStatus] = useState<FiltroStatus>("todas");
@@ -78,8 +83,11 @@ export default function OrdensServicoPage() {
       )
       .order("created_at", { ascending: false });
 
-    if (!error && data) setOsList(data as unknown as OsRow[]);
-    else setOsList([]);
+    if (!error && data) {
+      const lista = data as unknown as OsRow[];
+      setOsList(lista);
+      setSelectedIds((prev) => prev.filter((id) => lista.some((o) => o.id === id)));
+    } else setOsList([]);
 
     const { data: bill } = await supabase.rpc("get_billing_current");
     if (bill) {
@@ -128,6 +136,24 @@ export default function OrdensServicoPage() {
       });
   }, [osList, busca, filtroStatus]);
 
+  const allFilteredSelected =
+    filtradas.length > 0 && filtradas.every((o) => selectedIds.includes(o.id));
+
+  function toggleSelecionado(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      if (checked) return prev.includes(id) ? prev : [...prev, id];
+      return prev.filter((x) => x !== id);
+    });
+  }
+
+  function toggleSelecionarTodosFiltrados(checked: boolean) {
+    if (checked) {
+      setSelectedIds((prev) => [...new Set([...prev, ...filtradas.map((o) => o.id)])]);
+      return;
+    }
+    setSelectedIds((prev) => prev.filter((id) => !filtradas.some((o) => o.id === id)));
+  }
+
   function badgeStatus(status: string) {
     const s = (status || "").toLowerCase();
     if (s === "pendente") return "border-amber-200 text-amber-800 bg-amber-50";
@@ -162,6 +188,40 @@ export default function OrdensServicoPage() {
   function formatDt(iso: string | null) {
     if (!iso) return "—";
     return new Date(iso).toLocaleString("pt-BR");
+  }
+
+  async function excluirSelecionado() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const { error } = await supabase
+      .from("ordens_servico")
+      .delete()
+      .eq("id", deleteTarget.id);
+    setDeleting(false);
+
+    if (error) {
+      alert("Erro ao excluir OS: " + error.message);
+      return;
+    }
+
+    setDeleteTarget(null);
+    await carregarOS();
+  }
+
+  async function excluirSelecionadosEmLote() {
+    if (selectedIds.length === 0) return;
+    setDeleting(true);
+    const { error } = await supabase.from("ordens_servico").delete().in("id", selectedIds);
+    setDeleting(false);
+
+    if (error) {
+      alert("Erro ao excluir OS selecionadas: " + error.message);
+      return;
+    }
+
+    setBulkDeleteOpen(false);
+    setSelectedIds([]);
+    await carregarOS();
   }
 
   return (
@@ -209,6 +269,18 @@ export default function OrdensServicoPage() {
       )}
 
       <div className="bg-white border border-slate-200 rounded-xl p-6">
+        <div className="mb-3 flex items-center gap-3">
+          <span className="text-xs text-slate-500">Selecionadas: {selectedIds.length}</span>
+          <button
+            type="button"
+            disabled={selectedIds.length === 0}
+            onClick={() => setBulkDeleteOpen(true)}
+            className="px-3 py-1.5 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50 disabled:opacity-50"
+          >
+            Excluir selecionadas
+          </button>
+        </div>
+
         {loading ? (
           <div className="text-slate-600">Carregando...</div>
         ) : filtradas.length === 0 ? (
@@ -218,6 +290,14 @@ export default function OrdensServicoPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b">
+                  <th className="py-2 pr-3">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={(e) => toggleSelecionarTodosFiltrados(e.target.checked)}
+                      aria-label="Selecionar todas"
+                    />
+                  </th>
                   <th className="py-2 pr-4">OS</th>
                   <th className="py-2 pr-4">Cliente</th>
                   <th className="py-2 pr-4">Veículo</th>
@@ -226,6 +306,7 @@ export default function OrdensServicoPage() {
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Pagamento</th>
                   <th className="py-2 pr-0">Valor</th>
+                  <th className="py-2 pr-0 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -234,6 +315,14 @@ export default function OrdensServicoPage() {
                     key={o.id}
                     className="border-b last:border-b-0 hover:bg-slate-50 transition"
                   >
+                    <td className="py-2 pr-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(o.id)}
+                        onChange={(e) => toggleSelecionado(o.id, e.target.checked)}
+                        aria-label={`Selecionar OS ${formatNumeroOS(o.numero, o.created_at)}`}
+                      />
+                    </td>
                     <td className="py-2 pr-4 font-medium">
                       <Link
                         href={`/ordens-servico/${o.id}`}
@@ -268,6 +357,26 @@ export default function OrdensServicoPage() {
                     <td className="py-2 pr-0">
                       {formatMoney(o.valor_total)}
                     </td>
+                    <td className="py-2 pr-0 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <Link
+                          href={`/ordens-servico/${o.id}`}
+                          className="px-2 py-1 text-xs border border-blue-200 text-blue-700 rounded-md hover:bg-blue-50"
+                          title="Ver detalhes e editar OS"
+                        >
+                          Editar
+                        </Link>
+
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(o)}
+                          className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
+                          title="Excluir OS"
+                        >
+                          🗑
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -275,6 +384,23 @@ export default function OrdensServicoPage() {
           </div>
         )}
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        description={`Deseja excluir a OS "${deleteTarget ? formatNumeroOS(deleteTarget.numero, deleteTarget.created_at) : ""}"?`}
+        loading={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={excluirSelecionado}
+      />
+
+      <DeleteConfirmDialog
+        open={bulkDeleteOpen}
+        title="Excluir OS selecionadas"
+        description={`Deseja excluir ${selectedIds.length} OS selecionada(s)?`}
+        loading={deleting}
+        onCancel={() => setBulkDeleteOpen(false)}
+        onConfirm={excluirSelecionadosEmLote}
+      />
     </div>
   );
 }

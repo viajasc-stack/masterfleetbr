@@ -2,17 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { createBrowserClient } from "@supabase/ssr";
 import { PageHeader } from "@/components/ui/PageHeader";
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { supabase } from "@/lib/supabase/client";
 
 type Veiculo = {
   id: string;
   placa: string;
+  prefixo: string | null;
   tipo: string | null;
   marca: string | null;
   modelo: string | null;
@@ -28,23 +25,65 @@ type FiltroStatus = "ativo" | "manutencao" | "inativo" | "todos";
 export default function VeiculosPage() {
   const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statusMsg, setStatusMsg] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Veiculo | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>("ativo");
 
+  async function carregarEmpresaId() {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const session = sessionData.session;
+
+    if (!session) {
+      setStatusMsg("❌ Você não está logado. Faça login para ver seus veículos.");
+      return null;
+    }
+
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("empresa_id")
+      .eq("user_id", session.user.id)
+      .maybeSingle();
+
+    if (error || !profile?.empresa_id) {
+      setStatusMsg("⚠️ Não foi possível identificar sua empresa.");
+      return null;
+    }
+
+    return profile.empresa_id as string;
+  }
+
   async function carregarVeiculos() {
     setLoading(true);
+    setStatusMsg("");
+
+    const empresaId = await carregarEmpresaId();
+    if (!empresaId) {
+      setVeiculos([]);
+      setLoading(false);
+      return;
+    }
 
     const { data, error } = await supabase
       .from("veiculos")
       .select(
-        "id, placa, tipo, marca, modelo, ano_modelo, capacidade_passageiros, status, km_atual, created_at"
+        "id, placa, prefixo, tipo, marca, modelo, ano_modelo, capacidade_passageiros, status, km_atual, created_at"
       )
+      .eq("empresa_id", empresaId)
       .order("created_at", { ascending: false });
 
     setTimeout(() => {
-      if (!error && data) setVeiculos(data as Veiculo[]);
-      else setVeiculos([]);
+      if (!error && data) {
+        setVeiculos(data as Veiculo[]);
+        setSelectedIds((prev) => prev.filter((id) => (data as Veiculo[]).some((v) => v.id === id)));
+      } else {
+        setVeiculos([]);
+        setStatusMsg(error ? `❌ Erro ao carregar veículos: ${error.message}` : "");
+      }
       setLoading(false);
     }, 0);
   }
@@ -52,6 +91,7 @@ export default function VeiculosPage() {
   useEffect(() => {
     const id = setTimeout(() => { carregarVeiculos(); }, 0);
     return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const veiculosFiltrados = useMemo(() => {
@@ -67,6 +107,7 @@ export default function VeiculosPage() {
 
         const alvo = [
           v.placa,
+          v.prefixo ?? "",
           v.tipo ?? "",
           v.marca ?? "",
           v.modelo ?? "",
@@ -79,6 +120,83 @@ export default function VeiculosPage() {
         return alvo.includes(q);
       });
   }, [veiculos, busca, filtroStatus]);
+
+  const allFilteredSelected =
+    veiculosFiltrados.length > 0 && veiculosFiltrados.every((v) => selectedIds.includes(v.id));
+
+  function toggleSelecionado(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      if (checked) return prev.includes(id) ? prev : [...prev, id];
+      return prev.filter((x) => x !== id);
+    });
+  }
+
+  function toggleSelecionarTodosFiltrados(checked: boolean) {
+    if (checked) {
+      setSelectedIds((prev) => [...new Set([...prev, ...veiculosFiltrados.map((v) => v.id)])]);
+      return;
+    }
+    setSelectedIds((prev) => prev.filter((id) => !veiculosFiltrados.some((v) => v.id === id)));
+  }
+
+  async function excluirSelecionado() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const { error } = await supabase.from("veiculos").delete().eq("id", deleteTarget.id);
+    setDeleting(false);
+
+    if (error) {
+      alert("Erro ao excluir veículo: " + error.message);
+      return;
+    }
+
+    setDeleteTarget(null);
+    await carregarVeiculos();
+  }
+
+  async function excluirSelecionadosEmLote() {
+    if (selectedIds.length === 0) return;
+    setDeleting(true);
+    const { error } = await supabase.from("veiculos").delete().in("id", selectedIds);
+    setDeleting(false);
+
+    if (error) {
+      alert("Erro ao excluir veículos selecionados: " + error.message);
+      return;
+    }
+
+    setBulkDeleteOpen(false);
+    setSelectedIds([]);
+    await carregarVeiculos();
+  }
+
+  async function compartilhar(v: Veiculo) {
+    const { data, error } = await supabase
+      .from("veiculos")
+      .select("codigo_acesso")
+      .eq("id", v.id)
+      .single();
+
+    if (error) {
+      alert("Erro ao preparar compartilhamento: " + error.message);
+      return;
+    }
+
+    const codigo = (data as { codigo_acesso?: string | null })?.codigo_acesso;
+    if (!codigo) {
+      alert("Veículo sem código de compartilhamento. Aplique as migrations mais recentes.");
+      return;
+    }
+
+    const link = `${window.location.origin}/veiculo/${v.id}?codigo=${codigo}`;
+
+    try {
+      await navigator.clipboard.writeText(link);
+      alert("Link de compartilhamento copiado com sucesso.");
+    } catch {
+      prompt("Copie o link para enviar ao cliente:", link);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -103,6 +221,12 @@ export default function VeiculosPage() {
           </>
         }
       />
+
+      {statusMsg ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-700">
+          {statusMsg}
+        </div>
+      ) : null}
 
       {/* Filtros */}
       <div className="bg-white border border-slate-200 rounded-xl p-6">
@@ -136,6 +260,18 @@ export default function VeiculosPage() {
           Mostrando <span className="font-semibold">{veiculosFiltrados.length}</span>{" "}
           de <span className="font-semibold">{veiculos.length}</span> veículo(s).
         </div>
+
+        <div className="mt-3 flex items-center gap-3">
+          <span className="text-xs text-slate-500">Selecionados: {selectedIds.length}</span>
+          <button
+            type="button"
+            disabled={selectedIds.length === 0}
+            onClick={() => setBulkDeleteOpen(true)}
+            className="px-3 py-1.5 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50 disabled:opacity-50"
+          >
+            Excluir selecionados
+          </button>
+        </div>
       </div>
 
       {/* Tabela */}
@@ -151,12 +287,21 @@ export default function VeiculosPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b">
+                  <th className="py-2 pr-3">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={(e) => toggleSelecionarTodosFiltrados(e.target.checked)}
+                      aria-label="Selecionar todos"
+                    />
+                  </th>
                   <th className="py-2 pr-4">Placa</th>
                   <th className="py-2 pr-4">Veículo</th>
                   <th className="py-2 pr-4">Capacidade</th>
                   <th className="py-2 pr-4">KM</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-0">Criado em</th>
+                  <th className="py-2 pr-0 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -165,13 +310,26 @@ export default function VeiculosPage() {
                     key={v.id}
                     className="border-b last:border-b-0 hover:bg-slate-50 transition"
                   >
+                    <td className="py-2 pr-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(v.id)}
+                        onChange={(e) => toggleSelecionado(v.id, e.target.checked)}
+                        aria-label={`Selecionar veículo ${v.placa}`}
+                      />
+                    </td>
                     <td className="py-2 pr-4 font-medium">
-                      <Link
-                        href={`/veiculos/${v.id}`}
-                        className="hover:underline"
-                      >
-                        {v.placa}
-                      </Link>
+                      <div className="flex flex-col">
+                        <Link
+                          href={`/veiculos/${v.id}`}
+                          className="hover:underline"
+                        >
+                          {v.placa}
+                        </Link>
+                        {v.prefixo ? (
+                          <span className="text-xs text-slate-500">Prefixo: {v.prefixo}</span>
+                        ) : null}
+                      </div>
                     </td>
 
                     <td className="py-2 pr-4">
@@ -220,6 +378,26 @@ export default function VeiculosPage() {
                     <td className="py-2 pr-0">
                       {new Date(v.created_at).toLocaleString("pt-BR")}
                     </td>
+                    <td className="py-2 pr-0 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => compartilhar(v)}
+                          className="px-2 py-1 text-xs border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50"
+                          title="Compartilhar veículo"
+                        >
+                          🔗
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(v)}
+                          className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
+                          title="Excluir veículo"
+                        >
+                          🗑
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -227,6 +405,23 @@ export default function VeiculosPage() {
           </div>
         )}
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        description={`Deseja excluir o veículo "${deleteTarget?.placa ?? ""}"?`}
+        loading={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={excluirSelecionado}
+      />
+
+      <DeleteConfirmDialog
+        open={bulkDeleteOpen}
+        title="Excluir veículos selecionados"
+        description={`Deseja excluir ${selectedIds.length} veículo(s) selecionado(s)?`}
+        loading={deleting}
+        onCancel={() => setBulkDeleteOpen(false)}
+        onConfirm={excluirSelecionadosEmLote}
+      />
     </div>
   );
 }

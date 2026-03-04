@@ -9,7 +9,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [email, setEmail] = useState("");
+  const [identificador, setIdentificador] = useState("");
   const [senha, setSenha] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
@@ -21,8 +21,12 @@ function LoginForm() {
     setLoading(true);
     setErro("");
 
+    const entrada = identificador.trim().toLowerCase();
+    const cpfDigits = entrada.replace(/\D/g, "");
+    const emailParaLogin = entrada.includes("@") ? entrada : `${cpfDigits}@motorista.masterfleet.local`;
+
     const { data, error } = await supabase.auth.signInWithPassword({
-      email,
+      email: emailParaLogin,
       password: senha,
     });
 
@@ -72,13 +76,13 @@ function LoginForm() {
 
           <div className="mt-5 space-y-3">
             <div>
-              <label className="text-xs text-slate-400">E-mail</label>
+              <label className="text-xs text-slate-400">E-mail ou CPF</label>
               <input
                 className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                type="email"
-                placeholder="seuemail@empresa.com"
+                value={identificador}
+                onChange={(e) => setIdentificador(e.target.value)}
+                type="text"
+                placeholder="seuemail@empresa.com ou CPF"
                 required
               />
             </div>

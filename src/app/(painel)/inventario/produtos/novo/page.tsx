@@ -9,12 +9,23 @@ import { supabase } from "@/lib/supabase/client";
 
 const UNIDADES = ["un", "kg", "L", "m", "m²", "m³", "cx", "pç", "par", "rolo"];
 const CATEGORIAS = ["Combustível", "Lubrificante", "Pneus", "Peças", "Ferramentas", "Limpeza", "Escritório", "Outros"];
+const TIPOS_ITEM = [
+  { value: "peca", label: "Peça mecânica" },
+  { value: "pneu", label: "Pneu" },
+  { value: "combustivel", label: "Combustível" },
+  { value: "oleo_lubrificante", label: "Óleo / Lubrificante" },
+  { value: "acessorio", label: "Acessório" },
+  { value: "limpeza", label: "Material de limpeza" },
+  { value: "servico_terceirizado", label: "Serviço terceirizado" },
+  { value: "outro", label: "Outro" },
+];
 
 export default function NovoProdutoPage() {
   const router = useRouter();
   const [form, setForm] = useState({
     nome: "", descricao: "", unidade: "un", categoria: "",
-    preco_custo: "", estoque_minimo: "", destaque: false, ativo: true,
+    tipo_item: "peca", codigo_interno: "", codigo_fornecedor: "", controla_estoque: true,
+    preco_custo: "", estoque_minimo: "", estoque_maximo: "", destaque: false, ativo: true,
   });
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
@@ -32,8 +43,13 @@ export default function NovoProdutoPage() {
       descricao: form.descricao.trim() || null,
       unidade: form.unidade,
       categoria: form.categoria || null,
+      tipo_item: form.tipo_item,
+      codigo_interno: form.codigo_interno.trim() || null,
+      codigo_fornecedor: form.codigo_fornecedor.trim() || null,
+      controla_estoque: form.controla_estoque,
       preco_custo: form.preco_custo ? parseFloat(form.preco_custo) : null,
       estoque_minimo: form.estoque_minimo ? parseFloat(form.estoque_minimo) : null,
+      estoque_maximo: form.estoque_maximo ? parseFloat(form.estoque_maximo) : null,
       destaque: form.destaque,
       ativo: form.ativo,
     });
@@ -66,12 +82,35 @@ export default function NovoProdutoPage() {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
+            <label className="block font-medium mb-1">Tipo de Item *</label>
+            <select className="w-full border border-slate-300 rounded-md px-3 py-2" value={form.tipo_item}
+              onChange={(e) => set("tipo_item", e.target.value)}>
+              {TIPOS_ITEM.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          <div>
             <label className="block font-medium mb-1">Unidade *</label>
             <select className="w-full border border-slate-300 rounded-md px-3 py-2" value={form.unidade}
               onChange={(e) => set("unidade", e.target.value)}>
               {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block font-medium mb-1">Código Interno</label>
+            <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={form.codigo_interno}
+              onChange={(e) => set("codigo_interno", e.target.value)} placeholder="Ex.: PECA-0001" />
+          </div>
+          <div>
+            <label className="block font-medium mb-1">Código Fornecedor</label>
+            <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={form.codigo_fornecedor}
+              onChange={(e) => set("codigo_fornecedor", e.target.value)} placeholder="Código da NF/fornecedor" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block font-medium mb-1">Categoria</label>
             <select className="w-full border border-slate-300 rounded-md px-3 py-2" value={form.categoria}
@@ -82,7 +121,7 @@ export default function NovoProdutoPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="block font-medium mb-1">Preço de Custo (R$)</label>
             <input type="number" step="0.01" min="0" className="w-full border border-slate-300 rounded-md px-3 py-2"
@@ -93,9 +132,18 @@ export default function NovoProdutoPage() {
             <input type="number" step="0.01" min="0" className="w-full border border-slate-300 rounded-md px-3 py-2"
               value={form.estoque_minimo} onChange={(e) => set("estoque_minimo", e.target.value)} placeholder="0" />
           </div>
+          <div>
+            <label className="block font-medium mb-1">Estoque Máximo</label>
+            <input type="number" step="0.01" min="0" className="w-full border border-slate-300 rounded-md px-3 py-2"
+              value={form.estoque_maximo} onChange={(e) => set("estoque_maximo", e.target.value)} placeholder="Ex.: 5000" />
+          </div>
         </div>
 
         <div className="flex gap-6">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={form.controla_estoque} onChange={(e) => set("controla_estoque", e.target.checked)} />
+            <span>Controla estoque</span>
+          </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={form.destaque} onChange={(e) => set("destaque", e.target.checked)} />
             <span>Destaque no dashboard</span>

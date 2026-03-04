@@ -2,13 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { createBrowserClient } from "@supabase/ssr";
 import { PageHeader } from "@/components/ui/PageHeader";
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from "@/lib/supabase/client";
+import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
 
 type Cliente = {
   id: string;
@@ -26,12 +22,19 @@ type FiltroAtivo = "ativos" | "inativos" | "todos";
 export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState<string>("");
 
   const [busca, setBusca] = useState("");
-  const [filtroAtivo, setFiltroAtivo] = useState<FiltroAtivo>("ativos");
+  const [filtroAtivo, setFiltroAtivo] = useState<FiltroAtivo>("todos");
+  const [deleteTarget, setDeleteTarget] = useState<Cliente | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   async function carregarClientes() {
     setLoading(true);
+    setErro("");
+
     const { data, error } = await supabase
       .from("clientes")
       .select("id, nome, tipo, email, telefone, whatsapp, ativo, created_at")
@@ -39,16 +42,32 @@ export default function ClientesPage() {
     setTimeout(() => {
       if (!error && data) {
         setClientes(data as Cliente[]);
+        setSelectedIds((prev) => prev.filter((id) => (data as Cliente[]).some((c) => c.id === id)));
       } else {
         setClientes([]);
+        setErro(error?.message ?? "Falha ao carregar clientes.");
       }
       setLoading(false);
     }, 0);
   }
 
   useEffect(() => {
-    const id = setTimeout(() => { carregarClientes(); }, 0);
-    return () => clearTimeout(id);
+    let mounted = true;
+
+    const id = setTimeout(() => {
+      void carregarClientes();
+    }, 0);
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      if (session) void carregarClientes();
+    });
+
+    return () => {
+      mounted = false;
+      clearTimeout(id);
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const clientesFiltrados = useMemo(() => {
@@ -56,8 +75,9 @@ export default function ClientesPage() {
 
     return clientes
       .filter((c) => {
-        if (filtroAtivo === "ativos") return c.ativo === true;
-        if (filtroAtivo === "inativos") return c.ativo === false;
+        const ativoNormalizado = c.ativo !== false;
+        if (filtroAtivo === "ativos") return ativoNormalizado;
+        if (filtroAtivo === "inativos") return !ativoNormalizado;
         return true;
       })
       .filter((c) => {
@@ -76,6 +96,55 @@ export default function ClientesPage() {
         return alvo.includes(q);
       });
   }, [clientes, busca, filtroAtivo]);
+
+  const allFilteredSelected =
+    clientesFiltrados.length > 0 && clientesFiltrados.every((c) => selectedIds.includes(c.id));
+
+  function toggleSelecionado(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      if (checked) return prev.includes(id) ? prev : [...prev, id];
+      return prev.filter((x) => x !== id);
+    });
+  }
+
+  function toggleSelecionarTodosFiltrados(checked: boolean) {
+    if (checked) {
+      setSelectedIds((prev) => [...new Set([...prev, ...clientesFiltrados.map((c) => c.id)])]);
+      return;
+    }
+    setSelectedIds((prev) => prev.filter((id) => !clientesFiltrados.some((c) => c.id === id)));
+  }
+
+  async function excluirSelecionado() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const { error } = await supabase.from("clientes").delete().eq("id", deleteTarget.id);
+    setDeleting(false);
+
+    if (error) {
+      alert("Erro ao excluir cliente: " + error.message);
+      return;
+    }
+
+    setDeleteTarget(null);
+    await carregarClientes();
+  }
+
+  async function excluirSelecionadosEmLote() {
+    if (selectedIds.length === 0) return;
+    setDeleting(true);
+    const { error } = await supabase.from("clientes").delete().in("id", selectedIds);
+    setDeleting(false);
+
+    if (error) {
+      alert("Erro ao excluir clientes selecionados: " + error.message);
+      return;
+    }
+
+    setBulkDeleteOpen(false);
+    setSelectedIds([]);
+    await carregarClientes();
+  }
 
   return (
     <div className="space-y-6">
@@ -132,10 +201,28 @@ export default function ClientesPage() {
           Mostrando <span className="font-semibold">{clientesFiltrados.length}</span>{" "}
           de <span className="font-semibold">{clientes.length}</span> cliente(s).
         </div>
+
+        <div className="mt-3 flex items-center gap-3">
+          <span className="text-xs text-slate-500">Selecionados: {selectedIds.length}</span>
+          <button
+            type="button"
+            disabled={selectedIds.length === 0}
+            onClick={() => setBulkDeleteOpen(true)}
+            className="px-3 py-1.5 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50 disabled:opacity-50"
+          >
+            Excluir selecionados
+          </button>
+        </div>
       </div>
 
       {/* Tabela */}
       <div className="bg-white border border-slate-200 rounded-xl p-6">
+        {erro ? (
+          <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            Erro ao carregar clientes: {erro}
+          </div>
+        ) : null}
+
         {loading ? (
           <div className="text-slate-600">Carregando...</div>
         ) : clientesFiltrados.length === 0 ? (
@@ -147,11 +234,20 @@ export default function ClientesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b">
+                  <th className="py-2 pr-3">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={(e) => toggleSelecionarTodosFiltrados(e.target.checked)}
+                      aria-label="Selecionar todos"
+                    />
+                  </th>
                   <th className="py-2 pr-4">Nome</th>
                   <th className="py-2 pr-4">Tipo</th>
                   <th className="py-2 pr-4">Contato</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-0">Criado em</th>
+                  <th className="py-2 pr-0 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -160,6 +256,14 @@ export default function ClientesPage() {
                     key={c.id}
                     className="border-b last:border-b-0 hover:bg-slate-50 transition"
                   >
+                    <td className="py-2 pr-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(c.id)}
+                        onChange={(e) => toggleSelecionado(c.id, e.target.checked)}
+                        aria-label={`Selecionar cliente ${c.nome}`}
+                      />
+                    </td>
                     <td className="py-2 pr-4 font-medium">
                       <Link
                         href={`/clientes/${c.id}`}
@@ -183,17 +287,27 @@ export default function ClientesPage() {
                     <td className="py-2 pr-4">
                       <span
                         className={`inline-flex items-center px-2 py-1 rounded-md text-xs border ${
-                          c.ativo
+                          c.ativo !== false
                             ? "border-green-200 text-green-700 bg-green-50"
                             : "border-slate-200 text-slate-700 bg-slate-50"
                         }`}
                       >
-                        {c.ativo ? "Ativo" : "Inativo"}
+                        {c.ativo !== false ? "Ativo" : "Inativo"}
                       </span>
                     </td>
 
                     <td className="py-2 pr-0">
                       {new Date(c.created_at).toLocaleString("pt-BR")}
+                    </td>
+                    <td className="py-2 pr-0 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(c)}
+                        className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
+                        title="Excluir cliente"
+                      >
+                        🗑
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -202,6 +316,23 @@ export default function ClientesPage() {
           </div>
         )}
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        description={`Deseja excluir o cliente "${deleteTarget?.nome ?? ""}"?`}
+        loading={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={excluirSelecionado}
+      />
+
+      <DeleteConfirmDialog
+        open={bulkDeleteOpen}
+        title="Excluir clientes selecionados"
+        description={`Deseja excluir ${selectedIds.length} cliente(s) selecionado(s)?`}
+        loading={deleting}
+        onCancel={() => setBulkDeleteOpen(false)}
+        onConfirm={excluirSelecionadosEmLote}
+      />
     </div>
   );
 }

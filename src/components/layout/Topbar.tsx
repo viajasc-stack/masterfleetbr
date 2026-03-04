@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import NotificationsDropdown from "@/components/layout/NotificationsDropdown";
 import { supabase } from "@/lib/supabase/client";
 
@@ -10,12 +9,12 @@ type Props = {
 };
 
 export default function Topbar({ empresaNome, usuarioNome }: Props) {
-  const router = useRouter();
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    router.replace("/login?logout=1");
-    router.refresh();
+  function handleLogout() {
+    // Não bloqueia navegação esperando rede
+    void supabase.auth.signOut({ scope: "local" });
+    if (typeof window !== "undefined") {
+      window.location.replace("/login?logout=1");
+    }
   }
 
   return (

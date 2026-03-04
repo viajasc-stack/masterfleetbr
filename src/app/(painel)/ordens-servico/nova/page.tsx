@@ -13,7 +13,6 @@ type MotoristaOpt = { id: string; nome: string };
 type VeiculoRaw = { id: string; placa: string; marca: string | null; modelo: string | null; status?: string | null };
 type MotoristaRaw = { id: string; nome: string; ativo?: boolean | null };
 
-type TipoOS = "eventual" | "recorrente";
 type StatusOS =
   | "pendente"
   | "em_execucao"
@@ -21,6 +20,7 @@ type StatusOS =
   | "cancelada";
 
 type StatusPg = "pendente" | "parcial" | "pago" | "cancelado";
+type ModoCobranca = "fixo" | "km";
 
 export default function NovaOSPage() {
   const router = useRouter();
@@ -40,14 +40,14 @@ export default function NovaOSPage() {
   const [buscaMotorista, setBuscaMotorista] = useState("");
 
   // campos OS
-  const [tipo, setTipo] = useState<TipoOS>("eventual");
   const [status, setStatus] = useState<StatusOS>("pendente");
+  const [modoCobranca, setModoCobranca] = useState<ModoCobranca>("fixo");
 
   const [clienteId, setClienteId] = useState<string>("");
   const [veiculoId, setVeiculoId] = useState<string>("");
   const [motoristaId, setMotoristaId] = useState<string>("");
 
-  const [inicioEm, setInicioEm] = useState("");
+  const [dataExecucao, setDataExecucao] = useState("");
   const [fimEm, setFimEm] = useState("");
 
   const [origem, setOrigem] = useState("");
@@ -57,9 +57,12 @@ export default function NovaOSPage() {
   const [qtdPassageiros, setQtdPassageiros] = useState("0");
 
   const [valorTotal, setValorTotal] = useState("0");
+  const [valorFixo, setValorFixo] = useState("0");
+  const [valorKm, setValorKm] = useState("0");
   const [valorSinal, setValorSinal] = useState("0");
   const [formaPagamento, setFormaPagamento] = useState("");
   const [statusPagamento, setStatusPagamento] = useState<StatusPg>("pendente");
+  const [cobrarCliente, setCobrarCliente] = useState(false);
 
   const [localSaida, setLocalSaida] = useState("");
   const [localChegada, setLocalChegada] = useState("");
@@ -130,8 +133,27 @@ export default function NovaOSPage() {
     (async () => {
       await carregarEmpresaId();
       await carregarCombos();
+
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      setDataExecucao(
+        `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
+      );
     })();
   }, []);
+
+  useEffect(() => {
+    if (modoCobranca === "km") {
+      setStatusPagamento("pendente");
+      setValorTotal("0");
+      setValorSinal("0");
+      setCobrarCliente(false);
+    } else {
+      const fixo = toMoney(valorFixo, 0);
+      setValorTotal(String(fixo));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoCobranca, valorFixo]);
 
   const clientesFiltrados = useMemo(() => {
     const q = buscaCliente.trim().toLowerCase();
@@ -191,14 +213,15 @@ export default function NovaOSPage() {
     const payload = {
       empresa_id: empresaId,
 
-      tipo,
+      tipo: "eventual",
       status,
+      modo_cobranca: modoCobranca,
 
       cliente_id: clienteId || null,
       veiculo_id: veiculoId || null,
       motorista_id: motoristaId || null,
 
-      inicio_em: toIsoOrNullLocal(inicioEm),
+      inicio_em: toIsoOrNullLocal(dataExecucao),
       fim_em: toIsoOrNullLocal(fimEm),
 
       origem: origem.trim() || null,
@@ -207,10 +230,16 @@ export default function NovaOSPage() {
 
       qtd_passageiros: toInt(qtdPassageiros, 0),
 
-      valor_total: toMoney(valorTotal, 0),
-      valor_sinal: toMoney(valorSinal, 0),
+      valor_total:
+        modoCobranca === "fixo"
+          ? toMoney(valorFixo, 0)
+          : toMoney(valorTotal, 0),
+      valor_fixo: modoCobranca === "fixo" ? toMoney(valorFixo, 0) : null,
+      valor_km: modoCobranca === "km" ? toMoney(valorKm, 0) : null,
+      valor_sinal: modoCobranca === "fixo" ? toMoney(valorSinal, 0) : 0,
       forma_pagamento: formaPagamento.trim() || null,
-      status_pagamento: statusPagamento,
+      status_pagamento: modoCobranca === "fixo" ? statusPagamento : "pendente",
+      cobrar_cliente: modoCobranca === "fixo" ? cobrarCliente : false,
 
       local_saida: localSaida.trim() || null,
       local_chegada: localChegada.trim() || null,
@@ -263,17 +292,17 @@ export default function NovaOSPage() {
         <div>
           <h2 className="text-sm font-semibold text-slate-800 mb-4">Básico</h2>
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <div>
               <label className="block text-sm font-medium mb-1">Tipo</label>
-              <select
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={tipo}
-                onChange={(e) => setTipo(e.target.value as TipoOS)}
-              >
-                <option value="eventual">Eventual</option>
-                <option value="recorrente">Recorrente</option>
-              </select>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2 bg-slate-100 text-slate-700"
+                value="Eventual"
+                readOnly
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                OS criada manualmente será sempre eventual.
+              </p>
             </div>
 
             <div>
@@ -287,6 +316,32 @@ export default function NovaOSPage() {
                 <option value="em_execucao">Em execução</option>
                 <option value="concluida">Concluída</option>
                 <option value="cancelada">Cancelada</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Data/Hora de execução</label>
+              <input
+                type="datetime-local"
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={dataExecucao}
+                onChange={(e) => setDataExecucao(e.target.value)}
+                required
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                O início da OS será igual a esta data/hora.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Modo de cobrança</label>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={modoCobranca}
+                onChange={(e) => setModoCobranca(e.target.value as ModoCobranca)}
+              >
+                <option value="fixo">Valor fixo</option>
+                <option value="km">Por KM rodado</option>
               </select>
             </div>
 
@@ -384,17 +439,7 @@ export default function NovaOSPage() {
         <div className="border-t pt-6">
           <h2 className="text-sm font-semibold text-slate-800 mb-4">Datas</h2>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium mb-1">Início</label>
-              <input
-                type="datetime-local"
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={inicioEm}
-                onChange={(e) => setInicioEm(e.target.value)}
-              />
-            </div>
-
+          <div className="grid gap-4 md:grid-cols-1">
             <div>
               <label className="block text-sm font-medium mb-1">Fim</label>
               <input
@@ -470,11 +515,17 @@ export default function NovaOSPage() {
 
           <div className="grid gap-4 md:grid-cols-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Valor total</label>
+              <label className="block text-sm font-medium mb-1">
+                {modoCobranca === "fixo" ? "Valor fixo" : "Valor por KM"}
+              </label>
               <input
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={valorTotal}
-                onChange={(e) => setValorTotal(e.target.value)}
+                value={modoCobranca === "fixo" ? valorFixo : valorKm}
+                onChange={(e) =>
+                  modoCobranca === "fixo"
+                    ? setValorFixo(e.target.value)
+                    : setValorKm(e.target.value)
+                }
                 placeholder="0,00"
               />
             </div>
@@ -486,10 +537,24 @@ export default function NovaOSPage() {
                 value={valorSinal}
                 onChange={(e) => setValorSinal(e.target.value)}
                 placeholder="0,00"
+                disabled={modoCobranca === "km"}
               />
             </div>
 
-            <div className="md:col-span-2">
+            <div>
+              <label className="block text-sm font-medium mb-1">Valor total da OS</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2 bg-slate-100 text-slate-700"
+                value={
+                  modoCobranca === "fixo"
+                    ? String(toMoney(valorFixo || "0", 0))
+                    : "Calculado na conclusão (KM x valor/km)"
+                }
+                readOnly
+              />
+            </div>
+
+            <div>
               <label className="block text-sm font-medium mb-1">
                 Forma de pagamento
               </label>
@@ -509,13 +574,32 @@ export default function NovaOSPage() {
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
                 value={statusPagamento}
                 onChange={(e) => setStatusPagamento(e.target.value as StatusPg)}
+                disabled={modoCobranca === "km"}
               >
                 <option value="pendente">Pendente</option>
                 <option value="parcial">Parcial</option>
                 <option value="pago">Pago</option>
                 <option value="cancelado">Cancelado</option>
               </select>
+              {modoCobranca === "km" ? (
+                <p className="text-xs text-slate-500 mt-1">
+                  Para cobrança por KM, a conta no financeiro será criada ao concluir a OS com status pendente.
+                </p>
+              ) : null}
             </div>
+
+            {modoCobranca === "fixo" ? (
+              <div className="md:col-span-2">
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700 mt-2">
+                  <input
+                    type="checkbox"
+                    checked={cobrarCliente}
+                    onChange={(e) => setCobrarCliente(e.target.checked)}
+                  />
+                  Cobrar do cliente (sinalizar na OS do motorista)
+                </label>
+              </div>
+            ) : null}
           </div>
         </div>
 
