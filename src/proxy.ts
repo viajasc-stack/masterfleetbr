@@ -28,6 +28,10 @@ function isLocalHost(host: string): boolean {
   );
 }
 
+function isVercelHost(host: string): boolean {
+  return host.endsWith(".vercel.app") || host.endsWith(".vercel.sh");
+}
+
 function getPlatformHosts(): Set<string> {
   const configured = (process.env.NEXT_PUBLIC_APP_HOSTS ?? "")
     .split(",")
@@ -78,6 +82,10 @@ export async function proxy(request: NextRequest) {
   // Aqui resolvemos tenant por host customizado para URL personalizada.
   const host = getRequestHost(request);
   if (!host || isLocalHost(host)) return NextResponse.next();
+
+  // Acessos via domínio padrão da Vercel devem sempre ser tratados como host da plataforma.
+  // Evita redirecionamento para domínio custom indisponível (ex.: base_domain sem DNS ativo).
+  if (isVercelHost(host)) return NextResponse.next();
 
   const platformHosts = getPlatformHosts();
   const isPlatformHost = platformHosts.has(host);
