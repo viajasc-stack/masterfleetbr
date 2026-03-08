@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import Image from "next/image";
@@ -19,6 +20,8 @@ type Fatura = {
 
 export default function BloqueadoPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const motivo = searchParams.get("motivo");
   const [fatura, setFatura] = useState<Fatura | null>(null);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [assinaturaStatus, setAssinaturaStatus] = useState<string | null>(null);
@@ -184,12 +187,19 @@ export default function BloqueadoPage() {
         <div>
           <div className="text-4xl mb-3">🔒</div>
           <h1 className="text-2xl font-bold text-white">Acesso bloqueado</h1>
-          <p className="text-slate-400 mt-2 text-sm">
-            {assinaturaStatus === "past_due"
-              ? "Sua assinatura está com pagamento em atraso."
-              : "Sua assinatura está bloqueada."}
-            {" "}Regularize para retomar o acesso.
-          </p>
+          {motivo === "modulo" ? (
+            <p className="text-slate-400 mt-2 text-sm">
+              Este módulo não está disponível no seu plano atual.
+              Escolha um plano com este recurso para continuar.
+            </p>
+          ) : (
+            <p className="text-slate-400 mt-2 text-sm">
+              {assinaturaStatus === "past_due"
+                ? "Sua assinatura está com pagamento em atraso."
+                : "Sua assinatura está bloqueada."}
+              {" "}Regularize para retomar o acesso.
+            </p>
+          )}
         </div>
 
         {erro && (

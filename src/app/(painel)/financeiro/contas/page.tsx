@@ -52,7 +52,10 @@ export default function ContasPage() {
   useEffect(() => {
     const tipo = searchParams?.get("tipo");
     if (tipo === "pagar" || tipo === "receber") {
-      setFiltroTipo(tipo);
+      const id = setTimeout(() => {
+        setFiltroTipo(tipo);
+      }, 0);
+      return () => clearTimeout(id);
     }
   }, [searchParams]);
 

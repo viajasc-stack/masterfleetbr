@@ -10,6 +10,10 @@ type Contrato = {
   id: string;
   nome: string;
   descricao: string | null;
+  forma_cobranca: "km" | "dia" | "mensal";
+  valor_cobranca: number;
+  dia_fechamento: number | null;
+  dia_vencimento: number | null;
   dias_semana: number[];
   data_inicio: string | null;
   data_fim: string | null;
@@ -26,6 +30,15 @@ type ClienteMini = {
 type HorarioMini = {
   id: string;
   contrato_id: string;
+};
+
+type OSRecorrenteMini = {
+  id: string;
+  contrato_id: string | null;
+  inicio_em: string | null;
+  motorista_id: string | null;
+  veiculo_id: string | null;
+  observacoes: string | null;
 };
 
 type FiltroAtivo = "ativos" | "inativos" | "todos";
@@ -46,12 +59,41 @@ function formatDias(dias: number[] | null | undefined) {
   return sorted.map((d) => DIAS_LABEL[d] ?? String(d)).join(", ");
 }
 
+function ymdSaoPauloFromISO(iso: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
+
+function hmSaoPauloFromISO(iso: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
+}
+
+function diffDiasInclusivo(inicioYmd: string, fimYmd: string) {
+  const a = new Date(`${inicioYmd}T00:00:00`);
+  const b = new Date(`${fimYmd}T00:00:00`);
+  const ms = b.getTime() - a.getTime();
+  if (ms < 0) return 0;
+  return Math.floor(ms / 86400000) + 1;
+}
+
 export default function ContratosPage() {
   const [contratos, setContratos] = useState<Contrato[]>([]);
   const [clientesMap, setClientesMap] = useState<Record<string, string>>({});
   const [horariosCountMap, setHorariosCountMap] = useState<Record<string, number>>({});
+  const [osCoberturaMap, setOsCoberturaMap] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Contrato | null>(null);
+  const [gerarTarget, setGerarTarget] = useState<Contrato | null>(null);
+  const [gerando, setGerando] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -64,7 +106,7 @@ export default function ContratosPage() {
 
     const { data: contratosData, error: contratosErr } = await supabase
       .from("contratos")
-      .select("id, nome, descricao, dias_semana, data_inicio, data_fim, ativo, created_at, cliente_id")
+      .select("id, nome, descricao, forma_cobranca, valor_cobranca, dia_fechamento, dia_vencimento, dias_semana, data_inicio, data_fim, ativo, created_at, cliente_id")
       .order("created_at", { ascending: false });
 
     if (contratosErr || !contratosData) {
@@ -111,6 +153,30 @@ export default function ContratosPage() {
         setHorariosCountMap(count);
       } else {
         setHorariosCountMap({});
+      }
+    }, 0);
+
+    const { data: osRecData, error: osRecErr } = await supabase
+      .from("ordens_servico")
+      .select("id, contrato_id, inicio_em")
+      .eq("tipo", "recorrente")
+      .not("contrato_id", "is", null)
+      .not("inicio_em", "is", null)
+      .neq("status", "cancelada")
+      .order("inicio_em", { ascending: false });
+
+    setTimeout(() => {
+      if (!osRecErr && osRecData) {
+        const maxMap: Record<string, string | null> = {};
+        (osRecData as Array<{ contrato_id: string; inicio_em: string }>).forEach((os) => {
+          const ymd = ymdSaoPauloFromISO(os.inicio_em);
+          if (!maxMap[os.contrato_id] || ymd > String(maxMap[os.contrato_id])) {
+            maxMap[os.contrato_id] = ymd;
+          }
+        });
+        setOsCoberturaMap(maxMap);
+      } else {
+        setOsCoberturaMap({});
       }
       setLoading(false);
     }, 0);
@@ -197,6 +263,159 @@ export default function ContratosPage() {
     setSelectedIds([]);
     await carregarContratos();
   }
+
+  async function gerarOS(c: Contrato, dias: 1 | 7 | 30) {
+    setGerando(true);
+    const hoje = new Date();
+    const startYmd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(hoje);
+
+    const fimCandidato = new Date(`${startYmd}T00:00:00`);
+    fimCandidato.setDate(fimCandidato.getDate() + (dias - 1));
+    let endYmd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(fimCandidato);
+
+    if (c.data_fim && c.data_fim < endYmd) endYmd = c.data_fim;
+    if (endYmd < startYmd) {
+      setGerando(false);
+      alert("Este contrato já passou da data final. Não há OS para gerar.");
+      return;
+    }
+
+    const { data: horariosData, error: hErr } = await supabase
+      .from("contrato_horarios")
+      .select("id, hora, dias_semana, motorista_id, veiculo_id, observacao, ativo")
+      .eq("contrato_id", c.id);
+
+    if (hErr) {
+      setGerando(false);
+      alert("Erro ao carregar horários do contrato: " + hErr.message);
+      return;
+    }
+
+    const horariosAtivos = (horariosData ?? []).filter((h: { ativo?: boolean }) => h.ativo !== false) as Array<{
+      id: string;
+      hora: string;
+      dias_semana: number[] | null;
+      motorista_id: string | null;
+      veiculo_id: string | null;
+      observacao: string | null;
+    }>;
+
+    if (horariosAtivos.length === 0) {
+      setGerando(false);
+      alert("Este contrato não possui horários ativos para geração.");
+      return;
+    }
+
+    const endPlus = new Date(`${endYmd}T00:00:00`);
+    endPlus.setDate(endPlus.getDate() + 1);
+
+    const { data: osExistentes, error: osErr } = await supabase
+      .from("ordens_servico")
+      .select("id, contrato_id, inicio_em, motorista_id, veiculo_id, observacoes")
+      .eq("tipo", "recorrente")
+      .eq("contrato_id", c.id)
+      .gte("inicio_em", `${startYmd}T00:00:00-03:00`)
+      .lt("inicio_em", `${new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(endPlus)}T00:00:00-03:00`)
+      .neq("status", "cancelada");
+
+    if (osErr) {
+      setGerando(false);
+      alert("Erro ao consultar OS existentes: " + osErr.message);
+      return;
+    }
+
+    const existentesKey = new Set(
+      ((osExistentes ?? []) as OSRecorrenteMini[])
+        .filter((x) => x.inicio_em)
+        .map((x) => {
+          const dt = String(x.inicio_em);
+          const keyDate = ymdSaoPauloFromISO(dt);
+          const keyHora = hmSaoPauloFromISO(dt);
+          return `${keyDate}|${keyHora}|${x.motorista_id ?? ""}|${x.veiculo_id ?? ""}|${(x.observacoes ?? "").trim()}`;
+        })
+    );
+
+    const inserts: Array<Record<string, unknown>> = [];
+    const cursor = new Date(`${startYmd}T00:00:00`);
+    const endDateObj = new Date(`${endYmd}T00:00:00`);
+
+    while (cursor <= endDateObj) {
+      const ymd = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Sao_Paulo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(cursor);
+      const dow = new Date(`${ymd}T00:00:00`).getDay();
+
+      for (const h of horariosAtivos) {
+        const diasHorario = (h.dias_semana && h.dias_semana.length > 0) ? h.dias_semana : c.dias_semana;
+        if (!diasHorario.includes(dow)) continue;
+
+        const hhmm = String(h.hora || "").slice(0, 5);
+        if (!/^\d{2}:\d{2}$/.test(hhmm)) continue;
+
+        const obs = (h.observacao ?? "").trim();
+        const key = `${ymd}|${hhmm}|${h.motorista_id ?? ""}|${h.veiculo_id ?? ""}|${obs}`;
+        if (existentesKey.has(key)) continue;
+
+        inserts.push({
+          tipo: "recorrente",
+          status: "pendente",
+          modo_cobranca: c.forma_cobranca === "km" ? "km" : "fixo",
+          valor_fixo: c.forma_cobranca === "dia" ? Number(c.valor_cobranca || 0) : null,
+          valor_km: c.forma_cobranca === "km" ? Number(c.valor_cobranca || 0) : null,
+          valor_total: c.forma_cobranca === "dia" ? Number(c.valor_cobranca || 0) : 0,
+          contrato_id: c.id,
+          cliente_id: c.cliente_id,
+          motorista_id: h.motorista_id,
+          veiculo_id: h.veiculo_id,
+          inicio_em: `${ymd}T${hhmm}:00-03:00`,
+          observacoes: obs || null,
+          origem: null,
+          destino: null,
+        });
+      }
+
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    if (inserts.length === 0) {
+      setGerando(false);
+      setGerarTarget(null);
+      alert("Nenhuma OS nova para gerar neste período (já existem OS para as combinações previstas).");
+      return;
+    }
+
+    const { error: insErr } = await supabase.from("ordens_servico").insert(inserts);
+    setGerando(false);
+
+    if (insErr) {
+      alert("Erro ao gerar OS: " + insErr.message);
+      return;
+    }
+
+    setGerarTarget(null);
+    await carregarContratos();
+    alert(`OS geradas com sucesso: ${inserts.length}`);
+  }
+
+  const hojeYmd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 
   return (
     <div className="space-y-6">
@@ -290,16 +509,28 @@ export default function ContratosPage() {
                   <th className="py-2 pr-4">Cliente</th>
                   <th className="py-2 pr-4">Dias</th>
                   <th className="py-2 pr-4">Horários</th>
+                  <th className="py-2 pr-4">Cobertura OS</th>
                   <th className="py-2 pr-4">Status</th>
-                  <th className="py-2 pr-0">Criado em</th>
                   <th className="py-2 pr-0 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {contratosFiltrados.map((c) => (
+                  (() => {
+                    const coberturaAte = osCoberturaMap[c.id] ?? null;
+                    const diasCobertura = coberturaAte ? diffDiasInclusivo(hojeYmd, coberturaAte) : 0;
+                    const precisaRepor =
+                      c.ativo &&
+                      (c.data_fim ? c.data_fim >= hojeYmd : true) &&
+                      (c.data_fim ? c.data_fim > (coberturaAte ?? "0000-00-00") : true) &&
+                      diasCobertura <= 3;
+
+                    return (
                   <tr
                     key={c.id}
-                    className="border-b last:border-b-0 hover:bg-slate-50 transition"
+                    className={`border-b last:border-b-0 transition ${
+                      precisaRepor ? "bg-amber-50 hover:bg-amber-100" : "hover:bg-slate-50"
+                    }`}
                   >
                     <td className="py-2 pr-3">
                       <input
@@ -313,9 +544,6 @@ export default function ContratosPage() {
                       <Link href={`/contratos/${c.id}`} className="hover:underline">
                         {c.nome}
                       </Link>
-                      {c.descricao ? (
-                        <div className="text-xs text-slate-500">{c.descricao}</div>
-                      ) : null}
                     </td>
 
                     <td className="py-2 pr-4">
@@ -331,6 +559,21 @@ export default function ContratosPage() {
                     </td>
 
                     <td className="py-2 pr-4">
+                      {coberturaAte ? (
+                        <div className="text-xs">
+                          <div className="font-medium text-slate-800">
+                            até {new Date(`${coberturaAte}T12:00:00`).toLocaleDateString("pt-BR")}
+                          </div>
+                          <div className={diasCobertura <= 3 ? "text-amber-700" : "text-slate-500"}>
+                            {diasCobertura} dia(s)
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-rose-700">Sem OS futura</span>
+                      )}
+                    </td>
+
+                    <td className="py-2 pr-4">
                       <span
                         className={`inline-flex items-center px-2 py-1 rounded-md text-xs border ${
                           c.ativo
@@ -342,20 +585,29 @@ export default function ContratosPage() {
                       </span>
                     </td>
 
-                    <td className="py-2 pr-0">
-                      {new Date(c.created_at).toLocaleString("pt-BR")}
-                    </td>
                     <td className="py-2 pr-0 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget(c)}
-                        className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
-                        title="Excluir contrato"
-                      >
-                        🗑
-                      </button>
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setGerarTarget(c)}
+                          className="px-2 py-1 text-xs border border-sky-200 text-sky-700 rounded-md hover:bg-sky-50"
+                          title="Gerar OS do contrato"
+                        >
+                          📅
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(c)}
+                          className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
+                          title="Excluir contrato"
+                        >
+                          🗑
+                        </button>
+                      </div>
                     </td>
                   </tr>
+                    );
+                  })()
                 ))}
               </tbody>
             </table>
@@ -379,6 +631,67 @@ export default function ContratosPage() {
         onCancel={() => setBulkDeleteOpen(false)}
         onConfirm={excluirSelecionadosEmLote}
       />
+
+      {gerarTarget ? (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white rounded-xl border border-slate-200 shadow-lg p-5 space-y-4">
+            <h3 className="text-base font-semibold text-slate-900">Gerar OS recorrentes</h3>
+            <div className="text-sm text-slate-600 space-y-1">
+              <div><span className="font-medium text-slate-800">Contrato:</span> {gerarTarget.nome}</div>
+              <div><span className="font-medium text-slate-800">Cliente:</span> {clientesMap[gerarTarget.cliente_id] ?? "—"}</div>
+              <div><span className="font-medium text-slate-800">Dias:</span> {formatDias(gerarTarget.dias_semana)}</div>
+              <div>
+                <span className="font-medium text-slate-800">Data final:</span>{" "}
+                {gerarTarget.data_fim ? new Date(`${gerarTarget.data_fim}T12:00:00`).toLocaleDateString("pt-BR") : "Sem data final"}
+              </div>
+              <div>
+                <span className="font-medium text-slate-800">Cobertura atual:</span>{" "}
+                {osCoberturaMap[gerarTarget.id]
+                  ? `até ${new Date(`${osCoberturaMap[gerarTarget.id]}T12:00:00`).toLocaleDateString("pt-BR")}`
+                  : "Sem OS futura"}
+              </div>
+              <div className="text-xs text-amber-700 pt-1">
+                Importante: a geração sempre respeita a data final do contrato.
+              </div>
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setGerarTarget(null)}
+                className="px-3 py-2 text-sm border border-slate-300 rounded-md hover:bg-slate-50"
+                disabled={gerando}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => gerarOS(gerarTarget, 1)}
+                className="px-3 py-2 text-sm border border-slate-300 rounded-md hover:bg-slate-50"
+                disabled={gerando}
+              >
+                Hoje
+              </button>
+              <button
+                type="button"
+                onClick={() => gerarOS(gerarTarget, 7)}
+                className="px-3 py-2 text-sm border border-slate-300 rounded-md hover:bg-slate-50"
+                disabled={gerando}
+              >
+                7 dias
+              </button>
+              <button
+                type="button"
+                onClick={() => gerarOS(gerarTarget, 30)}
+                className="px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-60"
+                disabled={gerando}
+              >
+                {gerando ? "Gerando..." : "30 dias"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

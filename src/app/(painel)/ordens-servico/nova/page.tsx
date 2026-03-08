@@ -60,12 +60,17 @@ export default function NovaOSPage() {
   const [valorFixo, setValorFixo] = useState("0");
   const [valorKm, setValorKm] = useState("0");
   const [valorSinal, setValorSinal] = useState("0");
+  const [pagarExtraMotorista, setPagarExtraMotorista] = useState(false);
+  const [valorExtraMotorista, setValorExtraMotorista] = useState("0");
   const [formaPagamento, setFormaPagamento] = useState("");
   const [statusPagamento, setStatusPagamento] = useState<StatusPg>("pendente");
   const [cobrarCliente, setCobrarCliente] = useState(false);
 
   const [localSaida, setLocalSaida] = useState("");
   const [localChegada, setLocalChegada] = useState("");
+  const [rotaReferenciaLat, setRotaReferenciaLat] = useState("");
+  const [rotaReferenciaLng, setRotaReferenciaLng] = useState("");
+  const [raioDesvioM, setRaioDesvioM] = useState("1500");
   const [observacoes, setObservacoes] = useState("");
 
   async function carregarEmpresaId() {
@@ -149,10 +154,20 @@ export default function NovaOSPage() {
       setValorSinal("0");
       setCobrarCliente(false);
     } else {
-      const fixo = toMoney(valorFixo, 0);
+      const raw = (valorFixo || "").trim().replace(/\s+/g, "");
+      let normalized = raw;
+      if (raw.includes(",") && raw.includes(".")) {
+        normalized =
+          raw.lastIndexOf(",") > raw.lastIndexOf(".")
+            ? raw.replace(/\./g, "").replace(",", ".")
+            : raw.replace(/,/g, "");
+      } else if (raw.includes(",")) {
+        normalized = raw.replace(/\./g, "").replace(",", ".");
+      }
+      const parsed = Number(normalized);
+      const fixo = Number.isFinite(parsed) ? parsed : 0;
       setValorTotal(String(fixo));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoCobranca, valorFixo]);
 
   const clientesFiltrados = useMemo(() => {
@@ -182,7 +197,24 @@ export default function NovaOSPage() {
   }
 
   function toMoney(v: string, fallback = 0) {
-    const normalized = v.replace(",", ".").trim();
+    const raw = v.trim().replace(/\s+/g, "");
+    if (!raw) return fallback;
+
+    const hasComma = raw.includes(",");
+    const hasDot = raw.includes(".");
+
+    let normalized = raw;
+    if (hasComma && hasDot) {
+      // 1.234,56 -> 1234.56 | 1,234.56 -> 1234.56
+      normalized =
+        raw.lastIndexOf(",") > raw.lastIndexOf(".")
+          ? raw.replace(/\./g, "").replace(",", ".")
+          : raw.replace(/,/g, "");
+    } else if (hasComma) {
+      // 1234,56 -> 1234.56
+      normalized = raw.replace(/\./g, "").replace(",", ".");
+    }
+
     const n = Number(normalized);
     return Number.isFinite(n) ? n : fallback;
   }
@@ -193,6 +225,13 @@ export default function NovaOSPage() {
     const d = new Date(v);
     if (isNaN(d.getTime())) return null;
     return d.toISOString();
+  }
+
+  function toNullableNumber(v: string) {
+    const s = v.trim().replace(",", ".");
+    if (!s) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
   }
 
   async function salvar(e: React.FormEvent) {
@@ -237,12 +276,17 @@ export default function NovaOSPage() {
       valor_fixo: modoCobranca === "fixo" ? toMoney(valorFixo, 0) : null,
       valor_km: modoCobranca === "km" ? toMoney(valorKm, 0) : null,
       valor_sinal: modoCobranca === "fixo" ? toMoney(valorSinal, 0) : 0,
+      pagar_extra_motorista: pagarExtraMotorista,
+      valor_extra_motorista: pagarExtraMotorista ? toMoney(valorExtraMotorista, 0) : null,
       forma_pagamento: formaPagamento.trim() || null,
       status_pagamento: modoCobranca === "fixo" ? statusPagamento : "pendente",
       cobrar_cliente: modoCobranca === "fixo" ? cobrarCliente : false,
 
       local_saida: localSaida.trim() || null,
       local_chegada: localChegada.trim() || null,
+      rota_referencia_lat: toNullableNumber(rotaReferenciaLat),
+      rota_referencia_lng: toNullableNumber(rotaReferenciaLng),
+      raio_desvio_m: Math.max(50, toMoney(raioDesvioM, 1500)),
       observacoes: observacoes.trim() || null,
     };
 
@@ -504,6 +548,36 @@ export default function NovaOSPage() {
                 onChange={(e) => setLocalChegada(e.target.value)}
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Lat. referência rota</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={rotaReferenciaLat}
+                onChange={(e) => setRotaReferenciaLat(e.target.value)}
+                placeholder="-23.5505"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Lng. referência rota</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={rotaReferenciaLng}
+                onChange={(e) => setRotaReferenciaLng(e.target.value)}
+                placeholder="-46.6333"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Raio de desvio (m)</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={raioDesvioM}
+                onChange={(e) => setRaioDesvioM(e.target.value)}
+                placeholder="1500"
+              />
+            </div>
           </div>
         </div>
 
@@ -539,6 +613,36 @@ export default function NovaOSPage() {
                 placeholder="0,00"
                 disabled={modoCobranca === "km"}
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Extra motorista</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={pagarExtraMotorista}
+                  onChange={(e) => setPagarExtraMotorista(e.target.checked)}
+                  disabled={!motoristaId}
+                />
+                <span className="text-sm text-slate-700">Pagar extra nesta OS</span>
+              </div>
+              {!motoristaId ? (
+                <p className="text-xs text-slate-500 mt-1">Selecione um motorista para habilitar extra.</p>
+              ) : null}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Valor do extra</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={valorExtraMotorista}
+                onChange={(e) => setValorExtraMotorista(e.target.value)}
+                placeholder="0,00"
+                disabled={!pagarExtraMotorista || !motoristaId}
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Aceita decimal com vírgula/ponto. Ao concluir a OS, vira conta a pagar automática.
+              </p>
             </div>
 
             <div>

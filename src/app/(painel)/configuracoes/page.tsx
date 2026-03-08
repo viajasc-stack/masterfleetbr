@@ -6,6 +6,18 @@ import { supabase } from "@/lib/supabase/client";
 type Empresa = { id: string; nome: string; cnpj: string | null; telefone: string | null; email: string | null; endereco: string | null; cidade: string | null; estado: string | null };
 type Profile = { user_id: string; nome: string | null; role: string; empresa_id: string | null };
 type Assinatura = { status: string; trial_ate: string | null; proxima_cobranca: string | null; planos: { nome: string } | null };
+type CustomDomainInfo = {
+  allowed: boolean;
+  base_domain: string;
+  subdominio_personalizado: string | null;
+  dominio_personalizado: string | null;
+  dominio_status: "desativado" | "pendente" | "ativo" | "erro";
+  dominio_ssl_status: "pendente" | "ativo" | "erro";
+  dominio_erro: string | null;
+  host_ativo: string | null;
+  plano_codigo: string | null;
+  plano_nome: string | null;
+};
 
 export default function ConfiguracoesPage() {
   const [empresa, setEmpresa] = useState<Empresa | null>(null);
@@ -19,6 +31,46 @@ export default function ConfiguracoesPage() {
   const [formPerfil, setFormPerfil] = useState({ nome: "" });
   const [senhaNova, setSenhaNova] = useState("");
   const [senhaConf, setSenhaConf] = useState("");
+  const [domainInfo, setDomainInfo] = useState<CustomDomainInfo | null>(null);
+  const [domainMode, setDomainMode] = useState<"subdomain" | "domain">("subdomain");
+  const [subdomainInput, setSubdomainInput] = useState("");
+  const [domainInput, setDomainInput] = useState("");
+  const [domainSaving, setDomainSaving] = useState(false);
+  const [domainMsg, setDomainMsg] = useState("");
+
+  function mapDomainError(errorMessage: string) {
+    const msg = (errorMessage || "").toLowerCase();
+    if (msg.includes("plano_not_allowed")) return "Recurso disponível apenas para plano Supremo/Top ativo.";
+    if (msg.includes("subdomain_reserved")) return "Esse subdomínio é reservado pelo sistema.";
+    if (msg.includes("subdomain_invalid")) return "Subdomínio inválido. Use apenas letras minúsculas, números e hífen.";
+    if (msg.includes("subdomain_unavailable")) return "Subdomínio indisponível. Escolha outro.";
+    if (msg.includes("domain_invalid")) return "Domínio inválido. Informe apenas o host (ex.: empresa.com.br).";
+    if (msg.includes("domain_unavailable")) return "Domínio indisponível. Ele já está em uso.";
+    if (msg.includes("function") && msg.includes("does not exist")) return "Função ainda não disponível. Aplique a migration de URL personalizada.";
+    return errorMessage;
+  }
+
+  async function carregarDominio() {
+    const { data, error } = await supabase.rpc("get_my_custom_domain");
+    if (error) {
+      setDomainInfo(null);
+      setDomainMsg(mapDomainError(error.message));
+      return;
+    }
+
+    const info = (data ?? null) as CustomDomainInfo | null;
+    setDomainInfo(info);
+
+    if (info?.dominio_personalizado) {
+      setDomainMode("domain");
+      setDomainInput(info.dominio_personalizado);
+      setSubdomainInput("");
+    } else {
+      setDomainMode("subdomain");
+      setSubdomainInput(info?.subdominio_personalizado ?? "");
+      setDomainInput("");
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -52,6 +104,8 @@ export default function ConfiguracoesPage() {
             .maybeSingle();
           setAssinatura(assin as unknown as Assinatura);
         }
+
+        await carregarDominio();
       }
       setLoading(false);
     }
@@ -86,6 +140,63 @@ export default function ConfiguracoesPage() {
     if (error) { setMsg(`Erro: ${error.message}`); return; }
     setMsg("Senha alterada com sucesso.");
     setSenhaNova(""); setSenhaConf("");
+  }
+
+  async function salvarSubdominio(e: React.FormEvent) {
+    e.preventDefault();
+    setDomainSaving(true);
+    setDomainMsg("");
+
+    const { error } = await supabase.rpc("set_my_custom_subdomain", {
+      p_subdomain: subdomainInput.trim().toLowerCase(),
+    });
+
+    setDomainSaving(false);
+
+    if (error) {
+      setDomainMsg(`Erro: ${mapDomainError(error.message)}`);
+      return;
+    }
+
+    setDomainMsg("Subdomínio salvo. Aguarde ativação de DNS/SSL para ficar ativo.");
+    await carregarDominio();
+  }
+
+  async function salvarDominio(e: React.FormEvent) {
+    e.preventDefault();
+    setDomainSaving(true);
+    setDomainMsg("");
+
+    const { error } = await supabase.rpc("set_my_custom_domain", {
+      p_domain: domainInput.trim().toLowerCase(),
+    });
+
+    setDomainSaving(false);
+
+    if (error) {
+      setDomainMsg(`Erro: ${mapDomainError(error.message)}`);
+      return;
+    }
+
+    setDomainMsg("Domínio salvo. Configure DNS e aguarde ativação de SSL.");
+    await carregarDominio();
+  }
+
+  async function limparDominio() {
+    setDomainSaving(true);
+    setDomainMsg("");
+
+    const { error } = await supabase.rpc("clear_my_custom_domain");
+
+    setDomainSaving(false);
+
+    if (error) {
+      setDomainMsg(`Erro: ${mapDomainError(error.message)}`);
+      return;
+    }
+
+    setDomainMsg("Configuração de URL personalizada removida.");
+    await carregarDominio();
   }
 
   if (loading) return <div className="text-slate-400 text-sm">Carregando...</div>;
@@ -126,42 +237,139 @@ export default function ConfiguracoesPage() {
       </div>
 
       {tab === "empresa" && empresa && (
-        <form onSubmit={salvarEmpresa} className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 text-sm">
-          <h2 className="font-semibold">Dados da Empresa</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="block font-medium mb-1">Nome *</label>
-              <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.nome} onChange={(e) => setFormEmpresa((p) => ({ ...p, nome: e.target.value }))} required />
+        <div className="space-y-5">
+          <form onSubmit={salvarEmpresa} className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 text-sm">
+            <h2 className="font-semibold">Dados da Empresa</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="block font-medium mb-1">Nome *</label>
+                <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.nome} onChange={(e) => setFormEmpresa((p) => ({ ...p, nome: e.target.value }))} required />
+              </div>
+              <div>
+                <label className="block font-medium mb-1">CNPJ</label>
+                <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.cnpj} onChange={(e) => setFormEmpresa((p) => ({ ...p, cnpj: e.target.value }))} placeholder="00.000.000/0000-00" />
+              </div>
+              <div>
+                <label className="block font-medium mb-1">Telefone</label>
+                <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.telefone} onChange={(e) => setFormEmpresa((p) => ({ ...p, telefone: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <label className="block font-medium mb-1">E-mail</label>
+                <input type="email" className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.email} onChange={(e) => setFormEmpresa((p) => ({ ...p, email: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <label className="block font-medium mb-1">Endereço</label>
+                <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.endereco} onChange={(e) => setFormEmpresa((p) => ({ ...p, endereco: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block font-medium mb-1">Cidade</label>
+                <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.cidade} onChange={(e) => setFormEmpresa((p) => ({ ...p, cidade: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block font-medium mb-1">UF</label>
+                <input className="w-full border border-slate-300 rounded-md px-3 py-2 uppercase" maxLength={2} value={formEmpresa.estado} onChange={(e) => setFormEmpresa((p) => ({ ...p, estado: e.target.value.toUpperCase() }))} placeholder="SP" />
+              </div>
             </div>
+            <button type="submit" disabled={saving} className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-60 transition">
+              {saving ? "Salvando..." : "Salvar dados da empresa"}
+            </button>
+          </form>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 text-sm">
             <div>
-              <label className="block font-medium mb-1">CNPJ</label>
-              <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.cnpj} onChange={(e) => setFormEmpresa((p) => ({ ...p, cnpj: e.target.value }))} placeholder="00.000.000/0000-00" />
+              <h2 className="font-semibold">URL personalizada (plano Supremo/Top)</h2>
+              <p className="text-slate-500 mt-1">Configure um subdomínio da plataforma ou domínio próprio para sua empresa.</p>
             </div>
-            <div>
-              <label className="block font-medium mb-1">Telefone</label>
-              <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.telefone} onChange={(e) => setFormEmpresa((p) => ({ ...p, telefone: e.target.value }))} />
+
+            {domainMsg && (
+              <div className={`rounded-md border px-3 py-2 text-sm ${domainMsg.startsWith("Erro") ? "border-red-200 bg-red-50 text-red-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
+                {domainMsg}
+              </div>
+            )}
+
+            <div className="grid md:grid-cols-2 gap-4 text-xs">
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                <div className="text-slate-500">Plano atual</div>
+                <div className="text-slate-900 font-medium mt-1">{domainInfo?.plano_nome ?? assinatura?.planos?.nome ?? "—"}</div>
+              </div>
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                <div className="text-slate-500">Status do domínio</div>
+                <div className="text-slate-900 font-medium mt-1">
+                  {domainInfo?.dominio_status ?? "desativado"} / SSL: {domainInfo?.dominio_ssl_status ?? "pendente"}
+                </div>
+              </div>
             </div>
-            <div className="col-span-2">
-              <label className="block font-medium mb-1">E-mail</label>
-              <input type="email" className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.email} onChange={(e) => setFormEmpresa((p) => ({ ...p, email: e.target.value }))} />
-            </div>
-            <div className="col-span-2">
-              <label className="block font-medium mb-1">Endereço</label>
-              <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.endereco} onChange={(e) => setFormEmpresa((p) => ({ ...p, endereco: e.target.value }))} />
-            </div>
-            <div>
-              <label className="block font-medium mb-1">Cidade</label>
-              <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.cidade} onChange={(e) => setFormEmpresa((p) => ({ ...p, cidade: e.target.value }))} />
-            </div>
-            <div>
-              <label className="block font-medium mb-1">UF</label>
-              <input className="w-full border border-slate-300 rounded-md px-3 py-2 uppercase" maxLength={2} value={formEmpresa.estado} onChange={(e) => setFormEmpresa((p) => ({ ...p, estado: e.target.value.toUpperCase() }))} placeholder="SP" />
-            </div>
+
+            {domainInfo?.host_ativo ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-800 text-sm">
+                Host ativo: <strong>{domainInfo.host_ativo}</strong>
+              </div>
+            ) : null}
+
+            {!domainInfo?.allowed ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800 text-sm">
+                Recurso disponível apenas para plano Supremo/Top com assinatura ativa/trial.
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDomainMode("subdomain")}
+                    className={`px-3 py-1.5 rounded-md border ${domainMode === "subdomain" ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}
+                  >
+                    Subdomínio da plataforma
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDomainMode("domain")}
+                    className={`px-3 py-1.5 rounded-md border ${domainMode === "domain" ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}
+                  >
+                    Domínio próprio
+                  </button>
+                </div>
+
+                {domainMode === "subdomain" ? (
+                  <form onSubmit={salvarSubdominio} className="space-y-3">
+                    <label className="block font-medium">Subdomínio</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        className="w-full border border-slate-300 rounded-md px-3 py-2"
+                        value={subdomainInput}
+                        onChange={(e) => setSubdomainInput(e.target.value.toLowerCase())}
+                        placeholder="minhaempresa"
+                      />
+                      <span className="text-slate-500">.{domainInfo?.base_domain ?? "masterfleetbr.com.br"}</span>
+                    </div>
+                    <button type="submit" disabled={domainSaving} className="bg-slate-800 text-white px-4 py-2 rounded-md hover:bg-slate-700 disabled:opacity-60">
+                      {domainSaving ? "Salvando..." : "Salvar subdomínio"}
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={salvarDominio} className="space-y-3">
+                    <label className="block font-medium">Domínio próprio</label>
+                    <input
+                      className="w-full border border-slate-300 rounded-md px-3 py-2"
+                      value={domainInput}
+                      onChange={(e) => setDomainInput(e.target.value.toLowerCase())}
+                      placeholder="app.suaempresa.com.br"
+                    />
+                    <button type="submit" disabled={domainSaving} className="bg-slate-800 text-white px-4 py-2 rounded-md hover:bg-slate-700 disabled:opacity-60">
+                      {domainSaving ? "Salvando..." : "Salvar domínio"}
+                    </button>
+                  </form>
+                )}
+
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={limparDominio} disabled={domainSaving} className="text-red-700 border border-red-200 px-3 py-1.5 rounded-md hover:bg-red-50 disabled:opacity-60">
+                    Remover URL personalizada
+                  </button>
+                  {domainInfo?.dominio_erro ? <span className="text-red-600 text-xs">Último erro: {domainInfo.dominio_erro}</span> : null}
+                </div>
+              </>
+            )}
           </div>
-          <button type="submit" disabled={saving} className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-60 transition">
-            {saving ? "Salvando..." : "Salvar dados da empresa"}
-          </button>
-        </form>
+        </div>
       )}
 
       {tab === "conta" && (

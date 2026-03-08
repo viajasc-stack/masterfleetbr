@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase/client";
 
 type Cliente = { id: string; nome: string };
 type Motorista = { id: string; nome: string };
+type Veiculo = { id: string; placa: string | null; modelo: string | null };
 
 const DIAS = [
   { v: 0, label: "Dom" },
@@ -21,9 +22,11 @@ const DIAS = [
 type HorarioDraft = {
   tempId: string;
   hora: string;
+  dias_semana: number[];
   observacao: string;
   ordem: number;
   ativo: boolean;
+  veiculo_id: string | null;
   motorista_id: string | null;
 };
 
@@ -31,11 +34,39 @@ function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+function formatHoraInput(raw: string) {
+  const digits = raw.replace(/\D/g, "").slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
+function parseMoney(v: string, fallback = 0) {
+  const raw = v.trim().replace(/\s+/g, "");
+  if (!raw) return fallback;
+
+  const hasComma = raw.includes(",");
+  const hasDot = raw.includes(".");
+
+  let normalized = raw;
+  if (hasComma && hasDot) {
+    normalized =
+      raw.lastIndexOf(",") > raw.lastIndexOf(".")
+        ? raw.replace(/\./g, "").replace(",", ".")
+        : raw.replace(/,/g, "");
+  } else if (hasComma) {
+    normalized = raw.replace(/\./g, "").replace(",", ".");
+  }
+
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export default function NovoContratoPage() {
   const router = useRouter();
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [motoristas, setMotoristas] = useState<Motorista[]>([]);
+  const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -43,13 +74,17 @@ export default function NovoContratoPage() {
   const [nome, setNome] = useState("");
   const [descricao, setDescricao] = useState("");
   const [ativo, setAtivo] = useState(true);
+  const [formaCobranca, setFormaCobranca] = useState<"km" | "dia" | "mensal">("dia");
+  const [valorCobranca, setValorCobranca] = useState("0");
+  const [diaFechamento, setDiaFechamento] = useState("25");
+  const [diaVencimento, setDiaVencimento] = useState("5");
 
   const [diasSemana, setDiasSemana] = useState<number[]>([1, 2, 3, 4, 5]);
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
 
   const [horarios, setHorarios] = useState<HorarioDraft[]>([
-    { tempId: uid(), hora: "07:00", observacao: "", ordem: 1, ativo: true, motorista_id: null },
+    { tempId: uid(), hora: "07:00", dias_semana: [1, 2, 3, 4, 5], observacao: "", ordem: 1, ativo: true, veiculo_id: null, motorista_id: null },
   ]);
 
   async function carregarDados() {
@@ -70,9 +105,18 @@ export default function NovoContratoPage() {
       .select("id, nome")
       .order("nome", { ascending: true });
 
+    const { data: veiculosData, error: veiculosErr } = await supabase
+      .from("veiculos")
+      .select("id, placa, modelo")
+      .order("placa", { ascending: true });
+
     setTimeout(() => {
       if (!motoristasErr && motoristasData) setMotoristas(motoristasData as Motorista[]);
       else setMotoristas([]);
+
+      if (!veiculosErr && veiculosData) setVeiculos(veiculosData as Veiculo[]);
+      else setVeiculos([]);
+
       setLoading(false);
     }, 0);
 
@@ -94,8 +138,23 @@ export default function NovoContratoPage() {
   function adicionarHorario() {
     setHorarios((prev) => [
       ...prev,
-      { tempId: uid(), hora: "00:00", observacao: "", ordem: prev.length + 1, ativo: true, motorista_id: null },
+      { tempId: uid(), hora: "00:00", dias_semana: [...diasSemana], observacao: "", ordem: prev.length + 1, ativo: true, veiculo_id: null, motorista_id: null },
     ]);
+  }
+
+  function toggleDiaHorario(tempId: string, dia: number) {
+    setHorarios((prev) =>
+      prev.map((h) => {
+        if (h.tempId !== tempId) return h;
+        const has = h.dias_semana.includes(dia);
+        return {
+          ...h,
+          dias_semana: has
+            ? h.dias_semana.filter((d) => d !== dia)
+            : [...h.dias_semana, dia].sort((a, b) => a - b),
+        };
+      })
+    );
   }
 
   function removerHorario(tempId: string) {
@@ -107,10 +166,24 @@ export default function NovoContratoPage() {
     if (!nome.trim()) return alert("Informe o nome do contrato.");
     if (diasSemana.length === 0) return alert("Selecione pelo menos 1 dia da semana.");
     if (horarios.length === 0) return alert("Adicione pelo menos 1 horário.");
+    const valorCobr = parseMoney(valorCobranca, NaN);
+    if (!Number.isFinite(valorCobr) || valorCobr < 0) return alert("Informe um valor de cobrança válido.");
+
+    const dFech = Number(diaFechamento || 0);
+    const dVenc = Number(diaVencimento || 0);
+    if (formaCobranca === "mensal") {
+      if (!Number.isInteger(dFech) || dFech < 1 || dFech > 31) return alert("Dia de fechamento inválido (1 a 31).");
+      if (!Number.isInteger(dVenc) || dVenc < 1 || dVenc > 31) return alert("Dia de vencimento inválido (1 a 31).");
+    }
 
     for (const h of horarios) {
       if (!/^\d{2}:\d{2}$/.test(h.hora)) return alert(`Horário inválido: "${h.hora}". Use HH:MM.`);
+      if ((h.dias_semana?.length ?? 0) === 0) return alert("Cada horário precisa ter ao menos 1 dia da semana.");
     }
+
+    const diasContrato = Array.from(
+      new Set(horarios.flatMap((h) => (h.dias_semana?.length ? h.dias_semana : diasSemana)))
+    ).sort((a, b) => a - b);
 
     setSaving(true);
 
@@ -165,7 +238,11 @@ export default function NovoContratoPage() {
         .from("contratos")
         .update({
           descricao: descricao.trim() || null,
-          dias_semana: diasSemana,
+          forma_cobranca: formaCobranca,
+          valor_cobranca: valorCobr,
+          dia_fechamento: Number.isInteger(dFech) && dFech >= 1 && dFech <= 31 ? dFech : null,
+          dia_vencimento: Number.isInteger(dVenc) && dVenc >= 1 && dVenc <= 31 ? dVenc : null,
+          dias_semana: diasContrato,
           data_inicio: dataInicio || null,
           data_fim: dataFim || null,
           ativo,
@@ -185,7 +262,11 @@ export default function NovoContratoPage() {
           cliente_id: clienteId,
           nome: nomeNormalizado,
           descricao: descricao.trim() || null,
-          dias_semana: diasSemana,
+          forma_cobranca: formaCobranca,
+          valor_cobranca: valorCobr,
+          dia_fechamento: Number.isInteger(dFech) && dFech >= 1 && dFech <= 31 ? dFech : null,
+          dia_vencimento: Number.isInteger(dVenc) && dVenc >= 1 && dVenc <= 31 ? dVenc : null,
+          dias_semana: diasContrato,
           data_inicio: dataInicio || null,
           data_fim: dataFim || null,
           ativo,
@@ -221,7 +302,9 @@ export default function NovoContratoPage() {
         observacao: h.observacao.trim() || null,
         ordem: h.ordem ?? 1,
         ativo: h.ativo,
+        veiculo_id: h.veiculo_id || null,
         motorista_id: h.motorista_id || null, // ✅ motorista padrão por horário
+        dias_semana: h.dias_semana,
       }))
     );
 
@@ -355,6 +438,55 @@ export default function NovoContratoPage() {
                 onChange={(e) => setDataFim(e.target.value)}
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Forma de cobrança</label>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={formaCobranca}
+                onChange={(e) => setFormaCobranca(e.target.value as "km" | "dia" | "mensal")}
+              >
+                <option value="km">Por KM</option>
+                <option value="dia">Por dia</option>
+                <option value="mensal">Mensal</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                {formaCobranca === "km" ? "Valor por KM" : formaCobranca === "dia" ? "Valor por dia" : "Valor mensal"}
+              </label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={valorCobranca}
+                onChange={(e) => setValorCobranca(e.target.value)}
+                placeholder="0,00"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Dia padrão fechamento</label>
+              <input
+                type="number"
+                min={1}
+                max={31}
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={diaFechamento}
+                onChange={(e) => setDiaFechamento(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Dia padrão vencimento</label>
+              <input
+                type="number"
+                min={1}
+                max={31}
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={diaVencimento}
+                onChange={(e) => setDiaVencimento(e.target.value)}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -384,6 +516,8 @@ export default function NovoContratoPage() {
             <thead>
               <tr className="text-left border-b">
                 <th className="py-2 pr-4">Hora</th>
+                <th className="py-2 pr-4">Dias</th>
+                <th className="py-2 pr-4">Veículo padrão</th>
                 <th className="py-2 pr-4">Motorista padrão</th>
                 <th className="py-2 pr-4">Observação / roteiro</th>
                 <th className="py-2 pr-4">Ordem</th>
@@ -397,13 +531,55 @@ export default function NovoContratoPage() {
                   <td className="py-2 pr-4">
                     <input
                       className="w-[110px] border border-slate-300 rounded-md px-3 py-2"
+                      inputMode="numeric"
+                      maxLength={5}
                       value={h.hora}
                       onChange={(e) => {
-                        const v = e.target.value;
+                        const v = formatHoraInput(e.target.value);
                         setHorarios((prev) => prev.map((x) => (x.tempId === h.tempId ? { ...x, hora: v } : x)));
                       }}
                       placeholder="07:00"
                     />
+                  </td>
+
+                  <td className="py-2 pr-4 min-w-[220px]">
+                    <div className="flex flex-wrap gap-1.5">
+                      {DIAS.map((d) => {
+                        const active = h.dias_semana.includes(d.v);
+                        return (
+                          <button
+                            key={`${h.tempId}-${d.v}`}
+                            type="button"
+                            onClick={() => toggleDiaHorario(h.tempId, d.v)}
+                            className={`px-2 py-1 rounded border text-xs transition ${
+                              active
+                                ? "bg-slate-900 text-white border-slate-900"
+                                : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                            }`}
+                          >
+                            {d.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </td>
+
+                  <td className="py-2 pr-4">
+                    <select
+                      className="w-[220px] border border-slate-300 rounded-md px-3 py-2"
+                      value={h.veiculo_id ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value || null;
+                        setHorarios((prev) => prev.map((x) => (x.tempId === h.tempId ? { ...x, veiculo_id: v } : x)));
+                      }}
+                    >
+                      <option value="">— Sem veículo —</option>
+                      {veiculos.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {[v.placa, v.modelo].filter(Boolean).join(" • ") || v.id.slice(0, 8)}
+                        </option>
+                      ))}
+                    </select>
                   </td>
 
                   <td className="py-2 pr-4">

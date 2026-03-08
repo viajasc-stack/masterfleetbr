@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { getRequiredModuleForPath, loadEmpresaModuleAccess } from "@/lib/moduleAccess";
 
 const ROTAS_PUBLICAS = ["/", "/login", "/cadastro", "/orcamento"];
 const ROTAS_MASTER = ["/master"];
@@ -42,18 +43,13 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
       if (!isMaster && !isBloqueado) {
         let block = false;
+        const moduleAccess = await loadEmpresaModuleAccess();
         const { data: billing } = await supabase.rpc("get_billing_current");
         if (billing && (billing.status === "bloqueada" || billing.status === "past_due")) {
           block = true;
         } else {
-          const { data: profile } = await supabase.from("profiles")
-            .select("empresa_id").eq("user_id", data.session.user.id).maybeSingle();
-
-          if (profile?.empresa_id) {
-            const { data: assin } = await supabase.from("assinaturas")
-              .select("status").eq("empresa_id", profile.empresa_id).maybeSingle();
-
-            const status = assin?.status ?? "trial";
+          if (moduleAccess.empresaId) {
+            const status = moduleAccess.assinaturaStatus ?? "trial";
             if (status === "bloqueada" || status === "past_due") {
               block = true;
             }
@@ -61,6 +57,16 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         }
         if (block) {
           router.replace(ROTA_BLOQUEADO);
+          return;
+        }
+
+        const requiredModule = getRequiredModuleForPath(pathname);
+        if (
+          requiredModule &&
+          !moduleAccess.canUseAllModules &&
+          !moduleAccess.allowedModules.includes(requiredModule)
+        ) {
+          router.replace(`${ROTA_BLOQUEADO}?motivo=modulo`);
           return;
         }
       }

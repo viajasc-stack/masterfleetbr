@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
@@ -56,6 +57,15 @@ function formatNumeroOS(numero: number | null, createdAt: string) {
 }
 
 export default function OrdensServicoPage() {
+  const searchParams = useSearchParams();
+  const statusParam = String(searchParams?.get("status") || "").toLowerCase();
+  const filtroInicial: FiltroStatus =
+    statusParam === "pendente" ||
+    statusParam === "em_execucao" ||
+    statusParam === "concluida" ||
+    statusParam === "cancelada"
+      ? (statusParam as FiltroStatus)
+      : "todas";
   const [osList, setOsList] = useState<OsRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [billing, setBilling] = useState<Billing | null>(null);
@@ -64,8 +74,8 @@ export default function OrdensServicoPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
-  const [busca] = useState("");
-  const [filtroStatus] = useState<FiltroStatus>("todas");
+  const [busca, setBusca] = useState(() => searchParams?.get("q") || "");
+  const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>(filtroInicial);
 
   async function carregarOS() {
     setLoading(true);
@@ -269,8 +279,35 @@ export default function OrdensServicoPage() {
       )}
 
       <div className="bg-white border border-slate-200 rounded-xl p-6">
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium mb-1">Buscar</label>
+            <input
+              className="w-full border border-slate-300 rounded-md px-3 py-2"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Nº OS, cliente, veículo, motorista, origem..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Status</label>
+            <select
+              className="w-full border border-slate-300 rounded-md px-3 py-2"
+              value={filtroStatus}
+              onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)}
+            >
+              <option value="todas">Todas</option>
+              <option value="pendente">Pendentes</option>
+              <option value="em_execucao">Em execução</option>
+              <option value="concluida">Concluídas</option>
+              <option value="cancelada">Canceladas</option>
+            </select>
+          </div>
+        </div>
+
         <div className="mb-3 flex items-center gap-3">
           <span className="text-xs text-slate-500">Selecionadas: {selectedIds.length}</span>
+          <span className="text-xs text-slate-500">Listadas: {filtradas.length}</span>
           <button
             type="button"
             disabled={selectedIds.length === 0}

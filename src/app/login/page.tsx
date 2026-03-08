@@ -38,7 +38,8 @@ function LoginForm() {
     }
 
     if (data.session?.user) {
-      router.replace("/dashboard");
+      const { data: isSuperAdmin } = await supabase.rpc("is_super_admin");
+      router.replace(isSuperAdmin ? "/master" : "/dashboard");
       router.refresh();
     }
   }

@@ -69,8 +69,8 @@ export default function MasterPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Visão Geral</h1>
-        <p className="text-slate-400 mt-0.5 text-sm">Métricas do SaaS MasterFleetBR</p>
+        <h1 className="text-2xl font-semibold text-slate-900">Visão Geral</h1>
+        <p className="text-slate-600 mt-0.5 text-sm">Métricas do SaaS MasterFleetBR</p>
       </div>
 
       {loading ? (
@@ -85,37 +85,37 @@ export default function MasterPage() {
               { label: "Past Due", value: stats.past_due, cor: "border-amber-500/30 bg-amber-500/10" },
               { label: "Bloqueadas", value: stats.bloqueadas, cor: "border-red-500/30 bg-red-500/10" },
             ].map((c) => (
-              <div key={c.label} className={`rounded-xl border ${c.cor} p-5`}>
-                <div className="text-3xl font-bold text-white">{c.value}</div>
-                <div className="text-sm text-slate-400 mt-1">{c.label}</div>
+              <div key={c.label} className={`rounded-xl border ${c.cor.replace("border-slate-700 bg-slate-800/50", "border-slate-200 bg-white")} p-5`}>
+                <div className="text-3xl font-bold text-slate-900">{c.value}</div>
+                <div className="text-sm text-slate-600 mt-1">{c.label}</div>
               </div>
             ))}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5">
-              <div className="text-sm text-slate-400">MRR</div>
-              <div className="text-3xl font-bold text-white">{(stats.mrr_centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+              <div className="text-sm text-emerald-700">MRR</div>
+              <div className="text-3xl font-bold text-emerald-900">{(stats.mrr_centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</div>
             </div>
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-5">
-              <div className="text-sm text-slate-400">Inadimplência</div>
-              <div className="text-3xl font-bold text-white">{stats.inadimplencia_pct}%</div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+              <div className="text-sm text-amber-700">Inadimplência</div>
+              <div className="text-3xl font-bold text-amber-900">{stats.inadimplencia_pct}%</div>
             </div>
-            <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-5">
-              <div className="text-sm text-slate-400">Conversão</div>
-              <div className="text-3xl font-bold text-white">{stats.conversao_pct}%</div>
+            <div className="rounded-xl border border-sky-200 bg-sky-50 p-5">
+              <div className="text-sm text-sky-700">Conversão</div>
+              <div className="text-3xl font-bold text-sky-900">{stats.conversao_pct}%</div>
             </div>
           </div>
 
           <div className="flex gap-4">
             <Link href="/master/empresas"
-              className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 hover:bg-slate-800/60 transition">
-              <div className="text-sm font-semibold text-white">Gerenciar Empresas</div>
+              className="rounded-xl border border-slate-200 bg-white p-5 hover:bg-slate-50 transition">
+              <div className="text-sm font-semibold text-slate-900">Gerenciar Empresas</div>
               <div className="text-xs text-slate-500 mt-0.5">Ações, status, planos</div>
             </Link>
             <Link href="/master/planos"
-              className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 hover:bg-slate-800/60 transition">
-              <div className="text-sm font-semibold text-white">Planos</div>
+              className="rounded-xl border border-slate-200 bg-white p-5 hover:bg-slate-50 transition">
+              <div className="text-sm font-semibold text-slate-900">Planos</div>
               <div className="text-xs text-slate-500 mt-0.5">CRUD de planos</div>
             </Link>
           </div>

@@ -47,6 +47,9 @@ type OsDb = {
 
   local_saida: string | null;
   local_chegada: string | null;
+  rota_referencia_lat: number | null;
+  rota_referencia_lng: number | null;
+  raio_desvio_m: number | null;
 
   aprovado_em: string | null;
   aprovado_por: string | null;
@@ -120,6 +123,9 @@ export default function EditarOSPage() {
 
   const [localSaida, setLocalSaida] = useState("");
   const [localChegada, setLocalChegada] = useState("");
+  const [rotaReferenciaLat, setRotaReferenciaLat] = useState("");
+  const [rotaReferenciaLng, setRotaReferenciaLng] = useState("");
+  const [raioDesvioM, setRaioDesvioM] = useState("1500");
   const [observacoes, setObservacoes] = useState("");
 
   async function carregarCombos() {
@@ -150,7 +156,7 @@ export default function EditarOSPage() {
     const { data, error } = await supabase
       .from("ordens_servico")
       .select(
-        "id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, aprovado_em, aprovado_por, created_at, updated_at"
+        "id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, created_at, updated_at"
       )
       .eq("id", id)
       .limit(1);
@@ -199,6 +205,15 @@ export default function EditarOSPage() {
 
     setLocalSaida(o.local_saida ?? "");
     setLocalChegada(o.local_chegada ?? "");
+    setRotaReferenciaLat(
+      typeof o.rota_referencia_lat === "number" ? String(o.rota_referencia_lat) : ""
+    );
+    setRotaReferenciaLng(
+      typeof o.rota_referencia_lng === "number" ? String(o.rota_referencia_lng) : ""
+    );
+    setRaioDesvioM(
+      typeof o.raio_desvio_m === "number" ? String(o.raio_desvio_m) : "1500"
+    );
     setObservacoes(o.observacoes ?? "");
 
     setStatusMsg("");
@@ -240,9 +255,31 @@ export default function EditarOSPage() {
   }
 
   function toMoney(v: string, fallback = 0) {
-    const normalized = v.replace(",", ".").trim();
+    const raw = v.trim().replace(/\s+/g, "");
+    if (!raw) return fallback;
+
+    const hasComma = raw.includes(",");
+    const hasDot = raw.includes(".");
+
+    let normalized = raw;
+    if (hasComma && hasDot) {
+      normalized =
+        raw.lastIndexOf(",") > raw.lastIndexOf(".")
+          ? raw.replace(/\./g, "").replace(",", ".")
+          : raw.replace(/,/g, "");
+    } else if (hasComma) {
+      normalized = raw.replace(/\./g, "").replace(",", ".");
+    }
+
     const n = Number(normalized);
     return Number.isFinite(n) ? n : fallback;
+  }
+
+  function toNullableNumber(v: string) {
+    const s = v.trim().replace(",", ".");
+    if (!s) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
   }
 
   async function salvar(e: React.FormEvent) {
@@ -281,6 +318,9 @@ export default function EditarOSPage() {
 
       local_saida: localSaida.trim() || null,
       local_chegada: localChegada.trim() || null,
+      rota_referencia_lat: toNullableNumber(rotaReferenciaLat),
+      rota_referencia_lng: toNullableNumber(rotaReferenciaLng),
+      raio_desvio_m: Math.max(50, toMoney(raioDesvioM, 1500)),
       observacoes: observacoes.trim() || null,
     };
 
@@ -549,6 +589,36 @@ export default function EditarOSPage() {
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
                 value={localChegada}
                 onChange={(e) => setLocalChegada(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Lat. referência rota</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={rotaReferenciaLat}
+                onChange={(e) => setRotaReferenciaLat(e.target.value)}
+                placeholder="-23.5505"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Lng. referência rota</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={rotaReferenciaLng}
+                onChange={(e) => setRotaReferenciaLng(e.target.value)}
+                placeholder="-46.6333"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Raio de desvio (m)</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={raioDesvioM}
+                onChange={(e) => setRaioDesvioM(e.target.value)}
+                placeholder="1500"
               />
             </div>
           </div>

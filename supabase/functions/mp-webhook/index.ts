@@ -15,13 +15,115 @@ serve(async (req) => {
   );
 
   try {
+    const url = new URL(req.url);
+    const provider = url.searchParams.get("provider") ?? "mercado_pago";
+    const empresaId = url.searchParams.get("empresa_id");
+
     const rawBody = await req.text();
     let body: Record<string, unknown> = {};
     try { body = rawBody ? (JSON.parse(rawBody) as Record<string, unknown>) : {}; } catch { body = {}; }
     const topic = body.type ?? body.topic;
 
+    if (provider === "asaas") {
+      const { data: asaasGateway } = await supabase
+        .from("gateway_configs")
+        .select("webhook_secret")
+        .eq("provider", "asaas")
+        .maybeSingle();
+
+      const asaasSecret = asaasGateway?.webhook_secret ?? Deno.env.get("ASAAS_WEBHOOK_SECRET") ?? null;
+      const asaasHeaderSecret = req.headers.get("asaas-access-token") || req.headers.get("x-asaas-signature");
+      if (asaasSecret && asaasHeaderSecret && asaasHeaderSecret !== asaasSecret) {
+        return new Response(JSON.stringify({ error: "asaas signature mismatch" }), { status: 401, headers: CORS });
+      }
+
+      await supabase.from("webhook_logs").insert({
+        source: "asaas",
+        provider: "asaas",
+        empresa_id: empresaId,
+        payload: body,
+      });
+
+      const event = String(body.event ?? "");
+      const payment = (body.payment as Record<string, unknown> | undefined) ?? {};
+      const paymentId = String(payment.id ?? "");
+      const externalReference = String(payment.externalReference ?? "");
+
+      if (!externalReference) {
+        return new Response(JSON.stringify({ ok: true, msg: "sem externalReference" }), { headers: CORS });
+      }
+
+      const { data: fatura } = await supabase
+        .from("faturas")
+        .select("id, empresa_id, assinatura_id")
+        .eq("id", externalReference)
+        .maybeSingle();
+
+      if (!fatura) {
+        return new Response(JSON.stringify({ ok: true, msg: "fatura não encontrada" }), { headers: CORS });
+      }
+
+      if (event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") {
+        await supabase
+          .from("faturas")
+          .update({
+            status: "paga",
+            payment_provider: "asaas",
+            provider_payment_id: paymentId || null,
+            provider_external_reference: externalReference,
+            provider_payload: body,
+          })
+          .eq("id", fatura.id);
+
+        const proxCobranca = new Date();
+        proxCobranca.setMonth(proxCobranca.getMonth() + 1);
+
+        await supabase.from("assinaturas").update({
+          status: "ativa",
+          proxima_cobranca: proxCobranca.toISOString().slice(0, 10),
+        }).eq("id", fatura.assinatura_id);
+
+        return new Response(JSON.stringify({ ok: true, liberado: true, provider: "asaas" }), {
+          headers: { ...CORS, "Content-Type": "application/json" },
+        });
+      }
+
+      if (event === "PAYMENT_OVERDUE") {
+        await supabase
+          .from("faturas")
+          .update({
+            payment_provider: "asaas",
+            provider_payment_id: paymentId || null,
+            provider_external_reference: externalReference,
+            provider_payload: body,
+          })
+          .eq("id", fatura.id);
+      }
+
+      return new Response(JSON.stringify({ ok: true, msg: `evento asaas: ${event}` }), {
+        headers: { ...CORS, "Content-Type": "application/json" },
+      });
+    }
+
     // Optional webhook signature verification
-    const webhookSecret = Deno.env.get("MP_WEBHOOK_SECRET");
+    let webhookSecret = null as string | null;
+    if (empresaId) {
+      const { data: empSecret } = await supabase
+        .from("empresas")
+        .select("mp_webhook_secret")
+        .eq("id", empresaId)
+        .maybeSingle();
+      webhookSecret = empSecret?.mp_webhook_secret ?? null;
+    }
+    if (!webhookSecret) {
+      const { data: gateway } = await supabase
+        .from("gateway_configs")
+        .select("webhook_secret")
+        .eq("provider", "mercado_pago")
+        .maybeSingle();
+      webhookSecret = gateway?.webhook_secret ?? null;
+    }
+    webhookSecret = webhookSecret ?? Deno.env.get("MP_WEBHOOK_SECRET") ?? null;
     const sigHeader = req.headers.get("x-hub-signature") || req.headers.get("x-hub-signature-256") || req.headers.get("x-meli-signature");
     if (webhookSecret && sigHeader) {
       try {
@@ -41,7 +143,12 @@ serve(async (req) => {
     }
 
     // Log do webhook
-    await supabase.from("webhook_logs").insert({ source: "mercadopago", payload: body });
+    await supabase.from("webhook_logs").insert({
+      source: "mercadopago",
+      provider,
+      empresa_id: empresaId,
+      payload: body,
+    });
 
     if (topic !== "payment") {
       return new Response(JSON.stringify({ ok: true, msg: "topic ignorado" }), { headers: CORS });
@@ -51,7 +158,27 @@ serve(async (req) => {
     const paymentId = paymentData?.id ?? body.id;
     if (!paymentId) return new Response(JSON.stringify({ error: "payment id não encontrado" }), { status: 400, headers: CORS });
 
-    const MP_ACCESS_TOKEN = Deno.env.get("MP_ACCESS_TOKEN")!;
+    let MP_ACCESS_TOKEN = null as string | null;
+    if (empresaId) {
+      const { data: empMp } = await supabase
+        .from("empresas")
+        .select("mp_access_token")
+        .eq("id", empresaId)
+        .maybeSingle();
+      MP_ACCESS_TOKEN = empMp?.mp_access_token ?? null;
+    }
+    if (!MP_ACCESS_TOKEN) {
+      const { data: gateway } = await supabase
+        .from("gateway_configs")
+        .select("access_token")
+        .eq("provider", "mercado_pago")
+        .maybeSingle();
+      MP_ACCESS_TOKEN = gateway?.access_token ?? null;
+    }
+    MP_ACCESS_TOKEN = MP_ACCESS_TOKEN ?? Deno.env.get("MP_ACCESS_TOKEN") ?? null;
+    if (!MP_ACCESS_TOKEN) {
+      return new Response(JSON.stringify({ error: "MP_ACCESS_TOKEN não configurado" }), { status: 500, headers: CORS });
+    }
 
     // Consulta o pagamento no MP
     const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
@@ -74,7 +201,17 @@ serve(async (req) => {
     const { data: fatura } = await supabase.from("faturas").select("empresa_id, assinatura_id").eq("id", fatura_id).maybeSingle();
     if (!fatura) return new Response(JSON.stringify({ error: "fatura não encontrada" }), { status: 404, headers: CORS });
 
-    await supabase.from("faturas").update({ status: "paga", mp_payment_id: String(paymentId) }).eq("id", fatura_id);
+    await supabase
+      .from("faturas")
+      .update({
+        status: "paga",
+        mp_payment_id: String(paymentId),
+        payment_provider: "mercado_pago",
+        provider_payment_id: String(paymentId),
+        provider_external_reference: String(fatura_id),
+        provider_payload: payment,
+      })
+      .eq("id", fatura_id);
 
     // Libera/renova a assinatura
     const proxCobranca = new Date();

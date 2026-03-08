@@ -8,12 +8,17 @@ import { supabase } from "@/lib/supabase/client";
 
 type Cliente = { id: string; nome: string };
 type Motorista = { id: string; nome: string };
+type Veiculo = { id: string; placa: string | null; modelo: string | null };
 
 type Contrato = {
   id: string;
   cliente_id: string;
   nome: string;
   descricao: string | null;
+  forma_cobranca: "km" | "dia" | "mensal";
+  valor_cobranca: number;
+  dia_fechamento: number | null;
+  dia_vencimento: number | null;
   dias_semana: number[];
   data_inicio: string | null;
   data_fim: string | null;
@@ -25,6 +30,8 @@ type Horario = {
   id: string;
   contrato_id: string;
   hora: string;
+  dias_semana: number[];
+  veiculo_id: string | null;
   observacao: string | null;
   ordem: number;
   ativo: boolean;
@@ -42,6 +49,33 @@ const DIAS = [
   { v: 6, label: "Sáb" },
 ];
 
+function formatHoraInput(raw: string) {
+  const digits = raw.replace(/\D/g, "").slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
+function parseMoney(v: string, fallback = 0) {
+  const raw = v.trim().replace(/\s+/g, "");
+  if (!raw) return fallback;
+
+  const hasComma = raw.includes(",");
+  const hasDot = raw.includes(".");
+
+  let normalized = raw;
+  if (hasComma && hasDot) {
+    normalized =
+      raw.lastIndexOf(",") > raw.lastIndexOf(".")
+        ? raw.replace(/\./g, "").replace(",", ".")
+        : raw.replace(/,/g, "");
+  } else if (hasComma) {
+    normalized = raw.replace(/\./g, "").replace(",", ".");
+  }
+
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export default function ContratoDetalhePage() {
   const router = useRouter();
   const params = useParams();
@@ -53,12 +87,16 @@ export default function ContratoDetalhePage() {
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [motoristas, setMotoristas] = useState<Motorista[]>([]);
+  const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
   const [contrato, setContrato] = useState<Contrato | null>(null);
+  const [valorCobrancaInput, setValorCobrancaInput] = useState("0");
   const [horarios, setHorarios] = useState<Horario[]>([]);
 
   // Form rápido para adicionar horário
   const [novoHorario, setNovoHorario] = useState({
     hora: "07:00",
+    dias_semana: [1, 2, 3, 4, 5] as number[],
+    veiculo_id: "" as string,
     motorista_id: "" as string, // guarda "" no select; ao inserir vira null
     observacao: "",
     ordem: 1,
@@ -80,11 +118,17 @@ export default function ContratoDetalhePage() {
       .select("id, nome")
       .order("nome", { ascending: true });
 
+    const { data: veiculosData } = await supabase
+      .from("veiculos")
+      .select("id, placa, modelo")
+      .order("placa", { ascending: true });
+
     setMotoristas((motoristasData ?? []) as Motorista[]);
+    setVeiculos((veiculosData ?? []) as Veiculo[]);
 
     const { data: contratoData, error: cErr } = await supabase
       .from("contratos")
-      .select("id, cliente_id, nome, descricao, dias_semana, data_inicio, data_fim, ativo, created_at")
+      .select("id, cliente_id, nome, descricao, forma_cobranca, valor_cobranca, dia_fechamento, dia_vencimento, dias_semana, data_inicio, data_fim, ativo, created_at")
       .eq("id", contratoId)
       .single();
 
@@ -96,10 +140,11 @@ export default function ContratoDetalhePage() {
     }
 
     setContrato(contratoData as Contrato);
+    setValorCobrancaInput(String((contratoData as Contrato).valor_cobranca ?? 0));
 
     const { data: horariosData, error: hErr } = await supabase
       .from("contrato_horarios")
-      .select("id, contrato_id, hora, observacao, ordem, ativo, motorista_id, created_at")
+      .select("id, contrato_id, hora, dias_semana, veiculo_id, observacao, ordem, ativo, motorista_id, created_at")
       .eq("contrato_id", contratoId)
       .order("ordem", { ascending: true })
       .order("hora", { ascending: true });
@@ -108,12 +153,20 @@ export default function ContratoDetalhePage() {
       console.error(hErr);
       setHorarios([]);
     } else {
-      setHorarios((horariosData ?? []) as Horario[]);
+      const norm = ((horariosData ?? []) as Horario[]).map((h) => ({
+        ...h,
+        dias_semana: h.dias_semana ?? (contratoData as Contrato).dias_semana ?? [1, 2, 3, 4, 5],
+      }));
+      setHorarios(norm);
     }
 
     const arr = (horariosData ?? []) as { ordem?: number | null }[];
     const maxOrdem = arr.reduce((m, x) => Math.max(m, x.ordem ?? 0), 0);
-    setNovoHorario((prev) => ({ ...prev, ordem: maxOrdem + 1 }));
+    setNovoHorario((prev) => ({
+      ...prev,
+      ordem: maxOrdem + 1,
+      dias_semana: (contratoData as Contrato).dias_semana ?? [1, 2, 3, 4, 5],
+    }));
 
     setLoading(false);
   }
@@ -134,6 +187,33 @@ export default function ContratoDetalhePage() {
     setContrato({ ...contrato, dias_semana: next });
   }
 
+  function toggleDiaNovoHorario(v: number) {
+    setNovoHorario((prev) => {
+      const has = prev.dias_semana.includes(v);
+      return {
+        ...prev,
+        dias_semana: has
+          ? prev.dias_semana.filter((x) => x !== v)
+          : [...prev.dias_semana, v].sort((a, b) => a - b),
+      };
+    });
+  }
+
+  function toggleDiaHorario(id: string, v: number) {
+    setHorarios((prev) =>
+      prev.map((h) => {
+        if (h.id !== id) return h;
+        const has = h.dias_semana.includes(v);
+        return {
+          ...h,
+          dias_semana: has
+            ? h.dias_semana.filter((x) => x !== v)
+            : [...h.dias_semana, v].sort((a, b) => a - b),
+        };
+      })
+    );
+  }
+
   async function salvarContrato() {
     if (!contrato) return;
 
@@ -141,6 +221,15 @@ export default function ContratoDetalhePage() {
     if (!contrato.nome.trim()) return alert("Informe o nome do contrato.");
     if (!contrato.dias_semana || contrato.dias_semana.length === 0)
       return alert("Selecione pelo menos 1 dia da semana.");
+    const valorCobr = parseMoney(valorCobrancaInput, NaN);
+    if (!Number.isFinite(valorCobr) || valorCobr < 0)
+      return alert("Informe um valor de cobrança válido.");
+    if (contrato.forma_cobranca === "mensal") {
+      if (!Number.isInteger(contrato.dia_fechamento) || Number(contrato.dia_fechamento) < 1 || Number(contrato.dia_fechamento) > 31)
+        return alert("Dia de fechamento inválido (1 a 31).");
+      if (!Number.isInteger(contrato.dia_vencimento) || Number(contrato.dia_vencimento) < 1 || Number(contrato.dia_vencimento) > 31)
+        return alert("Dia de vencimento inválido (1 a 31).");
+    }
 
     setSaving(true);
 
@@ -150,6 +239,16 @@ export default function ContratoDetalhePage() {
         cliente_id: contrato.cliente_id,
         nome: contrato.nome.trim(),
         descricao: contrato.descricao?.trim() || null,
+        forma_cobranca: contrato.forma_cobranca,
+        valor_cobranca: valorCobr,
+        dia_fechamento:
+          Number.isInteger(contrato.dia_fechamento) && Number(contrato.dia_fechamento) >= 1 && Number(contrato.dia_fechamento) <= 31
+            ? contrato.dia_fechamento
+            : null,
+        dia_vencimento:
+          Number.isInteger(contrato.dia_vencimento) && Number(contrato.dia_vencimento) >= 1 && Number(contrato.dia_vencimento) <= 31
+            ? contrato.dia_vencimento
+            : null,
         dias_semana: contrato.dias_semana,
         data_inicio: contrato.data_inicio || null,
         data_fim: contrato.data_fim || null,
@@ -193,13 +292,17 @@ export default function ContratoDetalhePage() {
 
   async function adicionarHorario() {
     if (!/^\d{2}:\d{2}$/.test(novoHorario.hora)) return alert("Hora inválida. Use HH:MM.");
+    if ((novoHorario.dias_semana?.length ?? 0) === 0)
+      return alert("Selecione ao menos 1 dia para o horário.");
 
     const { error } = await supabase.from("contrato_horarios").insert({
       contrato_id: contratoId,
       hora: novoHorario.hora,
+      dias_semana: novoHorario.dias_semana,
       observacao: novoHorario.observacao.trim() || null,
       ordem: Number(novoHorario.ordem || 1),
       ativo: !!novoHorario.ativo,
+      veiculo_id: novoHorario.veiculo_id ? novoHorario.veiculo_id : null,
       motorista_id: novoHorario.motorista_id ? novoHorario.motorista_id : null, // ✅
     });
 
@@ -208,7 +311,13 @@ export default function ContratoDetalhePage() {
       return alert("Erro ao adicionar horário: " + error.message);
     }
 
-    setNovoHorario((prev) => ({ ...prev, observacao: "", motorista_id: "" }));
+    setNovoHorario((prev) => ({
+      ...prev,
+      observacao: "",
+      veiculo_id: "",
+      motorista_id: "",
+      dias_semana: contrato?.dias_semana ?? [1, 2, 3, 4, 5],
+    }));
     await carregarTudo();
   }
 
@@ -217,9 +326,11 @@ export default function ContratoDetalhePage() {
       .from("contrato_horarios")
       .update({
         hora: h.hora,
+        dias_semana: h.dias_semana,
         observacao: h.observacao?.trim() || null,
         ordem: h.ordem,
         ativo: h.ativo,
+        veiculo_id: h.veiculo_id || null,
         motorista_id: h.motorista_id || null, // ✅
       })
       .eq("id", h.id);
@@ -399,6 +510,57 @@ export default function ContratoDetalhePage() {
                 onChange={(e) => setContrato({ ...contrato, data_fim: e.target.value })}
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Forma de cobrança</label>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={contrato.forma_cobranca}
+                onChange={(e) => setContrato({ ...contrato, forma_cobranca: e.target.value as "km" | "dia" | "mensal" })}
+              >
+                <option value="km">Por KM</option>
+                <option value="dia">Por dia</option>
+                <option value="mensal">Mensal</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                {contrato.forma_cobranca === "km" ? "Valor por KM" : contrato.forma_cobranca === "dia" ? "Valor por dia" : "Valor mensal"}
+              </label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={valorCobrancaInput}
+                onChange={(e) =>
+                  setValorCobrancaInput(e.target.value)
+                }
+                placeholder="0,00"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Dia padrão fechamento</label>
+              <input
+                type="number"
+                min={1}
+                max={31}
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={contrato.dia_fechamento ?? ""}
+                onChange={(e) => setContrato({ ...contrato, dia_fechamento: e.target.value ? Number(e.target.value) : null })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Dia padrão vencimento</label>
+              <input
+                type="number"
+                min={1}
+                max={31}
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={contrato.dia_vencimento ?? ""}
+                onChange={(e) => setContrato({ ...contrato, dia_vencimento: e.target.value ? Number(e.target.value) : null })}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -412,10 +574,51 @@ export default function ContratoDetalhePage() {
             <label className="block text-sm font-medium mb-1">Hora</label>
             <input
               className="w-full border border-slate-300 rounded-md px-3 py-2"
+              inputMode="numeric"
+              maxLength={5}
               value={novoHorario.hora}
-              onChange={(e) => setNovoHorario((p) => ({ ...p, hora: e.target.value }))}
+              onChange={(e) => setNovoHorario((p) => ({ ...p, hora: formatHoraInput(e.target.value) }))}
               placeholder="07:00"
             />
+          </div>
+
+          <div className="md:col-span-3">
+            <label className="block text-sm font-medium mb-1">Dias do horário</label>
+            <div className="flex flex-wrap gap-1.5">
+              {DIAS.map((d) => {
+                const active = novoHorario.dias_semana.includes(d.v);
+                return (
+                  <button
+                    type="button"
+                    key={`novo-${d.v}`}
+                    onClick={() => toggleDiaNovoHorario(d.v)}
+                    className={`px-2 py-1 rounded border text-xs transition ${
+                      active
+                        ? "bg-slate-900 text-white border-slate-900"
+                        : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="md:col-span-3">
+            <label className="block text-sm font-medium mb-1">Veículo padrão</label>
+            <select
+              className="w-full border border-slate-300 rounded-md px-3 py-2"
+              value={novoHorario.veiculo_id}
+              onChange={(e) => setNovoHorario((p) => ({ ...p, veiculo_id: e.target.value }))}
+            >
+              <option value="">— Sem veículo —</option>
+              {veiculos.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {[v.placa, v.modelo].filter(Boolean).join(" • ") || v.id.slice(0, 8)}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="md:col-span-3">
@@ -434,7 +637,7 @@ export default function ContratoDetalhePage() {
             </select>
           </div>
 
-          <div className="md:col-span-4">
+          <div className="md:col-span-2">
             <label className="block text-sm font-medium mb-1">Observação / roteiro</label>
             <input
               className="w-full border border-slate-300 rounded-md px-3 py-2"
@@ -489,6 +692,8 @@ export default function ContratoDetalhePage() {
               <thead>
                 <tr className="text-left border-b">
                   <th className="py-2 pr-4">Hora</th>
+                  <th className="py-2 pr-4">Dias</th>
+                  <th className="py-2 pr-4">Veículo padrão</th>
                   <th className="py-2 pr-4">Motorista padrão</th>
                   <th className="py-2 pr-4">Observação / roteiro</th>
                   <th className="py-2 pr-4">Ordem</th>
@@ -502,11 +707,53 @@ export default function ContratoDetalhePage() {
                     <td className="py-2 pr-4">
                       <input
                         className="w-[110px] border border-slate-300 rounded-md px-3 py-2"
+                        inputMode="numeric"
+                        maxLength={5}
                         value={h.hora}
                         onChange={(e) =>
-                          setHorarios((prev) => prev.map((x) => (x.id === h.id ? { ...x, hora: e.target.value } : x)))
+                          setHorarios((prev) => prev.map((x) => (x.id === h.id ? { ...x, hora: formatHoraInput(e.target.value) } : x)))
                         }
                       />
+                    </td>
+
+                    <td className="py-2 pr-4 min-w-[220px]">
+                      <div className="flex flex-wrap gap-1.5">
+                        {DIAS.map((d) => {
+                          const active = h.dias_semana.includes(d.v);
+                          return (
+                            <button
+                              type="button"
+                              key={`${h.id}-${d.v}`}
+                              onClick={() => toggleDiaHorario(h.id, d.v)}
+                              className={`px-2 py-1 rounded border text-xs transition ${
+                                active
+                                  ? "bg-slate-900 text-white border-slate-900"
+                                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                              }`}
+                            >
+                              {d.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </td>
+
+                    <td className="py-2 pr-4">
+                      <select
+                        className="w-[220px] border border-slate-300 rounded-md px-3 py-2"
+                        value={h.veiculo_id ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value || null;
+                          setHorarios((prev) => prev.map((x) => (x.id === h.id ? { ...x, veiculo_id: v } : x)));
+                        }}
+                      >
+                        <option value="">— Sem veículo —</option>
+                        {veiculos.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {[v.placa, v.modelo].filter(Boolean).join(" • ") || v.id.slice(0, 8)}
+                          </option>
+                        ))}
+                      </select>
                     </td>
 
                     <td className="py-2 pr-4">

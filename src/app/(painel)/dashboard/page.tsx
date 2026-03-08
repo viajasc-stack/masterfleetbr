@@ -12,6 +12,7 @@ type KPIs = {
   clientes_ativos: number;
   veiculos_ativos: number;
   motoristas_ativos: number;
+  contratos_atencao: number;
 };
 
 type OSRecente = {
@@ -47,6 +48,29 @@ type OSEventoTimeline = {
   ordem_servico_id: string;
 };
 
+type OSDesvioEvento = {
+  id: string;
+  created_at: string;
+  evento: string;
+  mensagem: string | null;
+  ordem_servico_id: string;
+  motorista_id: string | null;
+  severidade: "info" | "warning" | "critical";
+  meta?: {
+    distancia_m?: number;
+    raio_m?: number;
+  } | null;
+  motoristas: { nome: string } | { nome: string }[] | null;
+};
+
+type MotoristaGeoUlt = {
+  motorista_id: string;
+  latitude: number | null;
+  longitude: number | null;
+  updated_at: string;
+  motorista: { nome: string } | null;
+};
+
 type OSOperacional = {
   id: string;
   numero: number | null;
@@ -65,6 +89,8 @@ type AlertaOperacionalResumo = {
   atrasos_inicio: number;
   atrasos_finalizacao: number;
   km_divergente: number;
+  sem_posicao_recente: number;
+  desvio_rota: number;
 };
 
 type CombustivelTank = {
@@ -120,8 +146,12 @@ export default function DashboardPage() {
     atrasos_inicio: 0,
     atrasos_finalizacao: 0,
     km_divergente: 0,
+    sem_posicao_recente: 0,
+    desvio_rota: 0,
   });
   const [aniversariantesMes, setAniversariantesMes] = useState(0);
+  const [posicoesMapa, setPosicoesMapa] = useState<MotoristaGeoUlt[]>([]);
+  const [desviosRecentes, setDesviosRecentes] = useState<OSDesvioEvento[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -153,8 +183,12 @@ export default function DashboardPage() {
         { data: osOperacaoData },
         { data: osEventosData },
         { data: osOperacionaisData },
+        { data: geoData },
+        { data: desviosData },
         { data: usuariosAniversarioData },
         { data: motoristasAniversarioData },
+        { data: contratosData },
+        { data: osRecorrentesData },
       ] = await Promise.all([
         supabase.from("ordens_servico").select("id", { count: "exact", head: true }).eq("status", "pendente"),
         supabase.from("ordens_servico").select("id", { count: "exact", head: true }).eq("status", "em_execucao"),
@@ -188,6 +222,17 @@ export default function DashboardPage() {
           .order("updated_at", { ascending: false })
           .limit(400),
         supabase
+          .from("motoristas_geo")
+          .select("motorista_id, latitude, longitude, updated_at, motorista:motoristas(nome)")
+          .order("updated_at", { ascending: false })
+          .limit(500),
+        supabase
+          .from("os_eventos")
+          .select("id, created_at, evento, mensagem, ordem_servico_id, motorista_id, severidade, meta, motoristas(nome)")
+          .or("evento.eq.desvio_rota_geom,evento.ilike.%desvio%,mensagem.ilike.%fora de rota%,mensagem.ilike.%desvio%")
+          .order("created_at", { ascending: false })
+          .limit(30),
+        supabase
           .from("usuarios")
           .select("id, nome, data_nascimento")
           .not("data_nascimento", "is", null),
@@ -195,7 +240,54 @@ export default function DashboardPage() {
           .from("motoristas")
           .select("id, nome, data_nascimento")
           .not("data_nascimento", "is", null),
+        supabase
+          .from("contratos")
+          .select("id, ativo, data_fim")
+          .eq("ativo", true),
+        supabase
+          .from("ordens_servico")
+          .select("id, contrato_id, inicio_em")
+          .eq("tipo", "recorrente")
+          .not("contrato_id", "is", null)
+          .not("inicio_em", "is", null)
+          .neq("status", "cancelada"),
       ]);
+
+      const hojeYmd = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Sao_Paulo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(hoje);
+
+      const coberturaContrato: Record<string, string> = {};
+      ((osRecorrentesData ?? []) as Array<{ contrato_id: string | null; inicio_em: string | null }>).forEach((os) => {
+        if (!os.contrato_id || !os.inicio_em) return;
+        const ymd = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "America/Sao_Paulo",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date(os.inicio_em));
+        if (!coberturaContrato[os.contrato_id] || ymd > coberturaContrato[os.contrato_id]) {
+          coberturaContrato[os.contrato_id] = ymd;
+        }
+      });
+
+      const contratosAtencao = ((contratosData ?? []) as Array<{ id: string; ativo: boolean; data_fim: string | null }>).filter((c) => {
+        if (!c.ativo) return false;
+        if (c.data_fim && c.data_fim < hojeYmd) return false;
+
+        const cobertura = coberturaContrato[c.id];
+        if (!cobertura) return true;
+
+        const a = new Date(`${hojeYmd}T00:00:00`);
+        const b = new Date(`${cobertura}T00:00:00`);
+        const diasCobertura = b.getTime() >= a.getTime() ? Math.floor((b.getTime() - a.getTime()) / 86400000) + 1 : 0;
+
+        const aindaTemVigenciaDepois = c.data_fim ? c.data_fim > cobertura : true;
+        return aindaTemVigenciaDepois && diasCobertura <= 3;
+      }).length;
 
       const mesAtual = hoje.getMonth() + 1;
       const usuariosMes = ((usuariosAniversarioData ?? []) as PessoaAniversariante[]).filter((x) => {
@@ -215,6 +307,7 @@ export default function DashboardPage() {
         clientes_ativos: clientesAtivos ?? 0,
         veiculos_ativos: veiculosAtivos ?? 0,
         motoristas_ativos: motoristasAtivos ?? 0,
+        contratos_atencao: contratosAtencao,
       });
 
       setOsRecentes((osData as unknown as OSRecente[]) ?? []);
@@ -253,6 +346,13 @@ export default function DashboardPage() {
       }
       if ((veiculosAtivos ?? 0) === 0) {
         novosAlertas.push({ tipo: "aviso", mensagem: "Nenhum veículo ativo cadastrado", link: "/veiculos" });
+      }
+      if (contratosAtencao > 0) {
+        novosAlertas.push({
+          tipo: "aviso",
+          mensagem: `${contratosAtencao} contrato(s) precisam de atenção para geração de OS`,
+          link: "/contratos",
+        });
       }
 
       const operacaoMap = new Map<string, MotoristaOperacao>();
@@ -293,11 +393,37 @@ export default function DashboardPage() {
       const criticos = tl.filter((e) => e.severidade === "critical").length;
       const warnings = tl.filter((e) => e.severidade === "warning").length;
 
+      const desvios = ((desviosData as OSDesvioEvento[] | null) ?? []).map((d) => ({
+        ...d,
+        severidade: (d.severidade || "warning") as "info" | "warning" | "critical",
+      }));
+      setDesviosRecentes(desvios);
+
       const now = new Date();
       const operacionais = ((osOperacionaisData as OSOperacional[] | null) ?? []);
+      const geoLista = ((geoData as MotoristaGeoUlt[] | null) ?? []);
+
+      const ultPosicao = new Map<string, MotoristaGeoUlt>();
+      for (const p of geoLista) {
+        if (!p.motorista_id) continue;
+        if (!ultPosicao.has(p.motorista_id)) ultPosicao.set(p.motorista_id, p);
+      }
+
+      const mapaPosicoes = Array.from(ultPosicao.values()).filter(
+        (p) => typeof p.latitude === "number" && typeof p.longitude === "number"
+      );
+      setPosicoesMapa(mapaPosicoes);
+
       let atrasosInicio = 0;
       let atrasosFinalizacao = 0;
       let kmDivergente = 0;
+      let semPosicaoRecente = 0;
+
+      const dt24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const desvioRota24h = desvios.filter((d) => {
+        const t = new Date(d.created_at);
+        return !Number.isNaN(t.getTime()) && t >= dt24h;
+      }).length;
 
       operacionais.forEach((os) => {
         const status = String(os.status || "").toLowerCase();
@@ -317,6 +443,21 @@ export default function DashboardPage() {
             const duracaoMin = Math.floor((now.getTime() - inicio.getTime()) / 60000);
             if (duracaoMin >= 180) atrasosFinalizacao += 1;
           }
+
+          if (os.motorista_id) {
+            const pos = ultPosicao.get(os.motorista_id);
+            if (!pos?.updated_at) {
+              semPosicaoRecente += 1;
+            } else {
+              const upd = new Date(pos.updated_at);
+              if (Number.isNaN(upd.getTime())) {
+                semPosicaoRecente += 1;
+              } else {
+                const minSemAtualizacao = Math.floor((now.getTime() - upd.getTime()) / 60000);
+                if (minSemAtualizacao > 30) semPosicaoRecente += 1;
+              }
+            }
+          }
         }
 
         const kmInicio = Number(os.km_inicio || 0);
@@ -330,10 +471,12 @@ export default function DashboardPage() {
         atrasos_inicio: atrasosInicio,
         atrasos_finalizacao: atrasosFinalizacao,
         km_divergente: kmDivergente,
+        sem_posicao_recente: semPosicaoRecente,
+        desvio_rota: desvioRota24h,
       });
 
       if (criticos > 0) setSemaforoOperacional("vermelho");
-      else if (warnings > 0 || kmDivergente > 0 || atrasosInicio > 0 || atrasosFinalizacao > 0 || (osPendentes ?? 0) > 5) setSemaforoOperacional("amarelo");
+      else if (warnings > 0 || kmDivergente > 0 || atrasosInicio > 0 || atrasosFinalizacao > 0 || semPosicaoRecente > 0 || desvioRota24h > 0 || (osPendentes ?? 0) > 5) setSemaforoOperacional("amarelo");
       else setSemaforoOperacional("verde");
 
       if (criticos > 0) {
@@ -365,6 +508,22 @@ export default function DashboardPage() {
           tipo: "aviso",
           mensagem: `${kmDivergente} OS com divergência de KM`,
           link: "/ordens-servico",
+        });
+      }
+
+      if (semPosicaoRecente > 0) {
+        novosAlertas.push({
+          tipo: "aviso",
+          mensagem: `${semPosicaoRecente} OS em execução sem posição recente do motorista`,
+          link: "/ordens-servico?status=em_execucao",
+        });
+      }
+
+      if (desvioRota24h > 0) {
+        novosAlertas.push({
+          tipo: "aviso",
+          mensagem: `${desvioRota24h} alerta(s) de desvio de rota nas últimas 24h`,
+          link: "/ordens-servico?status=em_execucao",
         });
       }
 
@@ -416,6 +575,7 @@ export default function DashboardPage() {
             <KPICard label="Clientes Ativos" value={kpis?.clientes_ativos ?? 0} link="/clientes" />
             <KPICard label="Veículos Ativos" value={kpis?.veiculos_ativos ?? 0} link="/veiculos" />
             <KPICard label="Motoristas Ativos" value={kpis?.motoristas_ativos ?? 0} link="/motoristas" />
+            <KPICard label="Contratos atenção" value={kpis?.contratos_atencao ?? 0} link="/contratos" />
             <KPICard label="Aniversariantes do mês" value={aniversariantesMes} link="/aniversariantes" />
           </div>
 
@@ -458,7 +618,7 @@ export default function DashboardPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
               <div className="text-xs uppercase tracking-wide text-amber-700 font-semibold">Atraso de início</div>
               <div className="text-2xl font-bold text-amber-900 mt-1">{alertasOperacionais.atrasos_inicio}</div>
@@ -474,6 +634,84 @@ export default function DashboardPage() {
               <div className="text-2xl font-bold text-rose-900 mt-1">{alertasOperacionais.km_divergente}</div>
               <div className="text-xs text-rose-700 mt-1">KM final menor que KM inicial</div>
             </div>
+            <div className="rounded-xl border border-fuchsia-200 bg-fuchsia-50/70 p-4">
+              <div className="text-xs uppercase tracking-wide text-fuchsia-700 font-semibold">Desvio de rota (24h)</div>
+              <div className="text-2xl font-bold text-fuchsia-900 mt-1">{alertasOperacionais.desvio_rota}</div>
+              <div className="text-xs text-fuchsia-700 mt-1">Eventos de desvio/fora de rota registrados</div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-900">Alertas de desvio de rota</span>
+              <span className="text-xs text-slate-500">Últimos eventos capturados</span>
+            </div>
+            {desviosRecentes.length === 0 ? (
+              <div className="px-5 py-6 text-sm text-slate-600">Sem alertas de desvio de rota recentes.</div>
+            ) : (
+              <div className="divide-y divide-slate-200">
+                {desviosRecentes.map((d) => {
+                  const m = Array.isArray(d.motoristas) ? d.motoristas[0] : d.motoristas;
+                  return (
+                    <div key={d.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-slate-900">{d.mensagem || d.evento}</div>
+                        <div className="text-xs text-slate-500">
+                          {m?.nome || "Motorista"} • OS {d.ordem_servico_id.slice(0, 8)} • {new Date(d.created_at).toLocaleString("pt-BR")}
+                        </div>
+                      {typeof d.meta?.distancia_m === "number" ? (
+                        <div className="text-xs text-fuchsia-700 mt-0.5">
+                          Distância: {Math.round(d.meta.distancia_m)}m
+                          {typeof d.meta?.raio_m === "number" ? ` • Raio: ${Math.round(d.meta.raio_m)}m` : ""}
+                        </div>
+                      ) : null}
+                      </div>
+                      <span className="text-xs px-2 py-1 rounded border border-fuchsia-200 text-fuchsia-700 bg-fuchsia-50">
+                        {d.severidade}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-900">Mapa Operacional (simplificado)</span>
+              <span className="text-xs text-slate-500">Última posição por motorista</span>
+            </div>
+
+            {posicoesMapa.length === 0 ? (
+              <div className="px-5 py-6 text-sm text-slate-600">Sem posições recentes para exibir.</div>
+            ) : (
+              <div className="p-5">
+                <div className="h-56 rounded-lg border border-slate-200 bg-slate-50 relative overflow-hidden">
+                  {posicoesMapa.map((p, idx) => {
+                    const lat = Number(p.latitude ?? 0);
+                    const lng = Number(p.longitude ?? 0);
+                    const top = ((-lat + 90) / 180) * 100;
+                    const left = ((lng + 180) / 360) * 100;
+                    return (
+                      <div
+                        key={`${p.motorista_id}-${idx}`}
+                        className="absolute -translate-x-1/2 -translate-y-1/2"
+                        style={{ top: `${Math.max(3, Math.min(97, top))}%`, left: `${Math.max(3, Math.min(97, left))}%` }}
+                        title={`${p.motorista?.nome ?? "Motorista"} • ${new Date(p.updated_at).toLocaleString("pt-BR")}`}
+                      >
+                        <div className="h-2.5 w-2.5 rounded-full bg-blue-600 ring-2 ring-blue-200" />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-3 text-xs text-slate-600">
+                  {alertasOperacionais.sem_posicao_recente > 0
+                    ? `${alertasOperacionais.sem_posicao_recente} OS em execução sem atualização de posição nos últimos 30 min.`
+                    : "Todas as OS em execução com posição recente do motorista."}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm">

@@ -6,9 +6,10 @@ import { supabase } from "@/lib/supabase/client";
 type Props = {
   empresaNome: string | null;
   usuarioNome: string | null;
+  isSuperAdmin?: boolean;
 };
 
-export default function Topbar({ empresaNome, usuarioNome }: Props) {
+export default function Topbar({ empresaNome, usuarioNome, isSuperAdmin = false }: Props) {
   function handleLogout() {
     // Não bloqueia navegação esperando rede
     void supabase.auth.signOut({ scope: "local" });
@@ -31,6 +32,16 @@ export default function Topbar({ empresaNome, usuarioNome }: Props) {
         />
       </div>
       <div className="flex items-center gap-4">
+        {isSuperAdmin ? (
+          <button
+            onClick={() => {
+              if (typeof window !== "undefined") window.location.href = "/master";
+            }}
+            className="text-xs px-3 py-1.5 rounded-md border border-white/30 text-white hover:bg-white/10 transition"
+          >
+            Voltar ao Master
+          </button>
+        ) : null}
         <NotificationsDropdown />
         <div className="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center text-xs">
           {usuarioNome ? usuarioNome.charAt(0).toUpperCase() : "U"}

@@ -53,7 +53,10 @@ export default function UsuariosPage() {
   }
 
   useEffect(() => {
-    carregarUsuarios();
+    const id = setTimeout(() => {
+      carregarUsuarios();
+    }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   const usuariosFiltrados = useMemo(() => {

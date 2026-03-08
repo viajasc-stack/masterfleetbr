@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase/client";
 export default function PainelLayout({ children }: { children: React.ReactNode }) {
   const [empresaNome, setEmpresaNome] = useState<string | null>(null);
   const [usuarioNome, setUsuarioNome] = useState<string | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -21,6 +22,9 @@ export default function PainelLayout({ children }: { children: React.ReactNode }
         .maybeSingle();
 
       setUsuarioNome(profile?.nome ?? null);
+
+      const { data: master } = await supabase.rpc("is_super_admin");
+      setIsSuperAdmin(Boolean(master));
 
       if (profile?.empresa_id) {
         const { data: empresa } = await supabase
@@ -39,7 +43,7 @@ export default function PainelLayout({ children }: { children: React.ReactNode }
     <div className="min-h-screen bg-slate-100 flex">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
-        <Topbar empresaNome={empresaNome} usuarioNome={usuarioNome} />
+        <Topbar empresaNome={empresaNome} usuarioNome={usuarioNome} isSuperAdmin={isSuperAdmin} />
         <main className="flex-1 p-6 overflow-auto">{children}</main>
       </div>
     </div>
