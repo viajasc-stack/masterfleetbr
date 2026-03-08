@@ -39,6 +39,7 @@
   ],
   "exclude": [
     "node_modules",
+    "masterfleetbr-motorista/**",
     "supabase/functions/**",
     "supabase/migrations/**"
   ]
