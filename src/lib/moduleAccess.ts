@@ -18,6 +18,7 @@ const ROUTE_MODULE_MAP: Array<{ prefix: string; modulo: string }> = [
   { prefix: "/contratos", modulo: "ordens_servico" },
   { prefix: "/clientes", modulo: "clientes" },
   { prefix: "/veiculos", modulo: "veiculos" },
+  { prefix: "/abastecimentos", modulo: "ordens_servico" },
   { prefix: "/motoristas", modulo: "motoristas" },
   { prefix: "/usuarios", modulo: "usuarios" },
   { prefix: "/inventario", modulo: "inventario" },
