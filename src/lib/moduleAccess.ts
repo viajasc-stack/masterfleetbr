@@ -75,6 +75,8 @@ export async function loadEmpresaModuleAccess() {
     .from("assinaturas")
     .select("status, planos(modulos)")
     .eq("empresa_id", empresaId)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   const assinatura = (assinaturaData ?? null) as AssinaturaComPlano | null;
