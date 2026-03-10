@@ -33,6 +33,18 @@ const FINANCEIRO_SUBLINKS = [
   { href: "/financeiro/faturas", label: "Faturas" },
 ];
 
+const MANUTENCAO_SUBLINKS = [
+  { href: "/manutencao", label: "Painel" },
+  { href: "/manutencao/oficina", label: "Painel oficina (PDV)" },
+  { href: "/manutencao/nova", label: "Nova solicitação" },
+  { href: "/manutencao/compras", label: "Compras da manutenção" },
+  { href: "/manutencao/preventivas", label: "Preventivas" },
+  { href: "/manutencao/indicadores", label: "Indicadores" },
+  { href: "/manutencao/estoque", label: "Estoque da manutenção" },
+  { href: "/manutencao/estoque/reservas", label: "Reservas de peças" },
+  { href: "/manutencao/estoque/consumo", label: "Consumo/baixas" },
+];
+
 const LINKS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: "◼", group: "Operacional", modulo: "dashboard" },
   { href: "/ordens-servico", label: "Ordens de Serviço", icon: "◼", group: "Operacional", modulo: "ordens_servico" },
@@ -58,6 +70,7 @@ export default function Sidebar() {
   const searchParams = useSearchParams();
   const [inventarioOpenManual, setInventarioOpenManual] = useState<boolean | null>(null);
   const [financeiroOpenManual, setFinanceiroOpenManual] = useState<boolean | null>(null);
+  const [manutencaoOpenManual, setManutencaoOpenManual] = useState<boolean | null>(null);
   const [canUseAllModules, setCanUseAllModules] = useState(false);
   const [allowedModules, setAllowedModules] = useState<string[]>([]);
   const [supportUnread, setSupportUnread] = useState(0);
@@ -96,6 +109,7 @@ export default function Sidebar() {
 
   const inventarioOpen = inventarioOpenManual ?? Boolean(pathname?.startsWith("/inventario"));
   const financeiroOpen = financeiroOpenManual ?? Boolean(pathname?.startsWith("/financeiro"));
+  const manutencaoOpen = manutencaoOpenManual ?? Boolean(pathname?.startsWith("/manutencao"));
 
   function isAtivo(href: string) {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -206,6 +220,53 @@ export default function Sidebar() {
                               ? pathname === "/financeiro/contas" && searchParams?.get("tipo") === sub.href.split("tipo=")[1]
                               : isAtivo(sub.href);
 
+                            return (
+                              <Link
+                                key={sub.href}
+                                href={sub.href}
+                                className={`block px-3 py-1.5 rounded-md text-sm transition-colors ${
+                                  subAtivo
+                                    ? "bg-slate-800 text-white"
+                                    : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                                }`}
+                              >
+                                {sub.label}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }
+
+                if (link.href === "/manutencao") {
+                  return (
+                    <div key={link.href} className="mx-2">
+                      <div
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                          ativo
+                            ? "bg-slate-800 text-white"
+                            : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                        }`}
+                      >
+                        <Link href={link.href} className="flex-1">
+                          {link.label}
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => setManutencaoOpenManual((v) => !(v ?? Boolean(pathname?.startsWith("/manutencao"))))}
+                          className="text-xs text-slate-400 hover:text-slate-200"
+                          aria-label={manutencaoOpen ? "Recolher submenu de manutenção" : "Expandir submenu de manutenção"}
+                        >
+                          {manutencaoOpen ? "▾" : "▸"}
+                        </button>
+                      </div>
+
+                      {manutencaoOpen ? (
+                        <div className="mt-1 mb-1 ml-2 border-l border-slate-800 pl-2">
+                          {MANUTENCAO_SUBLINKS.filter(() => hasModulo("manutencao")).map((sub) => {
+                            const subAtivo = isAtivo(sub.href);
                             return (
                               <Link
                                 key={sub.href}

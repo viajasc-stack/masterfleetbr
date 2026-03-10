@@ -13,21 +13,23 @@ const supabase = createBrowserClient(
 
 type Manutencao = {
   id: string;
+  numero: number | null;
   tipo: string;
   descricao: string;
   status: string;
+  urgencia: string | null;
   data_prevista: string | null;
   data_realizada: string | null;
   km_previsto: number | null;
-  custo: number | null;
+  custo_total: number | null;
   created_at: string;
   veiculos: { placa: string; modelo: string | null } | null;
 };
 
 function badgeStatus(s: string) {
-  if (s === "concluida") return "border-green-200 text-green-700 bg-green-50";
-  if (s === "cancelada") return "border-slate-200 text-slate-500 bg-slate-50";
-  if (s === "em_andamento") return "border-blue-200 text-blue-700 bg-blue-50";
+  if (["concluida", "concluida_observacao", "concluida_parcial"].includes(s)) return "border-green-200 text-green-700 bg-green-50";
+  if (["cancelada", "reprovada", "sem_solucao_tecnica"].includes(s)) return "border-slate-200 text-slate-500 bg-slate-50";
+  if (["em_andamento", "programada", "pecas_reservadas"].includes(s)) return "border-blue-200 text-blue-700 bg-blue-50";
   return "border-amber-200 text-amber-700 bg-amber-50";
 }
 
@@ -44,8 +46,8 @@ export default function ManutencaoPage() {
   async function carregar() {
     setLoading(true);
     const { data } = await supabase.from("manutencoes")
-      .select("id, tipo, descricao, status, data_prevista, data_realizada, km_previsto, custo, created_at, veiculos(placa, modelo)")
-      .order("data_prevista", { ascending: true });
+      .select("id, numero, tipo, descricao, status, urgencia, data_prevista, data_realizada, km_previsto, custo_total, created_at, veiculos(placa, modelo)")
+      .order("created_at", { ascending: false });
     setTimeout(() => {
       setManutencoes((data as unknown as Manutencao[]) ?? []);
       setSelectedIds((prev) => prev.filter((id) => (data as Manutencao[] | null)?.some((m) => m.id === id)));
@@ -127,6 +129,9 @@ export default function ManutencaoPage() {
         description="Plano de manutenção preventiva e corretiva da frota."
         actions={
           <>
+            <Link href="/manutencao/estoque" className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 transition">
+              Estoque da manutenção
+            </Link>
             <Link href="/manutencao/nova" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition">
               + Nova Manutenção
             </Link>
@@ -156,8 +161,20 @@ export default function ManutencaoPage() {
               onChange={(e) => setFiltroStatus(e.target.value)}>
               <option value="todos">Todos</option>
               <option value="pendente">Pendente</option>
+              <option value="em_triagem">Em triagem</option>
+              <option value="em_analise">Em análise</option>
+              <option value="analisada">Analisada</option>
+              <option value="aguardando_aprovacao">Aguardando aprovação</option>
+              <option value="aguardando_pecas">Aguardando peças</option>
+              <option value="pecas_reservadas">Peças reservadas</option>
+              <option value="programada">Programada</option>
               <option value="em_andamento">Em andamento</option>
+              <option value="pausada">Pausada</option>
               <option value="concluida">Concluída</option>
+              <option value="concluida_observacao">Concluída com observação</option>
+              <option value="concluida_parcial">Concluída parcial</option>
+              <option value="sem_solucao_tecnica">Sem solução técnica</option>
+              <option value="reprovada">Reprovada</option>
               <option value="cancelada">Cancelada</option>
             </select>
           </div>
@@ -198,8 +215,10 @@ export default function ManutencaoPage() {
                     />
                   </th>
                   <th className="py-2 pr-4">Veículo</th>
+                  <th className="py-2 pr-4">Nº</th>
                   <th className="py-2 pr-4">Tipo</th>
                   <th className="py-2 pr-4">Descrição</th>
+                  <th className="py-2 pr-4">Urgência</th>
                   <th className="py-2 pr-4">Prev. Data</th>
                   <th className="py-2 pr-4">KM Prev.</th>
                   <th className="py-2 pr-4">Custo</th>
@@ -226,15 +245,17 @@ export default function ManutencaoPage() {
                         </Link>
                         {m.veiculos?.modelo && <div className="text-xs text-slate-500">{m.veiculos.modelo}</div>}
                       </td>
+                      <td className="py-2 pr-4 text-slate-500">{m.numero ? `MNT-${String(m.numero).padStart(5, "0")}` : "—"}</td>
                       <td className="py-2 pr-4">{m.tipo}</td>
                       <td className="py-2 pr-4 text-slate-500 max-w-[200px] truncate">{m.descricao}</td>
+                      <td className="py-2 pr-4 text-slate-500">{m.urgencia ?? "—"}</td>
                       <td className={`py-2 pr-4 ${vencida ? "text-red-600 font-medium" : "text-slate-500"}`}>
                         {m.data_prevista ? new Date(m.data_prevista + "T00:00:00").toLocaleDateString("pt-BR") : "—"}
                         {vencida && " ⚠"}
                       </td>
                       <td className="py-2 pr-4 text-slate-500">{m.km_previsto ?? "—"}</td>
                       <td className="py-2 pr-4">
-                        {m.custo != null ? m.custo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
+                        {m.custo_total != null ? m.custo_total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
                       </td>
                       <td className="py-2">
                         <span className={`text-xs px-2 py-1 rounded border ${badgeStatus(m.status)}`}>
