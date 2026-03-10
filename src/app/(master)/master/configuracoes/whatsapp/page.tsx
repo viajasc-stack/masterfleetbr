@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 
-type Provider = "custom_webhook" | "zapi" | "twilio" | "360dialog" | "evolution";
+type Provider = "custom_webhook" | "zapi" | "twilio" | "360dialog" | "evolution" | "meta_cloud_api";
 
 type Empresa = {
   id: string;
@@ -56,7 +56,7 @@ type InboundItem = {
   created_at: string;
 };
 
-const PROVIDERS: Provider[] = ["custom_webhook", "zapi", "twilio", "360dialog", "evolution"];
+const PROVIDERS: Provider[] = ["custom_webhook", "meta_cloud_api", "zapi", "twilio", "360dialog", "evolution"];
 
 function normalizePhone(raw: string) {
   return raw.replace(/\D/g, "");
@@ -95,6 +95,10 @@ export default function MasterConfiguracoesWhatsAppPage() {
   });
   const [testPhone, setTestPhone] = useState("");
   const [testMessage, setTestMessage] = useState("Teste WhatsApp via painel master.");
+  const [testMode, setTestMode] = useState<"text" | "template">("text");
+  const [metaTemplateName, setMetaTemplateName] = useState("");
+  const [metaTemplateLanguage, setMetaTemplateLanguage] = useState("pt_BR");
+  const [metaTemplateComponentsJson, setMetaTemplateComponentsJson] = useState("[]");
 
   const sentCount = useMemo(() => outbox.filter((x) => x.status === "sent").length, [outbox]);
   const deliveredCount = useMemo(() => outbox.filter((x) => x.provider_status === "delivered" || !!x.delivered_at).length, [outbox]);
@@ -243,15 +247,42 @@ export default function MasterConfiguracoesWhatsAppPage() {
   async function enqueueTest(ev: FormEvent) {
     ev.preventDefault();
     if (!empresaId) return;
+
+    let payload: Record<string, unknown> = { kind: "manual_test" };
+    let mensagemFinal = testMessage.trim();
+
+    if (testMode === "template") {
+      if (!metaTemplateName.trim()) {
+        setMsg("Informe o nome do template oficial Meta para teste.");
+        return;
+      }
+
+      let parsedComponents: unknown = [];
+      try {
+        parsedComponents = JSON.parse(metaTemplateComponentsJson || "[]");
+      } catch {
+        setMsg("JSON de components inválido.");
+        return;
+      }
+
+      payload = {
+        ...payload,
+        meta_template_name: metaTemplateName.trim(),
+        meta_template_language: metaTemplateLanguage.trim() || "pt_BR",
+        meta_template_components: Array.isArray(parsedComponents) ? parsedComponents : [],
+      };
+      mensagemFinal = mensagemFinal || `template:${metaTemplateName.trim()}`;
+    }
+
     setSaving(true);
     setMsg("");
 
     const { error } = await supabase.from("whatsapp_outbox").insert({
       empresa_id: empresaId,
       destino_numero: normalizePhone(testPhone),
-      mensagem: testMessage.trim(),
+      mensagem: mensagemFinal,
       template_codigo: "manual_test",
-      payload: { kind: "manual_test" },
+      payload,
       prioridade: 6,
       status: "queued",
       source_type: "master_manual_test",
@@ -342,6 +373,11 @@ export default function MasterConfiguracoesWhatsAppPage() {
             <select className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" value={config.provider} onChange={(e) => setConfig((p) => ({ ...p, provider: e.target.value as Provider }))}>
               {PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
+            {config.provider === "meta_cloud_api" ? (
+              <p className="text-xs text-slate-500 mt-1">
+                Use API URL no formato: https://graph.facebook.com/v23.0/&lt;PHONE_NUMBER_ID&gt;/messages
+              </p>
+            ) : null}
           </div>
           <div>
             <label className="block text-xs text-slate-500 mb-1">API URL</label>
@@ -409,8 +445,19 @@ export default function MasterConfiguracoesWhatsAppPage() {
 
         <form onSubmit={enqueueTest} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
           <h2 className="font-semibold text-slate-900">Teste manual</h2>
+          <div className="flex gap-2 text-xs">
+            <button type="button" className={`px-2 py-1 rounded border ${testMode === "text" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600"}`} onClick={() => setTestMode("text")}>Texto</button>
+            <button type="button" className={`px-2 py-1 rounded border ${testMode === "template" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600"}`} onClick={() => setTestMode("template")}>Template Meta</button>
+          </div>
           <input className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Telefone destino" value={testPhone} onChange={(e) => setTestPhone(e.target.value)} />
           <input className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Mensagem" value={testMessage} onChange={(e) => setTestMessage(e.target.value)} />
+          {testMode === "template" ? (
+            <>
+              <input className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="meta template name (ex: hello_world)" value={metaTemplateName} onChange={(e) => setMetaTemplateName(e.target.value)} />
+              <input className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="language code (ex: pt_BR)" value={metaTemplateLanguage} onChange={(e) => setMetaTemplateLanguage(e.target.value)} />
+              <textarea className="w-full border border-slate-300 rounded-md px-3 py-2 text-xs min-h-[90px] font-mono" placeholder='components JSON (ex: [{"type":"body","parameters":[{"type":"text","text":"João"}]}])' value={metaTemplateComponentsJson} onChange={(e) => setMetaTemplateComponentsJson(e.target.value)} />
+            </>
+          ) : null}
           <button disabled={saving} className="border border-slate-300 px-4 py-2 rounded-md text-sm text-slate-700 hover:bg-slate-50">
             Enfileirar teste
           </button>

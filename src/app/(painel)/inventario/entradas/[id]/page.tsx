@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
@@ -46,7 +46,7 @@ export default function DetalheEntradaPage() {
   const [acao, setAcao] = useState(false);
   const [erroAcao, setErroAcao] = useState("");
 
-  async function carregarEntrada() {
+  const carregarEntrada = useCallback(async () => {
     const [{ data: entradaData }, { data: itensData }] = await Promise.all([
       supabase
         .from("entradas_estoque")
@@ -84,7 +84,7 @@ export default function DetalheEntradaPage() {
     } else {
       setItens([]);
     }
-  }
+  }, [id, router]);
 
   useEffect(() => {
     async function load() {
@@ -93,7 +93,7 @@ export default function DetalheEntradaPage() {
       setLoading(false);
     }
     load();
-  }, [id, router]);
+  }, [carregarEntrada]);
 
   async function receberEntrada() {
     if (!entrada) return;

@@ -53,9 +53,7 @@ serve(async (req) => {
       .eq("user_id", caller.id)
       .maybeSingle();
 
-    const callerRole = String(callerProfile?.role ?? caller.user_metadata?.role ?? "").toLowerCase();
     let callerEmpresaId = callerProfile?.empresa_id ?? caller.user_metadata?.empresa_id ?? null;
-    const isAdminLike = ["admin", "dono"].includes(callerRole);
 
     let isSuperAdmin = false;
     const { data: superAdminData } = await supabase.rpc("is_super_admin");

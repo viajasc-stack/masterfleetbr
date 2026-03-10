@@ -56,7 +56,6 @@ export default function NovaOSPage() {
 
   const [qtdPassageiros, setQtdPassageiros] = useState("0");
 
-  const [valorTotal, setValorTotal] = useState("0");
   const [valorFixo, setValorFixo] = useState("0");
   const [valorKm, setValorKm] = useState("0");
   const [valorSinal, setValorSinal] = useState("0");
@@ -147,28 +146,14 @@ export default function NovaOSPage() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (modoCobranca === "km") {
+  function handleModoCobrancaChange(next: ModoCobranca) {
+    setModoCobranca(next);
+    if (next === "km") {
       setStatusPagamento("pendente");
-      setValorTotal("0");
       setValorSinal("0");
       setCobrarCliente(false);
-    } else {
-      const raw = (valorFixo || "").trim().replace(/\s+/g, "");
-      let normalized = raw;
-      if (raw.includes(",") && raw.includes(".")) {
-        normalized =
-          raw.lastIndexOf(",") > raw.lastIndexOf(".")
-            ? raw.replace(/\./g, "").replace(",", ".")
-            : raw.replace(/,/g, "");
-      } else if (raw.includes(",")) {
-        normalized = raw.replace(/\./g, "").replace(",", ".");
-      }
-      const parsed = Number(normalized);
-      const fixo = Number.isFinite(parsed) ? parsed : 0;
-      setValorTotal(String(fixo));
     }
-  }, [modoCobranca, valorFixo]);
+  }
 
   const clientesFiltrados = useMemo(() => {
     const q = buscaCliente.trim().toLowerCase();
@@ -272,7 +257,7 @@ export default function NovaOSPage() {
       valor_total:
         modoCobranca === "fixo"
           ? toMoney(valorFixo, 0)
-          : toMoney(valorTotal, 0),
+          : 0,
       valor_fixo: modoCobranca === "fixo" ? toMoney(valorFixo, 0) : null,
       valor_km: modoCobranca === "km" ? toMoney(valorKm, 0) : null,
       valor_sinal: modoCobranca === "fixo" ? toMoney(valorSinal, 0) : 0,
@@ -382,7 +367,7 @@ export default function NovaOSPage() {
               <select
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
                 value={modoCobranca}
-                onChange={(e) => setModoCobranca(e.target.value as ModoCobranca)}
+                onChange={(e) => handleModoCobrancaChange(e.target.value as ModoCobranca)}
               >
                 <option value="fixo">Valor fixo</option>
                 <option value="km">Por KM rodado</option>

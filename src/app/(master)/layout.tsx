@@ -83,6 +83,7 @@ export default function MasterLayout({ children }: { children: React.ReactNode }
                     <div className="mt-1 mb-1 ml-2 border-l border-slate-800 pl-2">
                       {[
                         { href: "/master/configuracoes", label: "Geral" },
+                        { href: "/master/configuracoes/aparencia", label: "Aparência" },
                         { href: "/master/configuracoes/mercado-pago", label: "Mercado Pago" },
                         { href: "/master/configuracoes/asaas", label: "Asaas" },
                         { href: "/master/configuracoes/whatsapp", label: "WhatsApp" },

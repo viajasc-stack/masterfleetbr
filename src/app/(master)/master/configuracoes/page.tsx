@@ -26,6 +26,11 @@ export default function MasterConfiguracoesPage() {
   const [trialDias, setTrialDias] = useState("7");
   const [graceDias, setGraceDias] = useState("5");
   const [bloqueioAuto, setBloqueioAuto] = useState(true);
+  const [referralActive, setReferralActive] = useState(false);
+  const [inviterType, setInviterType] = useState<"fixed" | "percent">("fixed");
+  const [inviterValue, setInviterValue] = useState("0");
+  const [inviteeType, setInviteeType] = useState<"fixed" | "percent">("fixed");
+  const [inviteeValue, setInviteeValue] = useState("0");
 
   const [flagCode, setFlagCode] = useState("");
   const [flagDescription, setFlagDescription] = useState("");
@@ -52,9 +57,21 @@ export default function MasterConfiguracoesPage() {
 
     const settings = payload.settings ?? {};
     const billingPolicy = (settings.billing_policy as { trial_days?: number; grace_days?: number; auto_block?: boolean } | undefined) ?? {};
+    const referralCampaign = (
+      settings.referral_campaign as {
+        active?: boolean;
+        inviter?: { type?: "fixed" | "percent"; value?: number };
+        invitee?: { type?: "fixed" | "percent"; value?: number };
+      } | undefined
+    ) ?? {};
     setTrialDias(String(billingPolicy.trial_days ?? 7));
     setGraceDias(String(billingPolicy.grace_days ?? 5));
     setBloqueioAuto(Boolean(billingPolicy.auto_block ?? true));
+    setReferralActive(Boolean(referralCampaign.active ?? false));
+    setInviterType(referralCampaign.inviter?.type === "percent" ? "percent" : "fixed");
+    setInviterValue(String(referralCampaign.inviter?.value ?? 0));
+    setInviteeType(referralCampaign.invitee?.type === "percent" ? "percent" : "fixed");
+    setInviteeValue(String(referralCampaign.invitee?.value ?? 0));
 
     setLoading(false);
   }
@@ -84,6 +101,35 @@ export default function MasterConfiguracoesPage() {
       return;
     }
     setMsg("Política de cobrança salva com sucesso.");
+  }
+
+  async function salvarCampanhaReferral(ev: FormEvent) {
+    ev.preventDefault();
+    setSaving(true);
+    setMsg("");
+
+    const { error } = await supabase.rpc("master_upsert_setting", {
+      p_key: "referral_campaign",
+      p_value: {
+        active: referralActive,
+        inviter: {
+          type: inviterType,
+          value: Number(inviterValue || 0),
+        },
+        invitee: {
+          type: inviteeType,
+          value: Number(inviteeValue || 0),
+        },
+      },
+    });
+
+    setSaving(false);
+    if (error) {
+      setMsg(error.message);
+      return;
+    }
+
+    setMsg("Campanha Convide e Ganhe salva com sucesso.");
   }
 
   async function adicionarSuperAdmin(ev: FormEvent) {
@@ -250,6 +296,64 @@ export default function MasterConfiguracoesPage() {
               Salvar política
             </button>
           </div>
+        </form>
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+        <h2 className="font-semibold text-slate-900">Plataforma • Convide e Ganhe</h2>
+        <form onSubmit={salvarCampanhaReferral} className="space-y-4">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={referralActive} onChange={(e) => setReferralActive(e.target.checked)} />
+            Campanha ativa
+          </label>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="rounded-lg border border-slate-200 p-4 space-y-3">
+              <div className="text-sm font-medium text-slate-900">Quem convida (Empresa A)</div>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                value={inviterType}
+                onChange={(e) => setInviterType(e.target.value === "percent" ? "percent" : "fixed")}
+              >
+                <option value="fixed">Valor fixo (R$)</option>
+                <option value="percent">Percentual (%)</option>
+              </select>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                value={inviterValue}
+                onChange={(e) => setInviterValue(e.target.value)}
+                placeholder={inviterType === "fixed" ? "Ex.: 100" : "Ex.: 50"}
+              />
+            </div>
+
+            <div className="rounded-lg border border-slate-200 p-4 space-y-3">
+              <div className="text-sm font-medium text-slate-900">Quem é convidado (Empresa B)</div>
+              <select
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                value={inviteeType}
+                onChange={(e) => setInviteeType(e.target.value === "percent" ? "percent" : "fixed")}
+              >
+                <option value="fixed">Valor fixo (R$)</option>
+                <option value="percent">Percentual (%)</option>
+              </select>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                value={inviteeValue}
+                onChange={(e) => setInviteeValue(e.target.value)}
+                placeholder={inviteeType === "fixed" ? "Ex.: 100" : "Ex.: 50"}
+              />
+            </div>
+          </div>
+
+          <button disabled={saving} className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700 disabled:opacity-60">
+            Salvar campanha
+          </button>
         </form>
       </section>
 

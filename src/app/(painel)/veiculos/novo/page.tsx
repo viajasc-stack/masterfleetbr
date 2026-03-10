@@ -513,11 +513,19 @@ export default function NovoVeiculoPage() {
                 value={combustivel}
                 onChange={(e) => setCombustivel(e.target.value as (typeof COMBUSTIVEIS)[number])}
               >
-                <option value="alcool">Álcool</option>
-                <option value="gasolina_comum">Gasolina comum</option>
-                <option value="gasolina_aditivada">Gasolina aditivada</option>
-                <option value="diesel_comum">Diesel comum</option>
-                <option value="diesel_s10">Diesel S10</option>
+                {COMBUSTIVEIS.map((comb) => (
+                  <option key={comb} value={comb}>
+                    {comb === "alcool"
+                      ? "Álcool"
+                      : comb === "gasolina_comum"
+                      ? "Gasolina comum"
+                      : comb === "gasolina_aditivada"
+                      ? "Gasolina aditivada"
+                      : comb === "diesel_comum"
+                      ? "Diesel comum"
+                      : "Diesel S10"}
+                  </option>
+                ))}
               </select>
             </div>
 

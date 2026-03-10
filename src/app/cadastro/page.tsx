@@ -47,6 +47,7 @@ export default function CadastroPage() {
   const [nomeAdmin, setNomeAdmin] = useState("");
   const [emailAdmin, setEmailAdmin] = useState("");
   const [senha, setSenha] = useState("");
+  const [referralCode, setReferralCode] = useState("");
 
   const [loadingBusca, setLoadingBusca] = useState(false);
   const [loadingCadastro, setLoadingCadastro] = useState(false);
@@ -127,6 +128,7 @@ export default function CadastroPage() {
           endereco: enderecoEmpresa.trim() || null,
           cidade: cidadeEmpresa.trim() || null,
           estado: estadoEmpresa.trim().toUpperCase() || null,
+          referral_code: referralCode.trim().toLowerCase() || null,
         }),
       });
 
@@ -306,6 +308,17 @@ export default function CadastroPage() {
                     required
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-200">Código de convite (opcional)</label>
+                <input
+                  className="mt-1 w-full rounded-xl bg-slate-800 border border-slate-600 px-3 py-2.5 text-sm text-slate-100"
+                  value={referralCode}
+                  onChange={(e) => setReferralCode(e.target.value.toLowerCase())}
+                  type="text"
+                  placeholder="ex: a1b2c3d4e5"
+                />
               </div>
             </section>
 

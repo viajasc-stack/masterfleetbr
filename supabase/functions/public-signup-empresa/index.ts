@@ -37,6 +37,7 @@ serve(async (req) => {
     const nomeAdmin = String(body?.nome_admin ?? "").trim();
     const emailAdmin = String(body?.email_admin ?? "").trim().toLowerCase();
     const senha = String(body?.senha ?? "");
+    const referralCode = String(body?.referral_code ?? "").trim().toLowerCase() || null;
 
     const cnpj = onlyDigits(body?.cnpj);
     const telefone = String(body?.telefone ?? "").trim() || null;
@@ -191,6 +192,17 @@ serve(async (req) => {
       });
 
       if (assinaturaRes.error) throw new Error(assinaturaRes.error.message);
+
+      if (referralCode) {
+        const referralRes = await supabase.rpc("apply_referral_on_signup", {
+          p_referral_code: referralCode,
+          p_new_empresa_id: empresaId,
+          p_new_admin_email: emailAdmin,
+        });
+        if (referralRes.error) {
+          console.warn("apply_referral_on_signup warning:", referralRes.error.message);
+        }
+      }
 
       const profileRes = await supabase.from("profiles").insert({
         user_id: authUserId,

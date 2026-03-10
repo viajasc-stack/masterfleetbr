@@ -13,7 +13,7 @@ type OutboxRow = {
   max_attempts: number;
   provider_message_id: string | null;
   whatsapp_configs: {
-    provider: "custom_webhook" | "zapi" | "twilio" | "360dialog" | "evolution";
+    provider: "custom_webhook" | "zapi" | "twilio" | "360dialog" | "evolution" | "meta_cloud_api";
     api_url: string | null;
     api_token: string | null;
     from_number: string | null;
@@ -43,6 +43,80 @@ async function sendViaProvider(row: OutboxRow) {
   const cfg = row.whatsapp_configs;
   if (!cfg || !cfg.api_url) {
     throw new Error("whatsapp_provider_not_configured");
+  }
+
+  if (cfg.provider === "meta_cloud_api") {
+    if (!cfg.api_token) {
+      throw new Error("meta_cloud_api_token_missing");
+    }
+
+    const metaTemplateName = typeof row.payload?.meta_template_name === "string"
+      ? row.payload.meta_template_name
+      : null;
+    const metaTemplateLanguage = typeof row.payload?.meta_template_language === "string"
+      ? row.payload.meta_template_language
+      : "pt_BR";
+    const metaTemplateComponents = Array.isArray(row.payload?.meta_template_components)
+      ? row.payload?.meta_template_components
+      : null;
+
+    const graphPayload = metaTemplateName
+      ? {
+          messaging_product: "whatsapp",
+          to: row.destino_numero,
+          type: "template",
+          template: {
+            name: metaTemplateName,
+            language: { code: metaTemplateLanguage },
+            ...(metaTemplateComponents ? { components: metaTemplateComponents } : {}),
+          },
+        }
+      : {
+          messaging_product: "whatsapp",
+          to: row.destino_numero,
+          type: "text",
+          text: {
+            body: row.mensagem ?? "",
+          },
+        };
+
+    const res = await fetch(cfg.api_url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cfg.api_token}`,
+      },
+      body: JSON.stringify(graphPayload),
+    });
+
+    const text = await res.text();
+    let json: Record<string, unknown> | null = null;
+    try {
+      json = text ? (JSON.parse(text) as Record<string, unknown>) : null;
+    } catch {
+      json = null;
+    }
+
+    if (!res.ok) {
+      throw new Error(`meta_cloud_api_http_${res.status}:${text || "empty_response"}`);
+    }
+
+    const messages = Array.isArray(json?.messages)
+      ? (json?.messages as Array<Record<string, unknown>>)
+      : [];
+
+    const providerMessageId =
+      (messages[0]?.id as string | undefined) ||
+      (json?.message_id as string | undefined) ||
+      row.provider_message_id ||
+      null;
+
+    return {
+      httpStatus: res.status,
+      responseBody: text,
+      providerMessageId,
+      providerStatus: metaTemplateName ? "template_accepted" : "accepted",
+    };
   }
 
   const payload = {

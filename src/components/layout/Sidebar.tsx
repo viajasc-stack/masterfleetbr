@@ -49,6 +49,7 @@ const LINKS: NavItem[] = [
   { href: "/manutencao", label: "Manutenção", icon: "◼", group: "Gestão", modulo: "manutencao" },
   { href: "/relatorios", label: "Relatórios", icon: "◼", group: "Gestão", modulo: "relatorios" },
   { href: "/suporte", label: "Suporte", icon: "◼", group: "Administrativo", modulo: "suporte" },
+  { href: "/convide-e-ganhe", label: "Convide e Ganhe", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
   { href: "/configuracoes", label: "Configurações", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
 ];
 
@@ -60,6 +61,7 @@ export default function Sidebar() {
   const [canUseAllModules, setCanUseAllModules] = useState(false);
   const [allowedModules, setAllowedModules] = useState<string[]>([]);
   const [supportUnread, setSupportUnread] = useState(0);
+  const [canShowReferralMenu, setCanShowReferralMenu] = useState(false);
 
   useEffect(() => {
     async function loadModules() {
@@ -77,6 +79,17 @@ export default function Sidebar() {
     }
     const t = setTimeout(() => {
       void loadSupportUnread();
+    }, 0);
+    return () => clearTimeout(t);
+  }, [pathname]);
+
+  useEffect(() => {
+    async function loadReferralMenuVisibility() {
+      const { data } = await supabase.rpc("get_billing_current");
+      setCanShowReferralMenu((data?.status ?? "") === "ativa");
+    }
+    const t = setTimeout(() => {
+      void loadReferralMenuVisibility();
     }, 0);
     return () => clearTimeout(t);
   }, [pathname]);
@@ -103,7 +116,10 @@ export default function Sidebar() {
 
       <nav className="flex-1 overflow-y-auto py-2">
         {GROUPS.map((group) => {
-          const items = LINKS.filter((l) => l.group === group && hasModulo(l.modulo));
+          const items = LINKS.filter((l) => {
+            if (l.href === "/convide-e-ganhe" && !canShowReferralMenu) return false;
+            return l.group === group && hasModulo(l.modulo);
+          });
           if (items.length === 0) return null;
           return (
             <div key={group} className="mb-1">

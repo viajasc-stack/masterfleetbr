@@ -127,11 +127,89 @@ Você pode conectar esse endpoint com:
 
 ## Próximos passos recomendados
 
-1. Agendar cron para `whatsapp-dispatch` (processamento automático da fila).
-2. Ajustar parser inbound para payload específico do provider escolhido.
-3. Implementar atualização de status de entrega (delivered/read) via webhook.
-4. Incluir monitoramento master consolidado de fila/falhas por empresa.
-5. Escalonamento de alertas críticos (WhatsApp + notificação interna + e-mail).
+1. Ajustar parser inbound para payload específico do provider escolhido.
+2. Incluir monitoramento master consolidado de fila/falhas por empresa.
+3. Escalonamento de alertas críticos (WhatsApp + notificação interna + e-mail).
+
+---
+
+## Atualização — automação de dispatch via GitHub Actions
+
+Foi adicionado o workflow:
+
+- `.github/workflows/schedule-whatsapp-dispatch.yml`
+
+Comportamento:
+
+- execução manual (`workflow_dispatch`)
+- execução agendada a cada 5 minutos (`cron: */5 * * * *`)
+- chama a Edge Function `whatsapp-dispatch` com `POST`
+
+Secrets necessários no repositório:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Com isso, a fila `whatsapp_outbox` passa a ser processada continuamente sem depender de execução manual.
+
+---
+
+## Setup oficial Meta WhatsApp Cloud API (pronto para produção)
+
+### 1) Provider no painel master
+
+Em `/master/configuracoes/whatsapp`:
+
+- provider: `meta_cloud_api`
+- `api_url`: `https://graph.facebook.com/v23.0/<PHONE_NUMBER_ID>/messages`
+- `api_token`: token permanente do app/system user
+- `ativo`: true
+
+### 2) Secrets/variáveis obrigatórias
+
+Na Edge Function `whatsapp-inbound`:
+
+- `WHATSAPP_META_VERIFY_TOKEN` → token para verificação do webhook (GET)
+- `WHATSAPP_META_APP_SECRET` → usado para validar assinatura `X-Hub-Signature-256` (POST)
+
+Na automação GitHub:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+### 3) Webhook Meta
+
+Endpoint de callback:
+
+- `https://<PROJECT_REF>.functions.supabase.co/whatsapp-inbound?provider=meta_cloud_api`
+
+Fluxo suportado:
+
+- verificação de webhook (hub.challenge)
+- recebimento de mensagens de texto/interativo/mídia (extração de conteúdo principal)
+- recebimento de status (`sent/delivered/read/failed`) com atualização no `whatsapp_outbox`
+- validação de assinatura HMAC SHA-256 (`X-Hub-Signature-256`)
+
+### 4) Envio de mensagens
+
+Dispatcher (`whatsapp-dispatch`) suporta dois modos:
+
+- **Texto** (`type=text`) por padrão
+- **Template oficial Meta** (`type=template`) quando o `payload` da outbox inclui:
+  - `meta_template_name`
+  - `meta_template_language` (default `pt_BR`)
+  - `meta_template_components` (array)
+
+No painel master, o formulário de teste já permite:
+
+- teste de texto
+- teste de template Meta com JSON de `components`
+
+### 5) Observações operacionais
+
+- Para ambiente produtivo, prefira templates aprovados pela Meta em vez de texto livre.
+- Garanta que `empresas.whatsapp` esteja preenchido com número válido (E.164 sem símbolos, ex.: `5511999999999`).
+- Mantenha token da Meta rotacionado conforme política de segurança.
 
 ---
 

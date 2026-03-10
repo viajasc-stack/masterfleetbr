@@ -20,7 +20,7 @@ body {
 }
 
 input, select, textarea {
-  color: #0f172a;
+  color: inherit;
 }
 ::placeholder {
   color: #64748b;

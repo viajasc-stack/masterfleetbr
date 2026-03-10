@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 
 type Empresa = { id: string; nome: string; cnpj: string | null; telefone: string | null; email: string | null; endereco: string | null; cidade: string | null; estado: string | null };
@@ -8,6 +8,8 @@ type Profile = { user_id: string; nome: string | null; role: string; empresa_id:
 type Assinatura = { status: string; trial_ate: string | null; proxima_cobranca: string | null; planos: { nome: string } | null };
 type CustomDomainInfo = {
   allowed: boolean;
+  allowed_subdomain?: boolean;
+  allowed_custom_domain?: boolean;
   base_domain: string;
   subdominio_personalizado: string | null;
   dominio_personalizado: string | null;
@@ -40,7 +42,9 @@ export default function ConfiguracoesPage() {
 
   function mapDomainError(errorMessage: string) {
     const msg = (errorMessage || "").toLowerCase();
-    if (msg.includes("plano_not_allowed")) return "Recurso disponível apenas para plano Supremo/Top ativo.";
+    if (msg.includes("plano_not_allowed")) return "Recurso disponível apenas para planos elegíveis.";
+    if (msg.includes("plano_subdomain_not_allowed")) return "Seu plano não permite subdomínio da plataforma.";
+    if (msg.includes("plano_domain_not_allowed")) return "Domínio próprio disponível apenas no plano Supremo.";
     if (msg.includes("subdomain_reserved")) return "Esse subdomínio é reservado pelo sistema.";
     if (msg.includes("subdomain_invalid")) return "Subdomínio inválido. Use apenas letras minúsculas, números e hífen.";
     if (msg.includes("subdomain_unavailable")) return "Subdomínio indisponível. Escolha outro.";
@@ -50,7 +54,7 @@ export default function ConfiguracoesPage() {
     return errorMessage;
   }
 
-  async function carregarDominio() {
+  const carregarDominio = useCallback(async () => {
     const { data, error } = await supabase.rpc("get_my_custom_domain");
     if (error) {
       setDomainInfo(null);
@@ -61,16 +65,26 @@ export default function ConfiguracoesPage() {
     const info = (data ?? null) as CustomDomainInfo | null;
     setDomainInfo(info);
 
-    if (info?.dominio_personalizado) {
+    if (info?.dominio_personalizado && info.allowed_custom_domain) {
       setDomainMode("domain");
       setDomainInput(info.dominio_personalizado);
+      setSubdomainInput("");
+    } else if (info?.subdominio_personalizado && info.allowed_subdomain) {
+      setDomainMode("subdomain");
+      setSubdomainInput(info.subdominio_personalizado);
+      setDomainInput("");
+    } else if (info?.allowed_subdomain && !info?.allowed_custom_domain) {
+      setDomainMode("subdomain");
+      setDomainInput("");
+    } else if (info?.allowed_custom_domain && !info?.allowed_subdomain) {
+      setDomainMode("domain");
       setSubdomainInput("");
     } else {
       setDomainMode("subdomain");
       setSubdomainInput(info?.subdominio_personalizado ?? "");
       setDomainInput("");
     }
-  }
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -110,7 +124,7 @@ export default function ConfiguracoesPage() {
       setLoading(false);
     }
     load();
-  }, []);
+  }, [carregarDominio]);
 
   async function salvarEmpresa(e: React.FormEvent) {
     e.preventDefault();
@@ -222,7 +236,7 @@ export default function ConfiguracoesPage() {
           </div>
           <div className="flex items-center gap-3">
             <span className={`text-xs px-2 py-1 rounded border ${assinatura.status === "ativa" ? "border-green-500/40 text-green-300" : assinatura.status === "trial" ? "border-blue-500/40 text-blue-300" : "border-amber-500/40 text-amber-300"}`}>{assinatura.status}</span>
-            {assinatura.trial_ate && <span className="text-slate-500">Trial até {new Date(assinatura.trial_ate).toLocaleDateString("pt-BR")}</span>}
+            {assinatura.status === "trial" && assinatura.trial_ate && <span className="text-slate-500">Trial até {new Date(assinatura.trial_ate).toLocaleDateString("pt-BR")}</span>}
           </div>
         </div>
       )}
@@ -277,8 +291,8 @@ export default function ConfiguracoesPage() {
 
           <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 text-sm">
             <div>
-              <h2 className="font-semibold">URL personalizada (plano Supremo/Top)</h2>
-              <p className="text-slate-500 mt-1">Configure um subdomínio da plataforma ou domínio próprio para sua empresa.</p>
+              <h2 className="font-semibold">URL personalizada</h2>
+              <p className="text-slate-500 mt-1">No plano Enterprise/Top: subdomínio da plataforma. No plano Supremo: domínio próprio do cliente.</p>
             </div>
 
             {domainMsg && (
@@ -298,6 +312,15 @@ export default function ConfiguracoesPage() {
                   {domainInfo?.dominio_status ?? "desativado"} / SSL: {domainInfo?.dominio_ssl_status ?? "pendente"}
                 </div>
               </div>
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3 md:col-span-2">
+                <div className="text-slate-500">Recursos liberados no plano</div>
+                <div className="text-slate-900 font-medium mt-1">
+                  {(domainInfo?.allowed_subdomain ? "Subdomínio" : "")}
+                  {domainInfo?.allowed_subdomain && domainInfo?.allowed_custom_domain ? " + " : ""}
+                  {(domainInfo?.allowed_custom_domain ? "Domínio próprio" : "")}
+                  {!domainInfo?.allowed_subdomain && !domainInfo?.allowed_custom_domain ? "Nenhum" : ""}
+                </div>
+              </div>
             </div>
 
             {domainInfo?.host_ativo ? (
@@ -312,24 +335,26 @@ export default function ConfiguracoesPage() {
               </div>
             ) : (
               <>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setDomainMode("subdomain")}
-                    className={`px-3 py-1.5 rounded-md border ${domainMode === "subdomain" ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}
-                  >
-                    Subdomínio da plataforma
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDomainMode("domain")}
-                    className={`px-3 py-1.5 rounded-md border ${domainMode === "domain" ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}
-                  >
-                    Domínio próprio
-                  </button>
-                </div>
+                {domainInfo?.allowed_subdomain && domainInfo?.allowed_custom_domain ? (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDomainMode("subdomain")}
+                      className={`px-3 py-1.5 rounded-md border ${domainMode === "subdomain" ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}
+                    >
+                      Subdomínio da plataforma
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDomainMode("domain")}
+                      className={`px-3 py-1.5 rounded-md border ${domainMode === "domain" ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}
+                    >
+                      Domínio próprio
+                    </button>
+                  </div>
+                ) : null}
 
-                {domainMode === "subdomain" ? (
+                {domainInfo?.allowed_subdomain && domainMode === "subdomain" ? (
                   <form onSubmit={salvarSubdominio} className="space-y-3">
                     <label className="block font-medium">Subdomínio</label>
                     <div className="flex items-center gap-2">
@@ -345,7 +370,7 @@ export default function ConfiguracoesPage() {
                       {domainSaving ? "Salvando..." : "Salvar subdomínio"}
                     </button>
                   </form>
-                ) : (
+                ) : domainInfo?.allowed_custom_domain ? (
                   <form onSubmit={salvarDominio} className="space-y-3">
                     <label className="block font-medium">Domínio próprio</label>
                     <input
@@ -358,7 +383,7 @@ export default function ConfiguracoesPage() {
                       {domainSaving ? "Salvando..." : "Salvar domínio"}
                     </button>
                   </form>
-                )}
+                ) : null}
 
                 <div className="flex items-center gap-3">
                   <button type="button" onClick={limparDominio} disabled={domainSaving} className="text-red-700 border border-red-200 px-3 py-1.5 rounded-md hover:bg-red-50 disabled:opacity-60">
@@ -369,6 +394,7 @@ export default function ConfiguracoesPage() {
               </>
             )}
           </div>
+
         </div>
       )}
 
