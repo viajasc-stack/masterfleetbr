@@ -25,6 +25,7 @@ const MODULOS_CATALOGO = [
   "relatorios",
   "manutencao",
   "agenda",
+  "viagens",
   "api_integracoes",
   "automacoes",
 ];
@@ -32,7 +33,7 @@ const MODULOS_CATALOGO = [
 const PRESETS = {
   basico: ["dashboard", "ordens_servico", "clientes", "veiculos", "motoristas"],
   intermediario: ["dashboard", "ordens_servico", "clientes", "veiculos", "motoristas", "financeiro", "inventario", "relatorios"],
-  top: ["dashboard", "ordens_servico", "clientes", "veiculos", "motoristas", "financeiro", "inventario", "relatorios", "manutencao", "agenda", "api_integracoes", "automacoes"],
+  top: ["dashboard", "ordens_servico", "clientes", "veiculos", "motoristas", "financeiro", "inventario", "relatorios", "manutencao", "agenda", "viagens", "api_integracoes", "automacoes"],
 } as const;
 
 function parseModulos(raw: unknown): string[] {

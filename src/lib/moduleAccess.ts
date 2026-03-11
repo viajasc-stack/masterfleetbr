@@ -26,6 +26,7 @@ const ROUTE_MODULE_MAP: Array<{ prefix: string; modulo: string }> = [
   { prefix: "/manutencao", modulo: "manutencao" },
   { prefix: "/relatorios", modulo: "relatorios" },
   { prefix: "/agenda", modulo: "agenda" },
+  { prefix: "/viagens", modulo: "viagens" },
   { prefix: "/aniversariantes", modulo: "relatorios" },
   { prefix: "/suporte", modulo: "suporte" },
   { prefix: "/configuracoes", modulo: "configuracoes" },

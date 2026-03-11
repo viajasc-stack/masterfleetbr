@@ -18,9 +18,11 @@ type StatusOS =
   | "cancelada";
 
 type StatusPg = "pendente" | "parcial" | "pago" | "cancelado";
+type StatusPresenca = "PENDENTE" | "EMBARCOU" | "FALTOU" | "EXTRA";
 
 type OsDb = {
   id: string;
+  contrato_id: string | null;
 
   numero: number | null;
   tipo: TipoOS;
@@ -58,6 +60,15 @@ type OsDb = {
   updated_at: string;
 };
 
+type PresencaRow = {
+  id: string;
+  passageiro_id: string;
+  status: StatusPresenca;
+  hora_registro: string | null;
+};
+
+type PassageiroMini = { id: string; nome: string };
+
 function isoToInputLocal(iso: string | null) {
   if (!iso) return "";
   // transforma ISO -> "YYYY-MM-DDTHH:mm"
@@ -87,6 +98,9 @@ export default function EditarOSPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
+  const [presencas, setPresencas] = useState<PresencaRow[]>([]);
+  const [passageirosMap, setPassageirosMap] = useState<Record<string, string>>({});
+  const [syncingPresencas, setSyncingPresencas] = useState(false);
 
   const [os, setOs] = useState<OsDb | null>(null);
 
@@ -156,7 +170,7 @@ export default function EditarOSPage() {
     const { data, error } = await supabase
       .from("ordens_servico")
       .select(
-        "id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, created_at, updated_at"
+        "id, contrato_id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, created_at, updated_at"
       )
       .eq("id", id)
       .limit(1);
@@ -179,6 +193,7 @@ export default function EditarOSPage() {
 
     const o = row;
     setOs(o);
+    await carregarPresencas(o.id);
 
     setTipo(o.tipo ?? "eventual");
     setStatus(o.status ?? "pendente");
@@ -220,6 +235,67 @@ export default function EditarOSPage() {
     setLoading(false);
   }
 
+  async function carregarPresencas(osId: string) {
+    const { data, error } = await supabase
+      .from("os_passageiros_presenca")
+      .select("id, passageiro_id, status, hora_registro")
+      .eq("os_id", osId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    const rows = (data ?? []) as PresencaRow[];
+    setPresencas(rows);
+
+    const ids = rows.map((r) => r.passageiro_id);
+    if (ids.length === 0) {
+      setPassageirosMap({});
+      return;
+    }
+
+    const { data: pData } = await supabase
+      .from("passageiros")
+      .select("id, nome")
+      .in("id", ids);
+
+    const map: Record<string, string> = {};
+    ((pData ?? []) as PassageiroMini[]).forEach((p) => {
+      map[p.id] = p.nome;
+    });
+    setPassageirosMap(map);
+  }
+
+  async function sincronizarPassageirosFretamento() {
+    if (!os?.id) return;
+    setSyncingPresencas(true);
+    const { error } = await supabase.rpc("rpc_os_sync_passageiros_fretamento", {
+      p_os_id: os.id,
+    });
+    setSyncingPresencas(false);
+    if (error) {
+      alert("Erro ao sincronizar passageiros: " + error.message);
+      return;
+    }
+    await carregarPresencas(os.id);
+  }
+
+  async function marcarPresenca(passageiroId: string, novoStatus: StatusPresenca) {
+    if (!os?.id) return;
+    const { error } = await supabase.rpc("rpc_os_atualizar_presenca_passageiro", {
+      p_os_id: os.id,
+      p_passageiro_id: passageiroId,
+      p_status: novoStatus,
+    });
+    if (error) {
+      alert("Erro ao atualizar presença: " + error.message);
+      return;
+    }
+    await carregarPresencas(os.id);
+  }
+
   useEffect(() => {
     (async () => {
       await carregarCombos();
@@ -248,6 +324,17 @@ export default function EditarOSPage() {
     if (!q) return motoristas;
     return motoristas.filter((x) => x.nome.toLowerCase().includes(q));
   }, [motoristas, buscaMotorista]);
+
+  const resumoPresencas = useMemo(() => {
+    return presencas.reduce(
+      (acc, p) => {
+        acc.total += 1;
+        acc[p.status] += 1;
+        return acc;
+      },
+      { total: 0, PENDENTE: 0, EMBARCOU: 0, FALTOU: 0, EXTRA: 0 } as Record<"total" | StatusPresenca, number>
+    );
+  }, [presencas]);
 
   function toInt(v: string, fallback = 0) {
     const n = Number(v);
@@ -690,6 +777,63 @@ export default function EditarOSPage() {
             value={observacoes}
             onChange={(e) => setObservacoes(e.target.value)}
           />
+        </div>
+
+        {/* Presença de passageiros (fretamento compartilhado) */}
+        <div className="border-t pt-6 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-slate-800">Presença de passageiros</h2>
+            <button
+              type="button"
+              onClick={sincronizarPassageirosFretamento}
+              className="border border-indigo-300 text-indigo-700 px-3 py-2 rounded-md hover:bg-indigo-50 text-sm disabled:opacity-60"
+              disabled={syncingPresencas}
+            >
+              {syncingPresencas ? "Sincronizando..." : "Sincronizar da programação"}
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="px-2 py-1 rounded border border-slate-300">Total: {resumoPresencas.total}</span>
+            <span className="px-2 py-1 rounded border border-slate-300">Pendente: {resumoPresencas.PENDENTE}</span>
+            <span className="px-2 py-1 rounded border border-emerald-300 text-emerald-700 bg-emerald-50">Embarcou: {resumoPresencas.EMBARCOU}</span>
+            <span className="px-2 py-1 rounded border border-rose-300 text-rose-700 bg-rose-50">Faltou: {resumoPresencas.FALTOU}</span>
+            <span className="px-2 py-1 rounded border border-amber-300 text-amber-700 bg-amber-50">Extra: {resumoPresencas.EXTRA}</span>
+          </div>
+
+          {presencas.length === 0 ? (
+            <div className="text-xs text-slate-500">Nenhum passageiro sincronizado para esta OS.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left border-b">
+                    <th className="py-2 pr-4">Passageiro</th>
+                    <th className="py-2 pr-4">Status</th>
+                    <th className="py-2 pr-4">Hora</th>
+                    <th className="py-2 pr-0 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {presencas.map((p) => (
+                    <tr key={p.id} className="border-b last:border-b-0">
+                      <td className="py-2 pr-4">{passageirosMap[p.passageiro_id] ?? p.passageiro_id.slice(0, 8)}</td>
+                      <td className="py-2 pr-4">{p.status}</td>
+                      <td className="py-2 pr-4">{p.hora_registro ? new Date(p.hora_registro).toLocaleString("pt-BR") : "—"}</td>
+                      <td className="py-2 pr-0 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <button type="button" onClick={() => marcarPresenca(p.passageiro_id, "EMBARCOU")} className="px-2 py-1 text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50">Embarcou</button>
+                          <button type="button" onClick={() => marcarPresenca(p.passageiro_id, "FALTOU")} className="px-2 py-1 text-xs rounded border border-rose-300 text-rose-700 hover:bg-rose-50">Faltou</button>
+                          <button type="button" onClick={() => marcarPresenca(p.passageiro_id, "EXTRA")} className="px-2 py-1 text-xs rounded border border-amber-300 text-amber-700 hover:bg-amber-50">Extra</button>
+                          <button type="button" onClick={() => marcarPresenca(p.passageiro_id, "PENDENTE")} className="px-2 py-1 text-xs rounded border border-slate-300 text-slate-700 hover:bg-slate-50">Pendente</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Ações */}
