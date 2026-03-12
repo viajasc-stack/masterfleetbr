@@ -355,20 +355,20 @@ export default function AgendaDiaPage() {
         description={selectedDate ? new Date(`${selectedDate}T12:00:00`).toLocaleDateString("pt-BR") : ""}
         actions={
           <div className="flex gap-2">
-            <Link href={`/agenda/${prevDate}`} className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50">
+            <Link href={`/agenda/${prevDate}`} className="rounded-lg border border-slate-300 bg-white px-4 py-2 hover:bg-slate-50">
               ← Dia anterior
             </Link>
-            <Link href={`/agenda/${nextDate}`} className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50">
+            <Link href={`/agenda/${nextDate}`} className="rounded-lg border border-slate-300 bg-white px-4 py-2 hover:bg-slate-50">
               Próximo dia →
             </Link>
-            <Link href="/agenda" className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50">
+            <Link href="/agenda" className="rounded-lg border border-slate-300 bg-white px-4 py-2 hover:bg-slate-50">
               Voltar para calendário
             </Link>
           </div>
         }
       />
 
-      <div className="bg-white border border-slate-200 rounded-xl p-6">
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-6 shadow-sm">
         <div className="flex flex-wrap gap-4 text-sm">
           <label className="inline-flex items-center gap-2"><input type="checkbox" checked={showRecorrente} onChange={(e) => setShowRecorrente(e.target.checked)} /> Recorrentes</label>
           <label className="inline-flex items-center gap-2"><input type="checkbox" checked={showEventual} onChange={(e) => setShowEventual(e.target.checked)} /> Eventuais</label>
@@ -378,7 +378,7 @@ export default function AgendaDiaPage() {
       </div>
 
       {showEventual && (
-        <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
           <h3 className="font-semibold text-sm">OS eventuais do dia</h3>
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-600">Nova data:</label>
@@ -426,7 +426,7 @@ export default function AgendaDiaPage() {
       )}
 
       {showRecorrente && (
-        <div className="bg-white border border-slate-200 rounded-xl p-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <h3 className="font-semibold text-sm mb-3">OS recorrentes do dia</h3>
           {osRecorrentes.length === 0 ? (
             <p className="text-sm text-slate-500">Nenhuma OS recorrente no dia.</p>
@@ -447,7 +447,7 @@ export default function AgendaDiaPage() {
 
       {showOutros && (
         <div className="grid gap-6 md:grid-cols-2">
-          <div className="bg-white border border-slate-200 rounded-xl p-6">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
             <h3 className="font-semibold text-sm mb-3">Compromissos do dia</h3>
             {agendaEventos.length === 0 ? <p className="text-sm text-slate-500">Nenhum.</p> : (
               <ul className="text-sm space-y-2">
@@ -461,7 +461,7 @@ export default function AgendaDiaPage() {
             )}
           </div>
 
-          <form onSubmit={criarEvento} className="bg-white border border-slate-200 rounded-xl p-6 space-y-3">
+          <form onSubmit={criarEvento} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-3 shadow-sm">
             <h3 className="font-semibold">Adicionar compromisso</h3>
             <input className="w-full border border-slate-300 rounded-md px-3 py-2" placeholder="Título" value={novoTitulo} onChange={(e) => setNovoTitulo(e.target.value)} />
             <div className="grid grid-cols-2 gap-2">
@@ -479,7 +479,7 @@ export default function AgendaDiaPage() {
       )}
 
       {showFinanceiro && (
-        <div className="bg-white border border-slate-200 rounded-xl p-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <h3 className="font-semibold text-sm mb-2">Financeiro (vencimentos)</h3>
           {contas.length === 0 ? <p className="text-sm text-slate-500">Nenhum vencimento.</p> : (
             <ul className="text-sm space-y-1">
@@ -490,7 +490,7 @@ export default function AgendaDiaPage() {
       )}
 
       <div className="grid gap-6 md:grid-cols-2">
-        <div className="bg-white border border-slate-200 rounded-xl p-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <h3 className="font-semibold text-sm mb-3">Feriados do dia</h3>
           {feriadosDoDia.length === 0 ? <p className="text-sm text-slate-500">Nenhum.</p> : (
             <ul className="text-sm space-y-2">
@@ -508,7 +508,7 @@ export default function AgendaDiaPage() {
           )}
         </div>
 
-        <form onSubmit={criarFeriado} className="bg-white border border-slate-200 rounded-xl p-6 space-y-3">
+        <form onSubmit={criarFeriado} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-3 shadow-sm">
           <h3 className="font-semibold">Adicionar feriado</h3>
           <input className="w-full border border-slate-300 rounded-md px-3 py-2" placeholder="Nome do feriado" value={novoFeriadoNome} onChange={(e) => setNovoFeriadoNome(e.target.value)} />
           <div>

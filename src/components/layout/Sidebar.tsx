@@ -47,6 +47,8 @@ const MANUTENCAO_SUBLINKS = [
 
 const CONFIGURACOES_SUBLINKS = [
   { href: "/configuracoes", label: "Geral" },
+  { href: "/configuracoes/dashboard", label: "Dashboard" },
+  { href: "/configuracoes/google-agenda", label: "Google Agenda" },
   { href: "/configuracoes/pagamentos", label: "Pagamentos" },
 ];
 

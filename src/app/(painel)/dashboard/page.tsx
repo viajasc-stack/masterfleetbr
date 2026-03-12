@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase/client";
+import {
+  DASHBOARD_CONFIG_DEFAULTS,
+  mergeDashboardConfig,
+  readDashboardConfigLocal,
+  writeDashboardConfigLocal,
+  type DashboardConfig,
+} from "@/lib/dashboardConfig";
 
 type KPIs = {
   os_pendentes: number;
@@ -117,6 +124,61 @@ function KPICard({ label, value, link }: { label: string; value: number | string
   );
 }
 
+function MiniBars({
+  items,
+  color,
+}: {
+  items: Array<{ label: string; value: number; hint?: string }>;
+  color: string;
+}) {
+  const max = Math.max(1, ...items.map((i) => i.value));
+  return (
+    <div className="space-y-3">
+      {items.map((item) => (
+        <div key={item.label}>
+          <div className="flex items-center justify-between text-xs text-slate-600 mb-1">
+            <span className="truncate pr-2">{item.label}</span>
+            <span className="font-semibold text-slate-800">{item.value}</span>
+          </div>
+          <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+            <div className={`h-full ${color}`} style={{ width: `${(item.value / max) * 100}%` }} />
+          </div>
+          {item.hint ? <div className="text-[11px] text-slate-500 mt-1">{item.hint}</div> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Donut({ values }: { values: Array<{ value: number; color: string }> }) {
+  const total = values.reduce((acc, v) => acc + v.value, 0);
+  if (total <= 0) {
+    return <div className="h-32 w-32 rounded-full bg-slate-100 border border-slate-200" />;
+  }
+
+  const segments = values
+    .reduce(
+      (acc, v) => {
+        const start = (acc.current / total) * 100;
+        const next = acc.current + v.value;
+        const end = (next / total) * 100;
+        acc.parts.push(`${v.color} ${start}% ${end}%`);
+        return { current: next, parts: acc.parts };
+      },
+      { current: 0, parts: [] as string[] }
+    )
+    .parts.join(", ");
+
+  return (
+    <div
+      className="h-32 w-32 rounded-full relative"
+      style={{ background: `conic-gradient(${segments})` }}
+    >
+      <div className="absolute inset-4 rounded-full bg-white border border-slate-100" />
+    </div>
+  );
+}
+
 function badgeStatus(s: string) {
   if (s === "pendente") return "border-amber-200 text-amber-700 bg-amber-50";
   if (s === "em_execucao") return "border-blue-200 text-blue-700 bg-blue-50";
@@ -152,6 +214,48 @@ export default function DashboardPage() {
   const [aniversariantesMes, setAniversariantesMes] = useState(0);
   const [posicoesMapa, setPosicoesMapa] = useState<MotoristaGeoUlt[]>([]);
   const [desviosRecentes, setDesviosRecentes] = useState<OSDesvioEvento[]>([]);
+  const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig>(DASHBOARD_CONFIG_DEFAULTS);
+
+  const osDistribuicao = useMemo(
+    () => [
+      { label: "Pendentes", value: kpis?.os_pendentes ?? 0, color: "#f59e0b" },
+      { label: "Em andamento", value: kpis?.os_em_andamento ?? 0, color: "#3b82f6" },
+      { label: "Concluídas hoje", value: kpis?.os_concluidas_hoje ?? 0, color: "#10b981" },
+    ],
+    [kpis]
+  );
+
+  const eventosPorSeveridade = useMemo(() => {
+    const info = timeline.filter((e) => e.severidade === "info").length;
+    const warning = timeline.filter((e) => e.severidade === "warning").length;
+    const critical = timeline.filter((e) => e.severidade === "critical").length;
+    return [
+      { label: "Info", value: info },
+      { label: "Warning", value: warning },
+      { label: "Crítico", value: critical },
+    ];
+  }, [timeline]);
+
+  const riscoOperacional = useMemo(
+    () => [
+      { label: "Atraso início", value: alertasOperacionais.atrasos_inicio },
+      { label: "Atraso finalização", value: alertasOperacionais.atrasos_finalizacao },
+      { label: "KM divergente", value: alertasOperacionais.km_divergente },
+      { label: "Sem posição recente", value: alertasOperacionais.sem_posicao_recente },
+      { label: "Desvio rota (24h)", value: alertasOperacionais.desvio_rota },
+    ],
+    [alertasOperacionais]
+  );
+
+  const topMotoristasGrafico = useMemo(
+    () =>
+      operacaoPorMotorista.slice(0, 5).map((m) => ({
+        label: m.motorista_nome,
+        value: m.em_andamento,
+        hint: `${m.pendente} pendente • ${m.concluida} concluída`,
+      })),
+    [operacaoPorMotorista]
+  );
 
   useEffect(() => {
     async function load() {
@@ -162,10 +266,29 @@ export default function DashboardPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("nome")
+        .select("nome, empresa_id")
         .eq("user_id", session.user.id)
         .maybeSingle();
       setNomeUsuario(profile?.nome ?? null);
+
+      if (profile?.empresa_id) {
+        const localCfg = readDashboardConfigLocal(profile.empresa_id);
+        if (localCfg) setDashboardConfig(localCfg);
+
+        const { data: empresaCfg, error: empresaCfgError } = await supabase
+          .from("empresas")
+          .select("dashboard_config")
+          .eq("id", profile.empresa_id)
+          .maybeSingle();
+
+        if (!empresaCfgError && !localCfg) {
+          const merged = mergeDashboardConfig(empresaCfg?.dashboard_config);
+          setDashboardConfig(merged);
+          writeDashboardConfigLocal(profile.empresa_id, merged);
+        }
+      } else {
+        setDashboardConfig(DASHBOARD_CONFIG_DEFAULTS);
+      }
 
       const hoje = new Date();
       const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
@@ -553,7 +676,81 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {alertas.length > 0 && (
+      {dashboardConfig.marcador_combustivel_topo && tanquesCombustivel.length > 0 && (
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="px-5 py-4 border-b border-slate-200">
+            <span className="text-sm font-semibold text-slate-900">Marcador de combustível</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5">
+            {tanquesCombustivel.map((t) => {
+              const max = Math.max(1, Number(t.estoque_maximo ?? 0));
+              const pct = Math.min(100, Math.max(0, (t.saldo_total / max) * 100));
+              const minPct = t.estoque_minimo && t.estoque_minimo > 0 ? Math.min(100, Math.max(0, (t.estoque_minimo / max) * 100)) : 0;
+              const emReserva = t.estoque_minimo !== null && t.saldo_total <= t.estoque_minimo;
+              const grad = emReserva
+                ? "from-rose-500 to-orange-500"
+                : pct < 45
+                ? "from-amber-500 to-yellow-500"
+                : "from-emerald-500 to-cyan-500";
+
+              return (
+                <Link
+                  key={t.id}
+                  href={`/inventario/produtos/${t.id}`}
+                  className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">{t.nome}</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">Tanque monitorado</div>
+                    </div>
+                    <div className={`text-[11px] px-2 py-1 rounded-full text-white bg-gradient-to-r ${grad}`}>
+                      {pct.toFixed(1)}%
+                    </div>
+                  </div>
+
+                  <div className="mt-4 mb-2">
+                    <div className="h-3 w-full rounded-full bg-slate-200 overflow-hidden relative">
+                      <div
+                        className={`h-full rounded-full bg-gradient-to-r ${grad}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                      {t.estoque_minimo !== null ? (
+                        <div
+                          className="absolute top-0 h-full w-[2px] bg-amber-700/80"
+                          style={{ left: `${minPct}%` }}
+                          title="Limite de reserva"
+                        />
+                      ) : null}
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500">
+                      <span>0%</span>
+                      <span>Reserva</span>
+                      <span>100%</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-end justify-between">
+                    <div>
+                      <div className="text-lg font-bold text-slate-900">
+                        {t.saldo_total.toLocaleString("pt-BR")} {t.unidade}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        Capacidade: {max.toLocaleString("pt-BR")} {t.unidade}
+                      </div>
+                    </div>
+                    <span className={`text-xs font-semibold ${emReserva ? "text-rose-600" : "text-emerald-600"}`}>
+                      {emReserva ? "⚠ Na reserva" : "✓ Nível normal"}
+                    </span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {dashboardConfig.alertas_topo && alertas.length > 0 && (
         <div className="space-y-2">
           {alertas.map((a, i) => (
             <div key={i} className={`rounded-lg border px-4 py-3 text-sm flex items-center justify-between ${a.tipo === "aviso" ? "border-amber-500/30 bg-amber-500/10 text-amber-300" : "border-sky-500/30 bg-sky-500/10 text-sky-300"}`}>
@@ -568,6 +765,7 @@ export default function DashboardPage() {
         <div className="text-slate-500 text-sm">Carregando...</div>
       ) : (
         <>
+          {dashboardConfig.kpis_gerais && (
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
             <KPICard label="OS Pendentes" value={kpis?.os_pendentes ?? 0} link="/ordens-servico?status=pendente" />
             <KPICard label="OS em Andamento" value={kpis?.os_em_andamento ?? 0} link="/ordens-servico?status=em_execucao" />
@@ -578,7 +776,87 @@ export default function DashboardPage() {
             <KPICard label="Contratos atenção" value={kpis?.contratos_atencao ?? 0} link="/contratos" />
             <KPICard label="Aniversariantes do mês" value={aniversariantesMes} link="/aniversariantes" />
           </div>
+          )}
 
+          {(dashboardConfig.grafico_distribuicao_operacional || dashboardConfig.grafico_top_motoristas || dashboardConfig.radar_risco_operacional) && (
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            {dashboardConfig.grafico_distribuicao_operacional && (
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
+              <div className="text-sm font-semibold text-slate-900 mb-4">Distribuição operacional</div>
+              <div className="flex items-center gap-5">
+                <Donut
+                  values={osDistribuicao.map((o) => ({
+                    value: o.value,
+                    color: o.color,
+                  }))}
+                />
+                <div className="space-y-2 text-xs">
+                  {osDistribuicao.map((o) => (
+                    <div key={o.label} className="flex items-center gap-2 text-slate-700">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: o.color }} />
+                      <span>{o.label}</span>
+                      <span className="font-semibold">{o.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            )}
+
+            {dashboardConfig.grafico_top_motoristas && (
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
+              <div className="text-sm font-semibold text-slate-900 mb-4">Top motoristas em execução</div>
+              {topMotoristasGrafico.length === 0 ? (
+                <div className="text-sm text-slate-600">Sem OS em execução por motorista no momento.</div>
+              ) : (
+                <MiniBars items={topMotoristasGrafico} color="bg-blue-500" />
+              )}
+            </div>
+            )}
+
+            {dashboardConfig.radar_risco_operacional && (
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
+              <div className="flex items-start justify-between gap-2 mb-4">
+                <div className="text-sm font-semibold text-slate-900">Radar de risco operacional</div>
+                <span
+                  className={`text-[11px] px-2 py-1 rounded border ${
+                    semaforoOperacional === "vermelho"
+                      ? "border-rose-200 text-rose-700 bg-rose-50"
+                      : semaforoOperacional === "amarelo"
+                      ? "border-amber-200 text-amber-700 bg-amber-50"
+                      : "border-emerald-200 text-emerald-700 bg-emerald-50"
+                  }`}
+                >
+                  Semáforo {semaforoOperacional}
+                </span>
+              </div>
+              <MiniBars items={riscoOperacional} color="bg-rose-500" />
+            </div>
+            )}
+          </div>
+          )}
+
+          {dashboardConfig.eventos_severidade && (
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
+            <div className="text-sm font-semibold text-slate-900 mb-4">Eventos da operação (últimos 12)</div>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="rounded-lg border border-slate-200 p-4">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Info</div>
+                <div className="text-2xl font-bold text-slate-900 mt-1">{eventosPorSeveridade[0]?.value ?? 0}</div>
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-4">
+                <div className="text-xs uppercase tracking-wide text-amber-700">Warning</div>
+                <div className="text-2xl font-bold text-amber-900 mt-1">{eventosPorSeveridade[1]?.value ?? 0}</div>
+              </div>
+              <div className="rounded-lg border border-rose-200 bg-rose-50/40 p-4">
+                <div className="text-xs uppercase tracking-wide text-rose-700">Crítico</div>
+                <div className="text-2xl font-bold text-rose-900 mt-1">{eventosPorSeveridade[2]?.value ?? 0}</div>
+              </div>
+            </div>
+          </div>
+          )}
+
+          {dashboardConfig.semaforo_operacional && (
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-900">Semáforo Operacional</span>
@@ -617,7 +895,9 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+          )}
 
+          {dashboardConfig.cards_alertas_operacionais && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
               <div className="text-xs uppercase tracking-wide text-amber-700 font-semibold">Atraso de início</div>
@@ -640,7 +920,9 @@ export default function DashboardPage() {
               <div className="text-xs text-fuchsia-700 mt-1">Eventos de desvio/fora de rota registrados</div>
             </div>
           </div>
+          )}
 
+          {dashboardConfig.alertas_desvio_rota && (
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-900">Alertas de desvio de rota</span>
@@ -675,7 +957,9 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+          )}
 
+          {dashboardConfig.mapa_operacional && (
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-900">Mapa Operacional (simplificado)</span>
@@ -713,7 +997,9 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+          )}
 
+          {dashboardConfig.timeline_eventos && (
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-900">Timeline de Eventos (OS)</span>
@@ -748,62 +1034,9 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
-
-          {tanquesCombustivel.length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="px-5 py-4 border-b border-slate-200">
-                <span className="text-sm font-semibold text-slate-900">Marcador de combustível</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5">
-                {tanquesCombustivel.map((t) => {
-                  const max = Math.max(1, Number(t.estoque_maximo ?? 0));
-                  const pct = Math.min(100, Math.max(0, (t.saldo_total / max) * 100));
-                  const minPct = t.estoque_minimo && t.estoque_minimo > 0 ? Math.min(100, Math.max(0, (t.estoque_minimo / max) * 100)) : 0;
-                  const emReserva = t.estoque_minimo !== null && t.saldo_total <= t.estoque_minimo;
-                  const needleDeg = -90 + (pct * 1.8);
-
-                  return (
-                    <Link key={t.id} href={`/inventario/produtos/${t.id}`} className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50 transition">
-                      <div className="text-sm font-semibold text-slate-900">{t.nome}</div>
-                      <div className="text-xs text-slate-500 mb-3">
-                        {t.saldo_total.toLocaleString("pt-BR")} / {max.toLocaleString("pt-BR")} {t.unidade}
-                      </div>
-
-                      <div className="relative w-44 h-24 mx-auto">
-                        <div className="absolute inset-x-0 bottom-0 h-24 rounded-t-full border-[10px] border-slate-200 border-b-0" />
-                        <div
-                          className="absolute inset-x-0 bottom-0 h-24 rounded-t-full border-[10px] border-b-0"
-                          style={{
-                            borderColor: emReserva ? "#f43f5e" : "#10b981",
-                            clipPath: `polygon(0 100%, 0 0, ${pct}% 0, ${pct}% 100%)`,
-                          }}
-                        />
-
-                        <div className="absolute left-1/2 bottom-0 w-0.5 h-16 bg-slate-800 origin-bottom" style={{ transform: `translateX(-50%) rotate(${needleDeg}deg)` }} />
-                        <div className="absolute left-1/2 bottom-0 w-3 h-3 -translate-x-1/2 translate-y-1/2 rounded-full bg-slate-800" />
-
-                        <div className="absolute left-0 bottom-0 text-[10px] text-slate-500">0%</div>
-                        <div className="absolute right-0 bottom-0 text-[10px] text-slate-500">100%</div>
-                        {t.estoque_minimo !== null && (
-                          <div className="absolute text-[10px] text-amber-600 font-medium" style={{ left: `${minPct}%`, bottom: "-6px", transform: "translateX(-50%)" }}>
-                            Reserva
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-3 flex items-center justify-between text-xs">
-                        <span className={emReserva ? "text-rose-600 font-semibold" : "text-emerald-600 font-semibold"}>
-                          {emReserva ? "Na reserva" : "Nível normal"}
-                        </span>
-                        <span className="text-slate-500">{pct.toFixed(1)}%</span>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
           )}
 
+          {dashboardConfig.os_em_aberto && (
           <div className="rounded-xl border border-slate-200 bg-white">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-900">OS em aberto</span>
@@ -816,7 +1049,7 @@ export default function DashboardPage() {
                 {osRecentes.map((os) => (
                   <div key={os.id} className="px-5 py-3 flex items-center justify-between">
                     <div>
-                      <Link href={`/ordens-servico/${os.id}`} className="text-sm font-medium text-white hover:underline">
+                      <Link href={`/ordens-servico/${os.id}`} className="text-sm font-medium text-slate-900 hover:underline">
                         {os.numero ? `OS-${String(os.numero).padStart(4, "0")}` : "OS"}
                       </Link>
                       <div className="text-xs text-slate-500 mt-0.5">
@@ -831,7 +1064,9 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+          )}
 
+          {dashboardConfig.atalhos_rapidos && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               { label: "Nova OS", href: "/ordens-servico/nova", desc: "Criar ordem de serviço" },
@@ -845,6 +1080,7 @@ export default function DashboardPage() {
               </Link>
             ))}
           </div>
+          )}
         </>
       )}
     </div>
