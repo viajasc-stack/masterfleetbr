@@ -269,6 +269,15 @@ export default async function HomePage() {
 
       <footer className="border-t border-slate-800 py-10 text-center text-sm text-slate-600">
         <p>© {new Date().getFullYear()} MasterFleetBR. Todos os direitos reservados.</p>
+        <div className="mt-3 flex items-center justify-center gap-4">
+          <Link href="/termos-de-servico" className="hover:text-slate-400 transition">
+            Termos de Serviço
+          </Link>
+          <span>•</span>
+          <Link href="/politica-de-privacidade" className="hover:text-slate-400 transition">
+            Política de Privacidade
+          </Link>
+        </div>
       </footer>
     </div>
   );
