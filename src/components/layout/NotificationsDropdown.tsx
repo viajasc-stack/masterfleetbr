@@ -124,7 +124,7 @@ export default function NotificationsDropdown() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-96 bg-white text-slate-900 shadow-lg rounded-md overflow-hidden z-50">
+        <div className="absolute right-0 mt-2 w-[92vw] max-w-sm sm:w-96 bg-white text-slate-900 shadow-lg rounded-md overflow-hidden z-50">
           <div className="p-3 border-b">
             <div className="font-semibold">Notificações</div>
             <div className="text-xs text-slate-500">Últimas 20</div>
@@ -147,7 +147,7 @@ export default function NotificationsDropdown() {
                     <div className="text-xs text-slate-400">{new Date(n.created_at).toLocaleString()}</div>
                   </div>
                   {n.mensagem && <div className="text-sm text-slate-600 mt-1">{n.mensagem}</div>}
-                  {n.meta && <div className="text-xs text-slate-400 mt-2">{JSON.stringify(n.meta)}</div>}
+                  {n.meta && <div className="text-xs text-slate-400 mt-2 break-all">{JSON.stringify(n.meta)}</div>}
                 </div>
                 {!n.lido && (
                   <button

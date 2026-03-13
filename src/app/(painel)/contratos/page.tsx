@@ -381,6 +381,7 @@ export default function ContratosPage() {
           motorista_id: h.motorista_id,
           veiculo_id: h.veiculo_id,
           inicio_em: `${ymd}T${hhmm}:00-03:00`,
+          roteiro: obs || null,
           observacoes: obs || null,
           origem: null,
           destino: null,

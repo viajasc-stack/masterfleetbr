@@ -659,8 +659,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl bg-gradient-to-r from-violet-700 to-indigo-700 p-6 text-white shadow-sm">
-        <div className="flex items-center justify-between">
+      <div className="rounded-xl bg-gradient-to-r from-violet-700 to-indigo-700 p-4 sm:p-6 text-white shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">
               {nomeUsuario ? `Olá, ${nomeUsuario.split(" ")[0]}` : "Bem-vindo"}
@@ -669,7 +669,7 @@ export default function DashboardPage() {
               {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button href="/ordens-servico/nova">+ Nova OS</Button>
             <Button href="/clientes/novo" variant="secondary">+ Cliente</Button>
           </div>
@@ -766,7 +766,7 @@ export default function DashboardPage() {
       ) : (
         <>
           {dashboardConfig.kpis_gerais && (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <KPICard label="OS Pendentes" value={kpis?.os_pendentes ?? 0} link="/ordens-servico?status=pendente" />
             <KPICard label="OS em Andamento" value={kpis?.os_em_andamento ?? 0} link="/ordens-servico?status=em_execucao" />
             <KPICard label="Concluídas Hoje" value={kpis?.os_concluidas_hoje ?? 0} link="/ordens-servico?status=concluida" />
@@ -1067,7 +1067,7 @@ export default function DashboardPage() {
           )}
 
           {dashboardConfig.atalhos_rapidos && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             {[
               { label: "Nova OS", href: "/ordens-servico/nova", desc: "Criar ordem de serviço" },
               { label: "Novo Cliente", href: "/clientes/novo", desc: "Cadastrar cliente" },

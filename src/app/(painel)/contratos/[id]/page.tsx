@@ -40,8 +40,6 @@ type Horario = {
   created_at: string;
 };
 
-type Rota = { id: string; nome: string };
-
 const DIAS = [
   { v: 0, label: "Dom" },
   { v: 1, label: "Seg" },
@@ -92,14 +90,12 @@ export default function ContratoDetalhePage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [motoristas, setMotoristas] = useState<Motorista[]>([]);
   const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
-  const [rotas, setRotas] = useState<Rota[]>([]);
   const [contrato, setContrato] = useState<Contrato | null>(null);
   const [valorCobrancaInput, setValorCobrancaInput] = useState("0");
   const [horarios, setHorarios] = useState<Horario[]>([]);
 
   // Form rápido para adicionar horário
   const [novoHorario, setNovoHorario] = useState({
-    contrato_rota_id: "" as string,
     hora: "07:00",
     dias_semana: [1, 2, 3, 4, 5] as number[],
     veiculo_id: "" as string,
@@ -145,14 +141,6 @@ export default function ContratoDetalhePage() {
       return;
     }
 
-    const { data: rotasData } = await supabase
-      .from("contrato_rotas")
-      .select("id,nome")
-      .eq("contrato_id", contratoId)
-      .eq("ativo", true)
-      .order("ordem", { ascending: true });
-    setRotas((rotasData ?? []) as Rota[]);
-
     setContrato(contratoData as Contrato);
     setValorCobrancaInput(String((contratoData as Contrato).valor_cobranca ?? 0));
 
@@ -180,7 +168,6 @@ export default function ContratoDetalhePage() {
       ...prev,
       ordem: maxOrdem + 1,
       dias_semana: (contratoData as Contrato).dias_semana ?? [1, 2, 3, 4, 5],
-      contrato_rota_id: ((rotasData ?? [])[0] as { id?: string } | undefined)?.id ?? "",
     }));
 
     setLoading(false);
@@ -312,7 +299,6 @@ export default function ContratoDetalhePage() {
 
     const { error } = await supabase.from("contrato_horarios").insert({
       contrato_id: contratoId,
-      contrato_rota_id: novoHorario.contrato_rota_id || null,
       hora: novoHorario.hora,
       dias_semana: novoHorario.dias_semana,
       observacao: novoHorario.observacao.trim() || null,
@@ -329,7 +315,6 @@ export default function ContratoDetalhePage() {
 
     setNovoHorario((prev) => ({
       ...prev,
-      contrato_rota_id: prev.contrato_rota_id,
       observacao: "",
       veiculo_id: "",
       motorista_id: "",
@@ -343,7 +328,6 @@ export default function ContratoDetalhePage() {
       .from("contrato_horarios")
       .update({
         hora: h.hora,
-        contrato_rota_id: h.contrato_rota_id || null,
         dias_semana: h.dias_semana,
         observacao: h.observacao?.trim() || null,
         ordem: h.ordem,
@@ -421,12 +405,6 @@ export default function ContratoDetalhePage() {
               className="border border-indigo-300 text-indigo-700 px-4 py-2 rounded-md hover:bg-indigo-50 transition"
             >
               Passageiros
-            </Link>
-            <Link
-              href={`/contratos/${contratoId}/rotas`}
-              className="border border-sky-300 text-sky-700 px-4 py-2 rounded-md hover:bg-sky-50 transition"
-            >
-              Rotas
             </Link>
             <Link
               href="/contratos"
@@ -625,20 +603,6 @@ export default function ContratoDetalhePage() {
 
         <div className="grid gap-4 md:grid-cols-12 md:items-end">
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium mb-1">Rota</label>
-            <select
-              className="w-full border border-slate-300 rounded-md px-3 py-2"
-              value={novoHorario.contrato_rota_id}
-              onChange={(e) => setNovoHorario((p) => ({ ...p, contrato_rota_id: e.target.value }))}
-            >
-              <option value="">— Sem rota vinculada —</option>
-              {rotas.map((r) => (
-                <option key={r.id} value={r.id}>{r.nome}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="md:col-span-2">
             <label className="block text-sm font-medium mb-1">Hora</label>
             <input
               className="w-full border border-slate-300 rounded-md px-3 py-2"
@@ -760,7 +724,6 @@ export default function ContratoDetalhePage() {
               <thead>
                 <tr className="text-left border-b">
                   <th className="py-2 pr-4">Hora</th>
-                  <th className="py-2 pr-4">Rota</th>
                   <th className="py-2 pr-4">Dias</th>
                   <th className="py-2 pr-4">Veículo padrão</th>
                   <th className="py-2 pr-4">Motorista padrão</th>
@@ -783,22 +746,6 @@ export default function ContratoDetalhePage() {
                           setHorarios((prev) => prev.map((x) => (x.id === h.id ? { ...x, hora: formatHoraInput(e.target.value) } : x)))
                         }
                       />
-                    </td>
-
-                    <td className="py-2 pr-4">
-                      <select
-                        className="w-[220px] border border-slate-300 rounded-md px-3 py-2"
-                        value={h.contrato_rota_id ?? ""}
-                        onChange={(e) => {
-                          const v = e.target.value || null;
-                          setHorarios((prev) => prev.map((x) => (x.id === h.id ? { ...x, contrato_rota_id: v } : x)));
-                        }}
-                      >
-                        <option value="">— Sem rota —</option>
-                        {rotas.map((r) => (
-                          <option key={r.id} value={r.id}>{r.nome}</option>
-                        ))}
-                      </select>
                     </td>
 
                     <td className="py-2 pr-4 min-w-[220px]">

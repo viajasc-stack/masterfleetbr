@@ -5,6 +5,19 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 
+function onlyDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function formatCnpj(value: string) {
+  const digits = onlyDigits(value).slice(0, 14);
+  return digits
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d)/, ".$1/$2")
+    .replace(/(\d{4})(\d)/, "$1-$2");
+}
+
 
 export default function NovoClientePage() {
   const router = useRouter();
@@ -15,6 +28,7 @@ export default function NovoClientePage() {
 
   const [tipo, setTipo] = useState<"empresa" | "pessoa">("empresa");
   const [nome, setNome] = useState("");
+  const [cnpj, setCnpj] = useState("");
   const [email, setEmail] = useState("");
   const [telefone, setTelefone] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -81,12 +95,19 @@ export default function NovoClientePage() {
       return;
     }
 
+    const cnpjDigits = onlyDigits(cnpj);
+    if (tipo === "empresa" && cnpjDigits && cnpjDigits.length !== 14) {
+      alert("CNPJ inválido. Informe os 14 dígitos.");
+      return;
+    }
+
     setLoading(true);
 
     const payload = {
       empresa_id: empresaId,
       tipo,
       nome: nome.trim(),
+      documento: tipo === "empresa" ? (cnpjDigits || null) : null,
       email: email.trim() ? email.trim() : null,
       telefone: telefone.trim() ? telefone.trim() : null,
       whatsapp: whatsapp.trim() ? whatsapp.trim() : null,
@@ -172,6 +193,18 @@ export default function NovoClientePage() {
               required
             />
           </div>
+
+          {tipo === "empresa" ? (
+            <div>
+              <label className="block text-sm font-medium mb-1">CNPJ</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={cnpj}
+                onChange={(e) => setCnpj(formatCnpj(e.target.value))}
+                placeholder="00.000.000/0000-00"
+              />
+            </div>
+          ) : null}
 
           <div>
             <label className="block text-sm font-medium mb-1">Email</label>

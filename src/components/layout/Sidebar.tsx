@@ -6,6 +6,11 @@ import { useEffect, useState } from "react";
 import { loadEmpresaModuleAccess } from "@/lib/moduleAccess";
 import { supabase } from "@/lib/supabase/client";
 
+type SidebarProps = {
+  mobileOpen?: boolean;
+  onClose?: () => void;
+};
+
 type NavItem = {
   href: string;
   label: string;
@@ -73,7 +78,7 @@ const LINKS: NavItem[] = [
   { href: "/configuracoes", label: "Configurações", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [inventarioOpenManual, setInventarioOpenManual] = useState<boolean | null>(null);
@@ -132,10 +137,36 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-60 border-r border-slate-800 bg-slate-900 flex flex-col shrink-0">
+    <>
+      {mobileOpen ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-30 bg-black/40 xl:hidden"
+          onClick={onClose}
+          aria-label="Fechar menu"
+        />
+      ) : null}
+
+      <aside
+        className={`fixed xl:static inset-y-0 left-0 z-40 w-72 xl:w-60 border-r border-slate-800 bg-slate-900 flex flex-col shrink-0 transform transition-transform duration-200 ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full xl:translate-x-0"
+        }`}
+      >
       <div className="p-4 border-b border-slate-800">
-        <div className="text-base font-bold text-white tracking-tight">MasterFleetBR</div>
-        <div className="text-xs text-slate-400 mt-0.5">Painel da Empresa</div>
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-base font-bold text-white tracking-tight">MasterFleetBR</div>
+            <div className="text-xs text-slate-400 mt-0.5">Painel da Empresa</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="xl:hidden inline-flex h-8 w-8 items-center justify-center rounded border border-slate-700 text-slate-300"
+            aria-label="Fechar menu"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       <nav className="flex-1 overflow-y-auto py-2">
@@ -163,7 +194,7 @@ export default function Sidebar() {
                             : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
                         }`}
                       >
-                        <Link href={link.href} className="flex-1">
+                        <Link href={link.href} className="flex-1" onClick={onClose}>
                           {link.label}
                         </Link>
                         <button
@@ -184,6 +215,7 @@ export default function Sidebar() {
                               <Link
                                 key={sub.href}
                                 href={sub.href}
+                                onClick={onClose}
                                 className={`block px-3 py-1.5 rounded-md text-sm transition-colors ${
                                   subAtivo
                                     ? "bg-slate-800 text-white"
@@ -210,7 +242,7 @@ export default function Sidebar() {
                             : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
                         }`}
                       >
-                        <Link href={link.href} className="flex-1">
+                        <Link href={link.href} className="flex-1" onClick={onClose}>
                           {link.label}
                         </Link>
                         <button
@@ -234,6 +266,7 @@ export default function Sidebar() {
                               <Link
                                 key={sub.href}
                                 href={sub.href}
+                                onClick={onClose}
                                 className={`block px-3 py-1.5 rounded-md text-sm transition-colors ${
                                   subAtivo
                                     ? "bg-slate-800 text-white"
@@ -260,7 +293,7 @@ export default function Sidebar() {
                             : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
                         }`}
                       >
-                        <Link href={link.href} className="flex-1">
+                        <Link href={link.href} className="flex-1" onClick={onClose}>
                           {link.label}
                         </Link>
                         <button
@@ -281,6 +314,7 @@ export default function Sidebar() {
                               <Link
                                 key={sub.href}
                                 href={sub.href}
+                                onClick={onClose}
                                 className={`block px-3 py-1.5 rounded-md text-sm transition-colors ${
                                   subAtivo
                                     ? "bg-slate-800 text-white"
@@ -307,7 +341,7 @@ export default function Sidebar() {
                             : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
                         }`}
                       >
-                        <Link href={link.href} className="flex-1">
+                        <Link href={link.href} className="flex-1" onClick={onClose}>
                           {link.label}
                         </Link>
                         <button
@@ -328,6 +362,7 @@ export default function Sidebar() {
                               <Link
                                 key={sub.href}
                                 href={sub.href}
+                                onClick={onClose}
                                 className={`block px-3 py-1.5 rounded-md text-sm transition-colors ${
                                   subAtivo
                                     ? "bg-slate-800 text-white"
@@ -348,6 +383,7 @@ export default function Sidebar() {
                   <Link
                     key={link.href}
                     href={link.href}
+                    onClick={onClose}
                     className={`flex items-center gap-2 mx-2 px-3 py-2 rounded-lg text-sm transition-colors ${
                       ativo
                         ? "bg-slate-800 text-white"
@@ -367,6 +403,7 @@ export default function Sidebar() {
           );
         })}
       </nav>
-    </aside>
+      </aside>
+    </>
   );
 }

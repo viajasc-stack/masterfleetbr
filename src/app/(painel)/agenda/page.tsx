@@ -201,16 +201,16 @@ export default function AgendaPage() {
         title="Agenda"
         description="Calendário operacional com OS recorrentes/eventuais, compromissos manuais, financeiro e feriados."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setMesRef((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm hover:bg-slate-50"
             >
               ← Mês anterior
             </button>
             <button
               onClick={() => setMesRef((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm hover:bg-slate-50"
             >
               Próximo mês →
             </button>
@@ -218,7 +218,7 @@ export default function AgendaPage() {
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
           <div className="text-xs text-emerald-700 uppercase font-semibold tracking-wide">OS recorrentes</div>
           <div className="text-2xl font-bold text-emerald-900 mt-1">{resumoMes.osRec}</div>
@@ -239,7 +239,7 @@ export default function AgendaPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-6 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-3 sm:p-6 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="font-semibold text-slate-900 capitalize">{monthLabel}</div>
           <div className="flex flex-wrap gap-4 text-xs text-slate-600">
@@ -249,13 +249,15 @@ export default function AgendaPage() {
             <div className="flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-1"><span className="h-2 w-2 rounded-full bg-red-500" /> Financeiro</div>
           </div>
         </div>
-        <div className="grid grid-cols-7 gap-2 text-xs text-slate-500 mb-2">
-          {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((d) => (
-            <div key={d} className="font-semibold bg-slate-100 rounded-md py-1 text-center">{d}</div>
-          ))}
-        </div>
+        <div className="overflow-x-auto">
+          <div className="min-w-[720px]">
+            <div className="grid grid-cols-7 gap-2 text-xs text-slate-500 mb-2">
+              {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((d) => (
+                <div key={d} className="font-semibold bg-slate-100 rounded-md py-1 text-center">{d}</div>
+              ))}
+            </div>
 
-        <div className="grid grid-cols-7 gap-2">
+            <div className="grid grid-cols-7 gap-2">
           {dayCells.map((d) => {
             const key = toDateKey(d);
             const inMonth = d.getMonth() === mesRef.getMonth();
@@ -290,6 +292,8 @@ export default function AgendaPage() {
               </button>
             );
           })}
+            </div>
+          </div>
         </div>
 
       </div>

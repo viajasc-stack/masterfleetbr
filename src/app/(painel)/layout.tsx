@@ -9,6 +9,7 @@ export default function PainelLayout({ children }: { children: React.ReactNode }
   const [empresaNome, setEmpresaNome] = useState<string | null>(null);
   const [usuarioNome, setUsuarioNome] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -41,10 +42,15 @@ export default function PainelLayout({ children }: { children: React.ReactNode }
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
-      <Sidebar />
+      <Sidebar mobileOpen={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
-        <Topbar empresaNome={empresaNome} usuarioNome={usuarioNome} isSuperAdmin={isSuperAdmin} />
-        <main className="flex-1 p-6 overflow-auto">{children}</main>
+        <Topbar
+          empresaNome={empresaNome}
+          usuarioNome={usuarioNome}
+          isSuperAdmin={isSuperAdmin}
+          onMenuToggle={() => setMobileMenuOpen((v) => !v)}
+        />
+        <main className="flex-1 p-3 sm:p-6 overflow-auto">{children}</main>
       </div>
     </div>
   );
