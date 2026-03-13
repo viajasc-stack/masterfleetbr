@@ -23,7 +23,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ authUrl: buildGoogleAuthUrl(state) });
+    const authUrl = await buildGoogleAuthUrl(state);
+    return NextResponse.json({ authUrl });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "server_error";
     if (msg.startsWith("Missing env:")) {

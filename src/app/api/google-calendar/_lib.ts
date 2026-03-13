@@ -12,10 +12,62 @@ type GoogleIntegrationTokens = {
   accessTokenExpiresAt: string | null;
 };
 
+type GoogleOAuthConfig = {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+};
+
 function requiredEnv(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing env: ${name}`);
   return value;
+}
+
+async function getGoogleOAuthConfig(): Promise<GoogleOAuthConfig> {
+  const envClientId = process.env.GOOGLE_CLIENT_ID;
+  const envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const envRedirectUri = process.env.GOOGLE_REDIRECT_URI;
+
+  const hasAllEnv = Boolean(envClientId && envClientSecret && envRedirectUri);
+  if (hasAllEnv) {
+    return {
+      clientId: envClientId as string,
+      clientSecret: envClientSecret as string,
+      redirectUri: envRedirectUri as string,
+    };
+  }
+
+  const supabase = getSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("master_settings")
+    .select("value")
+    .eq("key", "google_oauth")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`google_config_load_failed: ${error.message}`);
+  }
+
+  const value = (data?.value ?? {}) as {
+    client_id?: string;
+    client_secret?: string;
+    redirect_uri?: string;
+  };
+
+  const clientId = value.client_id || envClientId;
+  const clientSecret = value.client_secret || envClientSecret;
+  const redirectUri = value.redirect_uri || envRedirectUri;
+
+  if (!clientId) throw new Error("Missing env: GOOGLE_CLIENT_ID");
+  if (!clientSecret) throw new Error("Missing env: GOOGLE_CLIENT_SECRET");
+  if (!redirectUri) throw new Error("Missing env: GOOGLE_REDIRECT_URI");
+
+  return {
+    clientId,
+    clientSecret,
+    redirectUri,
+  };
 }
 
 export function getSupabaseServiceClient() {
@@ -52,13 +104,12 @@ export async function getAuthContextFromBearer(req: NextRequest): Promise<AuthCo
   };
 }
 
-export function buildGoogleAuthUrl(state: string) {
-  const clientId = requiredEnv("GOOGLE_CLIENT_ID");
-  const redirectUri = requiredEnv("GOOGLE_REDIRECT_URI");
+export async function buildGoogleAuthUrl(state: string) {
+  const cfg = await getGoogleOAuthConfig();
 
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  url.searchParams.set("client_id", clientId);
-  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("client_id", cfg.clientId);
+  url.searchParams.set("redirect_uri", cfg.redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
@@ -68,15 +119,13 @@ export function buildGoogleAuthUrl(state: string) {
 }
 
 export async function exchangeGoogleCode(code: string) {
-  const clientId = requiredEnv("GOOGLE_CLIENT_ID");
-  const clientSecret = requiredEnv("GOOGLE_CLIENT_SECRET");
-  const redirectUri = requiredEnv("GOOGLE_REDIRECT_URI");
+  const cfg = await getGoogleOAuthConfig();
 
   const body = new URLSearchParams({
     code,
-    client_id: clientId,
-    client_secret: clientSecret,
-    redirect_uri: redirectUri,
+    client_id: cfg.clientId,
+    client_secret: cfg.clientSecret,
+    redirect_uri: cfg.redirectUri,
     grant_type: "authorization_code",
   });
 
@@ -116,12 +165,11 @@ export async function getGoogleUserEmail(accessToken: string) {
 }
 
 export async function refreshGoogleAccessToken(refreshToken: string) {
-  const clientId = requiredEnv("GOOGLE_CLIENT_ID");
-  const clientSecret = requiredEnv("GOOGLE_CLIENT_SECRET");
+  const cfg = await getGoogleOAuthConfig();
 
   const body = new URLSearchParams({
-    client_id: clientId,
-    client_secret: clientSecret,
+    client_id: cfg.clientId,
+    client_secret: cfg.clientSecret,
     refresh_token: refreshToken,
     grant_type: "refresh_token",
   });
@@ -178,4 +226,24 @@ export async function ensureValidGoogleAccessToken(
   }
 
   return { accessToken: refreshed.access_token, expiresAt: nextExpiresAt };
+}
+
+export async function getGoogleWebhookUrl() {
+  const envWebhookUrl = process.env.GOOGLE_CALENDAR_WEBHOOK_URL;
+  if (envWebhookUrl) return envWebhookUrl;
+
+  const supabase = getSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("master_settings")
+    .select("value")
+    .eq("key", "google_oauth")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`google_config_load_failed: ${error.message}`);
+  }
+
+  const value = (data?.value ?? {}) as { webhook_url?: string };
+  if (!value.webhook_url) throw new Error("Missing env: GOOGLE_CALENDAR_WEBHOOK_URL");
+  return value.webhook_url;
 }

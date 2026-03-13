@@ -2,15 +2,10 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import {
   ensureValidGoogleAccessToken,
+  getGoogleWebhookUrl,
   getAuthContextFromBearer,
   getSupabaseServiceClient,
 } from "../../_lib";
-
-function requiredEnv(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing env: ${name}`);
-  return value;
-}
 
 async function stopGoogleWatchChannel(accessToken: string, channelId: string, resourceId: string) {
   await fetch("https://www.googleapis.com/calendar/v3/channels/stop", {
@@ -53,7 +48,7 @@ export async function POST(req: NextRequest) {
     }
 
     const calendarId = integration.calendar_id || "primary";
-    const webhookUrl = requiredEnv("GOOGLE_CALENDAR_WEBHOOK_URL");
+    const webhookUrl = await getGoogleWebhookUrl();
     const channelId = randomUUID();
     const watchToken = randomUUID();
 
