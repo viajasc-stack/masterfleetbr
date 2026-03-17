@@ -1,0 +1,26 @@
+name: Scheduled push-dispatch
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '*/5 * * * *' # a cada 5 minutos
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call push-dispatch function
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PUSH_DISPATCH_SECRET: ${{ secrets.PUSH_DISPATCH_SECRET }}
+        run: |
+          AUTH_HEADER="Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"
+          if [ -n "$PUSH_DISPATCH_SECRET" ]; then
+            AUTH_HEADER="Authorization: Bearer $PUSH_DISPATCH_SECRET"
+          fi
+
+          curl -sS -X POST "$SUPABASE_URL/functions/v1/push-dispatch" \
+            -H "$AUTH_HEADER" \
+            -H "Content-Type: application/json" \
+            --data '{}'

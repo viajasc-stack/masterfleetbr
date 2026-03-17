@@ -11,6 +11,9 @@ type CnpjPayload = {
   email: string;
   telefone: string;
   endereco: string;
+  logradouro: string;
+  numero: string;
+  bairro: string;
   cidade: string;
   estado: string;
   cep: string;
@@ -45,6 +48,9 @@ async function fetchBrasilApi(cnpjDigits: string): Promise<CnpjPayload | null> {
     email: data.email || "",
     telefone: data.ddd_telefone_1 || "",
     endereco,
+    logradouro: data.logradouro || "",
+    numero: data.numero || "",
+    bairro: data.bairro || "",
     cidade: data.municipio || "",
     estado: data.uf || "",
     cep: data.cep || "",
@@ -86,6 +92,9 @@ async function fetchReceitaWs(cnpjDigits: string): Promise<CnpjPayload | null> {
     email: data.email || "",
     telefone: data.telefone || "",
     endereco,
+    logradouro: data.logradouro || "",
+    numero: data.numero || "",
+    bairro: data.bairro || "",
     cidade: data.municipio || "",
     estado: data.uf || "",
     cep: data.cep || "",
