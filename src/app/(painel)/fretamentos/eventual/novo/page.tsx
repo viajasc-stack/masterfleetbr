@@ -188,7 +188,7 @@ export default function NovoFretamentoEventualPage() {
       valor_total: modoCobranca === "fixo" ? toMoney(valorFixo, 0) : 0,
       valor_sinal: modoCobranca === "fixo" ? toMoney(valorSinal, 0) : 0,
       forma_pagamento: formaPagamento.trim() || null,
-      status_pagamento,
+      status_pagamento: statusPagamento,
       pagar_extra_motorista: pagarExtraMotorista,
       extra_motorista_tipo: pagarExtraMotorista ? extraTipo : null,
       valor_extra_motorista: pagarExtraMotorista && extraTipo === "fixo" ? toMoney(valorExtraFixo, 0) : null,
