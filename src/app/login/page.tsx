@@ -5,6 +5,27 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 
+function getMensagemErroLogin(err: unknown) {
+  const message =
+    typeof err === "object" && err !== null && "message" in err
+      ? String((err as { message?: unknown }).message ?? "")
+      : err instanceof Error
+        ? err.message
+        : "";
+
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("failed to fetch") ||
+    normalized.includes("networkerror") ||
+    normalized.includes("load failed")
+  ) {
+    return "Falha de conexão ao tentar entrar. Verifique sua internet e a configuração do Supabase (URL/chaves) e tente novamente.";
+  }
+
+  return message || "Falha inesperada ao autenticar. Tente novamente.";
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -34,26 +55,35 @@ function LoginForm() {
     setLoading(true);
     setErro("");
 
-    const entrada = identificador.trim().toLowerCase();
-    const cpfDigits = entrada.replace(/\D/g, "");
-    const emailParaLogin = entrada.includes("@") ? entrada : `${cpfDigits}@motorista.masterfleet.local`;
+    try {
+      const entrada = identificador.trim().toLowerCase();
+      const cpfDigits = entrada.replace(/\D/g, "");
+      const emailParaLogin = entrada.includes("@") ? entrada : `${cpfDigits}@motorista.masterfleet.local`;
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: emailParaLogin,
-      password: senha,
-    });
+      if (!entrada.includes("@") && cpfDigits.length !== 11) {
+        setErro("Informe um CPF válido (11 dígitos) ou e-mail.");
+        return;
+      }
 
-    setLoading(false);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: emailParaLogin,
+        password: senha,
+      });
 
-    if (error) {
-      setErro(error.message);
-      return;
-    }
+      if (error) {
+        setErro(getMensagemErroLogin(error));
+        return;
+      }
 
-    if (data.session?.user) {
-      const { data: isSuperAdmin } = await supabase.rpc("is_super_admin");
-      router.replace(isSuperAdmin ? "/master" : "/dashboard");
-      router.refresh();
+      if (data.session?.user) {
+        const { data: isSuperAdmin } = await supabase.rpc("is_super_admin");
+        router.replace(isSuperAdmin ? "/master" : "/dashboard");
+        router.refresh();
+      }
+    } catch (err) {
+      setErro(getMensagemErroLogin(err));
+    } finally {
+      setLoading(false);
     }
   }
 

@@ -59,6 +59,7 @@ const CONFIGURACOES_SUBLINKS = [
   { href: "/configuracoes", label: "Geral" },
   { href: "/configuracoes/dashboard", label: "Dashboard" },
   { href: "/configuracoes/checklist", label: "Checklist" },
+  { href: "/configuracoes/fretamento-recorrente", label: "Fretamento recorrente" },
   { href: "/configuracoes/google-agenda", label: "Google Agenda" },
   { href: "/configuracoes/pagamentos", label: "Pagamentos" },
 ];
