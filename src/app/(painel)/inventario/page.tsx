@@ -1,359 +1,247 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { supabase } from "@/lib/supabase/client";
+import { money } from "@/lib/estoque";
+import { EstoqueKpiCard } from "@/components/inventario/EstoqueKpiCard";
 
-type Resumo = {
-  total_produtos: number;
-  total_depositos: number;
-  entradas_pendentes: number;
-  movimentos_hoje: number;
+type DashboardData = {
+  totalItens: number;
+  estoqueBaixo: number;
+  semEstoque: number;
+  valorTotal: number;
+  comprasMes: number;
+  consumoMes: number;
+  fornecedoresAtivos: number;
+  movimentacoesPeriodo: number;
 };
 
-type Destaque = {
-  id: string;
-  nome: string;
-  tipo_item: string;
-  unidade: string;
-  saldo_total: number;
-  estoque_minimo: number | null;
-  estoque_maximo: number | null;
-};
+type CategoriaBar = { categoria: string; total: number };
+type MovRecente = { id: string; created_at: string; tipo: string; quantidade: number; item_nome?: string };
 
-type SerieDia = {
-  dia: string;
-  entradas: number;
-  saidas: number;
-};
-
-export default function InventarioPage() {
-  const [resumo, setResumo] = useState<Resumo>({ total_produtos: 0, total_depositos: 0, entradas_pendentes: 0, movimentos_hoje: 0 });
-  const [destaques, setDestaques] = useState<Destaque[]>([]);
+export default function InventarioDashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
-  const [valorEntradasMes, setValorEntradasMes] = useState(0);
-  const [itensAbaixoMinimo, setItensAbaixoMinimo] = useState(0);
-  const [serieMovimentos, setSerieMovimentos] = useState<SerieDia[]>([]);
-  const [tanquesCombustivel, setTanquesCombustivel] = useState<Destaque[]>([]);
+  const [erro, setErro] = useState("");
+  const [kpis, setKpis] = useState<DashboardData>({
+    totalItens: 0,
+    estoqueBaixo: 0,
+    semEstoque: 0,
+    valorTotal: 0,
+    comprasMes: 0,
+    consumoMes: 0,
+    fornecedoresAtivos: 0,
+    movimentacoesPeriodo: 0,
+  });
+  const [categorias, setCategorias] = useState<CategoriaBar[]>([]);
+  const [recentes, setRecentes] = useState<MovRecente[]>([]);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      setLoadError("");
+      setErro("");
+      try {
+        const hoje = new Date();
+        const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString();
+        const inicio30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-      const hoje = new Date();
-      const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
+        const [
+          { count: totalItens },
+          { count: fornecedoresAtivos },
+          { count: movimentacoesPeriodo },
+          { data: estoquesData },
+          { data: itensData },
+          { data: entradasMesData },
+          { data: saidasMesData },
+          { data: movsRecentesData },
+        ] = await Promise.all([
+          supabase.from("itens_estoque").select("id", { count: "exact", head: true }).eq("ativo", true),
+          supabase.from("fornecedores").select("id", { count: "exact", head: true }).eq("ativo", true),
+          supabase.from("movimentacoes_estoque").select("id", { count: "exact", head: true }).gte("created_at", inicio30d),
+          supabase.from("estoques").select("item_id, quantidade, custo_medio"),
+          supabase.from("itens_estoque").select("id, nome, categoria_id, estoque_minimo, categorias_estoque(nome)").eq("ativo", true),
+          supabase.from("entradas_estoque").select("valor_total, created_at").gte("created_at", inicioMes),
+          supabase.from("saidas_estoque").select("quantidade, created_at").gte("created_at", inicioMes),
+          supabase
+            .from("movimentacoes_estoque")
+            .select("id, created_at, tipo, quantidade, itens_estoque(nome)")
+            .order("created_at", { ascending: false })
+            .limit(8),
+        ]);
 
-      const [
-        { count: totalProdutos },
-        { count: totalDepositos },
-        { count: entradasPendentes },
-        { count: movimentosHoje },
-        { data: produtosData, error: produtosDataErr },
-        { data: entradasMesData },
-        { data: movimentosRecentesData },
-        { data: produtosComMinimoData },
-      ] = await Promise.all([
-        supabase.from("produtos").select("id", { count: "exact", head: true }).eq("ativo", true),
-        supabase.from("depositos").select("id", { count: "exact", head: true }).eq("ativo", true),
-        supabase.from("entradas_estoque").select("id", { count: "exact", head: true }).eq("status", "pendente"),
-        supabase.from("movimentos_estoque").select("id", { count: "exact", head: true }).gte("created_at", inicioHoje),
-        supabase.from("produtos")
-          .select("id, nome, tipo_item, unidade, estoque_minimo, estoque_maximo, destaque")
-          .eq("ativo", true)
-          .eq("destaque", true)
-          .limit(8),
-        supabase.from("entradas_estoque").select("valor_total, created_at").gte("created_at", new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString()),
-        supabase.from("movimentos_estoque").select("tipo, quantidade, created_at").gte("created_at", new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 6).toISOString()),
-        supabase.from("produtos").select("id, estoque_minimo").eq("ativo", true).not("estoque_minimo", "is", null),
-      ]);
-
-      if (produtosDataErr) setLoadError(produtosDataErr.message);
-
-      setResumo({
-        total_produtos: totalProdutos ?? 0,
-        total_depositos: totalDepositos ?? 0,
-        entradas_pendentes: entradasPendentes ?? 0,
-        movimentos_hoje: movimentosHoje ?? 0,
-      });
-
-      setValorEntradasMes(
-        ((entradasMesData as Array<{ valor_total: number | null }> | null) ?? []).reduce((acc, e) => acc + Number(e.valor_total ?? 0), 0)
-      );
-
-      if (produtosData && produtosData.length > 0) {
-        const ids = produtosData.map((p: { id: string }) => p.id);
-        const { data: saldos } = await supabase
-          .from("saldos_estoque")
-          .select("produto_id, quantidade")
-          .in("produto_id", ids);
-
-        const saldoMap: Record<string, number> = {};
-        (saldos ?? []).forEach((s: { produto_id: string; quantidade: number }) => {
-          saldoMap[s.produto_id] = (saldoMap[s.produto_id] ?? 0) + s.quantidade;
+        const saldosPorItem: Record<string, { qtd: number; custo: number }> = {};
+        ((estoquesData ?? []) as Array<{ item_id: string; quantidade: number; custo_medio: number | null }>).forEach((s) => {
+          const prev = saldosPorItem[s.item_id] ?? { qtd: 0, custo: 0 };
+          saldosPorItem[s.item_id] = {
+            qtd: prev.qtd + Number(s.quantidade ?? 0),
+            custo: prev.custo + Number(s.quantidade ?? 0) * Number(s.custo_medio ?? 0),
+          };
         });
 
-        const listaDestaques = produtosData.map((p: { id: string; nome: string; tipo_item: string; unidade: string; estoque_minimo: number | null; estoque_maximo: number | null }) => ({
-            id: p.id,
-            nome: p.nome,
-            tipo_item: p.tipo_item,
-            unidade: p.unidade,
-            saldo_total: saldoMap[p.id] ?? 0,
-            estoque_minimo: p.estoque_minimo,
-            estoque_maximo: p.estoque_maximo,
-          }));
+        let estoqueBaixo = 0;
+        let semEstoque = 0;
+        const cats: Record<string, number> = {};
 
-        setDestaques(listaDestaques);
-        setTanquesCombustivel(
-          listaDestaques.filter((p) => p.tipo_item === "combustivel" && p.estoque_maximo !== null && p.estoque_maximo > 0)
+        ((itensData ?? []) as Array<{ id: string; estoque_minimo: number | null; categorias_estoque?: { nome?: string } | null }>).forEach((item) => {
+          const saldo = saldosPorItem[item.id]?.qtd ?? 0;
+          const minimo = Number(item.estoque_minimo ?? 0);
+          if (saldo <= 0) semEstoque += 1;
+          if (minimo > 0 && saldo < minimo) estoqueBaixo += 1;
+          const catNome = item.categorias_estoque?.nome ?? "Sem categoria";
+          cats[catNome] = (cats[catNome] ?? 0) + saldo;
+        });
+
+        const valorTotal = Object.values(saldosPorItem).reduce((acc, v) => acc + v.custo, 0);
+        const comprasMes = ((entradasMesData ?? []) as Array<{ valor_total: number | null }>).reduce((acc, v) => acc + Number(v.valor_total ?? 0), 0);
+        const consumoMes = ((saidasMesData ?? []) as Array<{ quantidade: number | null }>).reduce((acc, v) => acc + Number(v.quantidade ?? 0), 0);
+
+        setKpis({
+          totalItens: totalItens ?? 0,
+          estoqueBaixo,
+          semEstoque,
+          valorTotal,
+          comprasMes,
+          consumoMes,
+          fornecedoresAtivos: fornecedoresAtivos ?? 0,
+          movimentacoesPeriodo: movimentacoesPeriodo ?? 0,
+        });
+
+        setCategorias(
+          Object.entries(cats)
+            .map(([categoria, total]) => ({ categoria, total }))
+            .sort((a, b) => b.total - a.total)
+            .slice(0, 8)
         );
-      } else {
-        setDestaques([]);
-        setTanquesCombustivel([]);
+
+        setRecentes(
+          ((movsRecentesData ?? []) as Array<{ id: string; created_at: string; tipo: string; quantidade: number; itens_estoque?: { nome?: string } | null }>).map((m) => ({
+            id: m.id,
+            created_at: m.created_at,
+            tipo: m.tipo,
+            quantidade: Number(m.quantidade ?? 0),
+            item_nome: m.itens_estoque?.nome ?? "Item",
+          }))
+        );
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : "Falha ao carregar dashboard de estoque.");
+      } finally {
+        setLoading(false);
       }
-
-      if (produtosComMinimoData && produtosComMinimoData.length > 0) {
-        const idsMinimo = produtosComMinimoData.map((p: { id: string }) => p.id);
-        const { data: saldosMin } = await supabase
-          .from("saldos_estoque")
-          .select("produto_id, quantidade")
-          .in("produto_id", idsMinimo);
-
-        const saldoMapMin: Record<string, number> = {};
-        (saldosMin ?? []).forEach((s: { produto_id: string; quantidade: number }) => {
-          saldoMapMin[s.produto_id] = (saldoMapMin[s.produto_id] ?? 0) + s.quantidade;
-        });
-
-        const abaixo = (produtosComMinimoData as Array<{ id: string; estoque_minimo: number | null }>).filter((p) => {
-          const minimo = Number(p.estoque_minimo ?? 0);
-          return (saldoMapMin[p.id] ?? 0) < minimo;
-        }).length;
-        setItensAbaixoMinimo(abaixo);
-      } else {
-        setItensAbaixoMinimo(0);
-      }
-
-      const labels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-      const seriesMap = new Map<string, SerieDia>();
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        const key = d.toISOString().slice(0, 10);
-        seriesMap.set(key, { dia: labels[d.getDay()], entradas: 0, saidas: 0 });
-      }
-
-      (movimentosRecentesData as Array<{ tipo: string; quantidade: number; created_at: string }> | null)?.forEach((m) => {
-        const key = m.created_at?.slice(0, 10);
-        if (!key || !seriesMap.has(key)) return;
-        const item = seriesMap.get(key)!;
-        if (m.tipo === "entrada") item.entradas += Number(m.quantidade ?? 0);
-        else if (m.tipo === "saida") item.saidas += Number(m.quantidade ?? 0);
-      });
-      setSerieMovimentos(Array.from(seriesMap.values()));
-
-      setLoading(false);
     }
-    load();
+    const t = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(t);
   }, []);
 
-  const maxSerie = Math.max(1, ...serieMovimentos.map((s) => Math.max(s.entradas, s.saidas)));
+  const maxCategoria = useMemo(() => Math.max(1, ...categorias.map((c) => c.total)), [categorias]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Inventário</h1>
-          <p className="text-slate-500 mt-0.5 text-sm">Controle de estoque e movimentações</p>
-        </div>
-        <Link href="/inventario/entradas/nova" className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg shadow-sm transition">
-          + Entrada de Estoque
-        </Link>
-      </div>
+      <PageHeader
+        title="Estoque · Dashboard"
+        description="Centro de controle operacional do estoque com visão gerencial, alertas e movimentações."
+        actions={
+          <>
+            <Link href="/inventario/entradas" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500 transition">
+              + Nova entrada
+            </Link>
+            <Link href="/inventario/compras" className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 transition">
+              Compras
+            </Link>
+          </>
+        }
+      />
+
+      {erro ? <div className="rounded-md border border-rose-300 bg-rose-50 text-rose-700 text-sm px-3 py-2">{erro}</div> : null}
 
       {loading ? (
-        <div className="text-slate-500 text-sm">Carregando...</div>
+        <div className="text-sm text-slate-500">Carregando indicadores...</div>
       ) : (
         <>
-          {loadError ? (
-            <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
-              Erro ao carregar inventário: {loadError}
-            </div>
-          ) : null}
-
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-            {[
-              { label: "Produtos Ativos", value: resumo.total_produtos, href: "/inventario/produtos", cor: "border-slate-200 bg-white" },
-              { label: "Depósitos", value: resumo.total_depositos, href: "/inventario/depositos", cor: "border-slate-200 bg-white" },
-              { label: "Entradas Pendentes", value: resumo.entradas_pendentes, href: "/inventario/entradas", cor: "border-amber-200 bg-gradient-to-br from-amber-50 to-white" },
-              { label: "Movimentos Hoje", value: resumo.movimentos_hoje, href: "/inventario/movimentos", cor: "border-sky-200 bg-gradient-to-br from-sky-50 to-white" },
-              { label: "Compras no mês", value: valorEntradasMes.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), href: "/inventario/entradas", cor: "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white" },
-              { label: "Abaixo do mínimo", value: itensAbaixoMinimo, href: "/inventario/produtos", cor: "border-rose-200 bg-gradient-to-br from-rose-50 to-white" },
-            ].map((card) => (
-              <Link key={card.href} href={card.href} className={`rounded-xl border ${card.cor} p-5 shadow-sm hover:bg-slate-50 transition`}>
-                <div className="text-2xl font-bold text-slate-900">{card.value}</div>
-                <div className="text-sm text-slate-600 mt-1">{card.label}</div>
-              </Link>
-            ))}
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+            <EstoqueKpiCard label="Total de itens cadastrados" value={kpis.totalItens} href="/inventario/itens" />
+            <EstoqueKpiCard label="Itens com estoque baixo" value={kpis.estoqueBaixo} href="/inventario/alertas-reposicao" tone="warning" />
+            <EstoqueKpiCard label="Itens sem estoque" value={kpis.semEstoque} href="/inventario/alertas-reposicao" tone="danger" />
+            <EstoqueKpiCard label="Valor total do estoque" value={money(kpis.valorTotal)} tone="success" />
+            <EstoqueKpiCard label="Compras do mês" value={money(kpis.comprasMes)} href="/inventario/compras" tone="info" />
+            <EstoqueKpiCard label="Consumo do mês" value={kpis.consumoMes} href="/inventario/saidas" />
+            <EstoqueKpiCard label="Fornecedores ativos" value={kpis.fornecedoresAtivos} href="/inventario/fornecedores" />
+            <EstoqueKpiCard label="Movimentações (30 dias)" value={kpis.movimentacoesPeriodo} href="/inventario/movimentacoes" tone="info" />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-sm font-semibold text-slate-900 mb-3">Movimentação (últimos 7 dias)</div>
-              <div className="space-y-3">
-                {serieMovimentos.map((s, idx) => (
-                  <div key={`${s.dia}-${idx}`}>
-                    <div className="flex justify-between text-xs text-slate-500 mb-1">
-                      <span>{s.dia}</span>
-                      <span>Entrada {s.entradas} • Saída {s.saidas}</span>
+          <div className="grid xl:grid-cols-3 gap-4">
+            <div className="xl:col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-semibold text-slate-900 mb-4">Estoque por categoria</h2>
+              {categorias.length === 0 ? (
+                <div className="text-sm text-slate-500">Sem dados de categoria para exibir.</div>
+              ) : (
+                <div className="space-y-3">
+                  {categorias.map((cat) => (
+                    <div key={cat.categoria}>
+                      <div className="text-xs flex justify-between text-slate-600 mb-1">
+                        <span>{cat.categoria}</span>
+                        <span>{cat.total.toLocaleString("pt-BR")}</span>
+                      </div>
+                      <div className="h-2 rounded bg-slate-100 overflow-hidden">
+                        <div className="h-full bg-indigo-500" style={{ width: `${Math.max(2, (cat.total / maxCategoria) * 100)}%` }} />
+                      </div>
                     </div>
-                    <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                      <div className="h-full bg-emerald-500" style={{ width: `${(s.entradas / maxSerie) * 100}%` }} />
-                    </div>
-                    <div className="h-2 rounded-full bg-slate-100 overflow-hidden mt-1">
-                      <div className="h-full bg-rose-500" style={{ width: `${(s.saidas / maxSerie) * 100}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-sm font-semibold text-slate-900 mb-3">Saúde do estoque</div>
-              <div className="space-y-4 text-sm">
-                <div>
-                  <div className="flex justify-between text-slate-600 mb-1">
-                    <span>Itens com estoque abaixo do mínimo</span>
-                    <span className="font-semibold text-rose-600">{itensAbaixoMinimo}</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div className="h-full bg-rose-500" style={{ width: `${Math.min(100, (itensAbaixoMinimo / Math.max(1, resumo.total_produtos)) * 100)}%` }} />
-                  </div>
-                </div>
-
-                <div className="text-xs text-slate-500 leading-relaxed">
-                  Acompanhe diariamente entradas e saídas para evitar rupturas e manter nível saudável de reposição.
-                </div>
-
-                <div className="flex gap-2 pt-1">
-                  <Link href="/inventario/produtos" className="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">
-                    Ver produtos
-                  </Link>
-                  <Link href="/inventario/movimentos" className="text-xs px-3 py-1.5 rounded-md border border-indigo-200 text-indigo-700 hover:bg-indigo-50">
-                    Ver movimentos
-                  </Link>
-                </div>
+              <h2 className="text-sm font-semibold text-slate-900 mb-4">Alertas rápidos</h2>
+              <div className="space-y-3 text-sm">
+                <Link href="/inventario/alertas-reposicao" className="block rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-700">
+                  Itens abaixo do mínimo: <strong>{kpis.estoqueBaixo}</strong>
+                </Link>
+                <Link href="/inventario/alertas-reposicao" className="block rounded border border-rose-200 bg-rose-50 px-3 py-2 text-rose-700">
+                  Itens zerados: <strong>{kpis.semEstoque}</strong>
+                </Link>
+                <Link href="/inventario/compras" className="block rounded border border-sky-200 bg-sky-50 px-3 py-2 text-sky-700">
+                  Acessar compras pendentes
+                </Link>
               </div>
             </div>
           </div>
 
-          {tanquesCombustivel.length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="px-5 py-4 border-b border-slate-200">
-                <span className="text-sm font-semibold text-slate-900">Marcador de combustível</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-5">
-                {tanquesCombustivel.map((t) => {
-                  const max = Math.max(1, Number(t.estoque_maximo ?? 0));
-                  const pct = Math.min(100, Math.max(0, (t.saldo_total / max) * 100));
-                  const minPct = t.estoque_minimo && t.estoque_minimo > 0 ? Math.min(100, Math.max(0, (t.estoque_minimo / max) * 100)) : 0;
-                  const emReserva = t.estoque_minimo !== null && t.saldo_total <= t.estoque_minimo;
-                  const needleDeg = -90 + (pct * 1.8);
-
-                  return (
-                    <Link key={t.id} href={`/inventario/produtos/${t.id}`} className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50 transition">
-                      <div className="text-sm font-semibold text-slate-900">{t.nome}</div>
-                      <div className="text-xs text-slate-500 mb-3">
-                        {t.saldo_total.toLocaleString("pt-BR")} / {max.toLocaleString("pt-BR")} {t.unidade}
-                      </div>
-
-                      <div className="relative w-44 h-24 mx-auto">
-                        <div className="absolute inset-x-0 bottom-0 h-24 rounded-t-full border-[10px] border-slate-200 border-b-0" />
-                        <div
-                          className="absolute inset-x-0 bottom-0 h-24 rounded-t-full border-[10px] border-b-0"
-                          style={{
-                            borderColor: emReserva ? "#f43f5e" : "#10b981",
-                            clipPath: `polygon(0 100%, 0 0, ${pct}% 0, ${pct}% 100%)`,
-                          }}
-                        />
-
-                        <div className="absolute left-1/2 bottom-0 w-0.5 h-16 bg-slate-800 origin-bottom" style={{ transform: `translateX(-50%) rotate(${needleDeg}deg)` }} />
-                        <div className="absolute left-1/2 bottom-0 w-3 h-3 -translate-x-1/2 translate-y-1/2 rounded-full bg-slate-800" />
-
-                        <div className="absolute left-0 bottom-0 text-[10px] text-slate-500">0%</div>
-                        <div className="absolute right-0 bottom-0 text-[10px] text-slate-500">100%</div>
-                        {t.estoque_minimo !== null && (
-                          <div className="absolute text-[10px] text-amber-600 font-medium" style={{ left: `${minPct}%`, bottom: "-6px", transform: "translateX(-50%)" }}>
-                            Reserva
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-3 flex items-center justify-between text-xs">
-                        <span className={emReserva ? "text-rose-600 font-semibold" : "text-emerald-600 font-semibold"}>
-                          {emReserva ? "Na reserva" : "Nível normal"}
-                        </span>
-                        <span className="text-slate-500">{pct.toFixed(1)}%</span>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {destaques.length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="px-5 py-4 border-b border-slate-200">
-                <span className="text-sm font-semibold text-slate-900">Produtos em Destaque</span>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {destaques.map((d) => {
-                  const abaixo = d.estoque_minimo !== null && d.saldo_total < d.estoque_minimo;
-                  const pct = d.estoque_minimo && d.estoque_minimo > 0
-                    ? Math.min(100, Math.round((d.saldo_total / d.estoque_minimo) * 100))
-                    : null;
-                  return (
-                    <div key={d.id} className="px-5 py-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <Link href={`/inventario/produtos/${d.id}`} className="text-sm font-medium text-slate-900 hover:underline">
-                          {d.nome}
-                        </Link>
-                        <span className={`text-sm font-semibold ${abaixo ? "text-rose-600" : "text-slate-800"}`}>
-                          {d.saldo_total} {d.unidade}
-                        </span>
-                      </div>
-                      {pct !== null && (
-                        <div className="w-full bg-slate-100 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full transition-all ${abaixo ? "bg-rose-500" : pct < 50 ? "bg-amber-500" : "bg-emerald-500"}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      )}
-                      {abaixo && (
-                        <p className="text-xs text-rose-600 mt-1">Abaixo do estoque mínimo ({d.estoque_minimo} {d.unidade})</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            {[
-              { label: "Produtos", href: "/inventario/produtos", desc: "Cadastrar e gerenciar" },
-              { label: "Fornecedores", href: "/inventario/fornecedores", desc: "Cadastro e vínculo com compras" },
-              { label: "Depósitos", href: "/inventario/depositos", desc: "Locais de armazenagem" },
-              { label: "Entradas", href: "/inventario/entradas", desc: "Recebimentos e compras" },
-              { label: "Movimentos", href: "/inventario/movimentos", desc: "Histórico (kardex)" },
-            ].map((a) => (
-              <Link key={a.href} href={a.href} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50 transition">
-                <div className="text-sm font-semibold text-slate-900">{a.label}</div>
-                <div className="text-xs text-slate-500 mt-0.5">{a.desc}</div>
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-slate-900">Últimas movimentações</h2>
+              <Link href="/inventario/movimentacoes" className="text-xs text-indigo-700 hover:underline">
+                Ver tudo
               </Link>
-            ))}
+            </div>
+            {recentes.length === 0 ? (
+              <div className="text-sm text-slate-500">Sem movimentações recentes.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left border-b">
+                      <th className="py-2 pr-4">Data</th>
+                      <th className="py-2 pr-4">Item</th>
+                      <th className="py-2 pr-4">Tipo</th>
+                      <th className="py-2">Qtd</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentes.map((m) => (
+                      <tr key={m.id} className="border-b last:border-0">
+                        <td className="py-2 pr-4 text-slate-500">{new Date(m.created_at).toLocaleString("pt-BR")}</td>
+                        <td className="py-2 pr-4">{m.item_nome}</td>
+                        <td className="py-2 pr-4 capitalize">{m.tipo.replaceAll("_", " ")}</td>
+                        <td className="py-2 font-medium">{m.quantidade.toLocaleString("pt-BR")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </>
       )}

@@ -1,255 +1,186 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { FormEvent, useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
 import { supabase } from "@/lib/supabase/client";
+import { loadOptions, registrarEntrada, SelectOption } from "@/lib/estoque";
 
 type Entrada = {
   id: string;
-  numero: number | null;
-  status: string;
-  data_entrada: string | null;
-  nota_fiscal: string | null;
-  fornecedor: string | null;
-  fornecedores: { nome: string } | null;
-  valor_total: number | null;
   created_at: string;
-  depositos: { nome: string } | null;
+  quantidade: number;
+  valor_total: number | null;
+  status: string;
+  tipo_entrada: string | null;
+  itens_estoque?: { nome?: string } | null;
+  locais_estoque?: { nome?: string } | null;
+  fornecedores?: { nome?: string } | null;
 };
 
-function badgeStatus(s: string) {
-  if (s === "recebido") return "border-green-200 text-green-700 bg-green-50";
-  if (s === "cancelado") return "border-red-200 text-red-700 bg-red-50";
-  return "border-amber-200 text-amber-700 bg-amber-50";
-}
-
 export default function EntradasPage() {
-  const [entradas, setEntradas] = useState<Entrada[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deleteTarget, setDeleteTarget] = useState<Entrada | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
-  const [filtroStatus, setFiltroStatus] = useState<string>("todos");
-  const [busca, setBusca] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [erro, setErro] = useState("");
+  const [lista, setLista] = useState<Entrada[]>([]);
+  const [itens, setItens] = useState<SelectOption[]>([]);
+  const [locais, setLocais] = useState<SelectOption[]>([]);
+  const [fornecedores, setFornecedores] = useState<SelectOption[]>([]);
+
+  const [itemId, setItemId] = useState("");
+  const [localId, setLocalId] = useState("");
+  const [fornecedorId, setFornecedorId] = useState("");
+  const [tipoEntrada, setTipoEntrada] = useState("manual");
+  const [quantidade, setQuantidade] = useState("");
+  const [valorUnitario, setValorUnitario] = useState("");
+  const [observacoes, setObservacoes] = useState("");
 
   async function carregar() {
     setLoading(true);
-    const { data } = await supabase.from("entradas_estoque")
-      .select("id, numero, status, data_entrada, nota_fiscal, fornecedor, valor_total, created_at, fornecedores(nome), depositos(nome)")
-      .order("created_at", { ascending: false });
-    setTimeout(() => {
-      setEntradas((data as unknown as Entrada[]) ?? []);
-      setSelectedIds((prev) => prev.filter((id) => (data as Entrada[] | null)?.some((e) => e.id === id)));
-      setLoading(false);
-    }, 0);
+    setErro("");
+
+    const [itensResp, locaisResp, fornResp, entradasResp] = await Promise.all([
+      loadOptions("itens_estoque"),
+      loadOptions("locais_estoque"),
+      loadOptions("fornecedores"),
+      supabase
+        .from("entradas_estoque")
+        .select("id, created_at, quantidade, valor_total, status, tipo_entrada, itens_estoque(nome), locais_estoque(nome), fornecedores(nome)")
+        .order("created_at", { ascending: false })
+        .limit(120),
+    ]);
+
+    setItens(itensResp);
+    setLocais(locaisResp);
+    setFornecedores(fornResp);
+    if (entradasResp.error) setErro(entradasResp.error.message);
+    setLista((entradasResp.data as Entrada[] | null) ?? []);
+    setLoading(false);
   }
 
   useEffect(() => {
-    const id = setTimeout(() => { carregar(); }, 0);
-    return () => clearTimeout(id);
+    const t = setTimeout(() => {
+      void carregar();
+    }, 0);
+    return () => clearTimeout(t);
   }, []);
 
-  const filtradas = useMemo(() => {
-    const q = busca.trim().toLowerCase();
-    return entradas
-      .filter((e) => filtroStatus === "todos" || e.status === filtroStatus)
-      .filter((e) => !q || [e.fornecedores?.nome ?? "", e.fornecedor ?? "", e.nota_fiscal ?? "", e.depositos?.nome ?? ""].join(" ").toLowerCase().includes(q));
-  }, [entradas, filtroStatus, busca]);
+  async function criarEntrada(e: FormEvent) {
+    e.preventDefault();
+    if (!itemId || !localId || !quantidade) return;
 
-  const allFilteredSelected =
-    filtradas.length > 0 && filtradas.every((e) => selectedIds.includes(e.id));
+    setSaving(true);
+    setErro("");
 
-  function toggleSelecionado(id: string, checked: boolean) {
-    setSelectedIds((prev) => {
-      if (checked) return prev.includes(id) ? prev : [...prev, id];
-      return prev.filter((x) => x !== id);
-    });
-  }
+    const qtd = Number(quantidade);
+    const vu = Number(valorUnitario || 0);
 
-  function toggleSelecionarTodosFiltrados(checked: boolean) {
-    if (checked) {
-      setSelectedIds((prev) => [...new Set([...prev, ...filtradas.map((e) => e.id)])]);
-      return;
-    }
-    setSelectedIds((prev) => prev.filter((id) => !filtradas.some((e) => e.id === id)));
-  }
-
-  async function excluirSelecionado() {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    const { error } = await supabase.from("entradas_estoque").delete().eq("id", deleteTarget.id);
-    setDeleting(false);
+    const { data, error } = await supabase
+      .from("entradas_estoque")
+      .insert({
+        item_id: itemId,
+        local_estoque_id: localId,
+        fornecedor_id: fornecedorId || null,
+        tipo_entrada: tipoEntrada,
+        quantidade: qtd,
+        valor_unitario: vu || null,
+        valor_total: vu > 0 ? vu * qtd : null,
+        observacoes: observacoes.trim() || null,
+        status: "pendente",
+      })
+      .select("id")
+      .maybeSingle();
 
     if (error) {
-      alert("Erro ao excluir entrada: " + error.message);
+      setErro(error.message);
+      setSaving(false);
       return;
     }
 
-    setDeleteTarget(null);
-    await carregar();
-  }
-
-  async function excluirSelecionadosEmLote() {
-    if (selectedIds.length === 0) return;
-    setDeleting(true);
-    const { error } = await supabase.from("entradas_estoque").delete().in("id", selectedIds);
-    setDeleting(false);
-
-    if (error) {
-      alert("Erro ao excluir entradas selecionadas: " + error.message);
-      return;
+    if (data?.id) {
+      try {
+        await registrarEntrada(String(data.id));
+      } catch (rpcError) {
+        setErro(rpcError instanceof Error ? rpcError.message : "Falha ao aplicar movimentação da entrada.");
+      }
     }
 
-    setBulkDeleteOpen(false);
-    setSelectedIds([]);
+    setSaving(false);
+    setQuantidade("");
+    setValorUnitario("");
+    setObservacoes("");
     await carregar();
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Entradas de Estoque"
-        description="Recebimentos e compras de produtos."
-        actions={
-          <>
-            <Link href="/inventario/entradas/nova" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition">
-              + Nova Entrada
-            </Link>
-            <button onClick={carregar} className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 transition">
-              Recarregar
-            </button>
-          </>
-        }
-      />
+      <PageHeader title="Estoque · Entradas" description="Lançamento de entradas de estoque com atualização de saldo e custo médio." />
 
-      <div className="bg-white border border-slate-200 rounded-xl p-6">
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium mb-1">Buscar</label>
-            <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={busca}
-              onChange={(e) => setBusca(e.target.value)} placeholder="Fornecedor, nota fiscal, depósito..." />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Status</label>
-            <select className="w-full border border-slate-300 rounded-md px-3 py-2" value={filtroStatus}
-              onChange={(e) => setFiltroStatus(e.target.value)}>
-              <option value="todos">Todos</option>
-              <option value="pendente">Pendente</option>
-              <option value="recebido">Recebido</option>
-              <option value="cancelado">Cancelado</option>
-            </select>
-          </div>
-        </div>
-        <div className="mt-4 text-sm text-slate-600">
-          Mostrando <strong>{filtradas.length}</strong> de <strong>{entradas.length}</strong> entrada(s).
-        </div>
+      {erro ? <div className="rounded border border-rose-300 bg-rose-50 text-rose-700 text-sm px-3 py-2">{erro}</div> : null}
 
-        <div className="mt-3 flex items-center gap-3">
-          <span className="text-xs text-slate-500">Selecionadas: {selectedIds.length}</span>
-          <button
-            type="button"
-            disabled={selectedIds.length === 0}
-            onClick={() => setBulkDeleteOpen(true)}
-            className="px-3 py-1.5 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50 disabled:opacity-50"
-          >
-            Excluir selecionadas
-          </button>
-        </div>
-      </div>
+      <form onSubmit={criarEntrada} className="bg-white border border-slate-200 rounded-xl p-5 grid md:grid-cols-4 gap-3">
+        <select className="border border-slate-300 rounded-md px-3 py-2" value={itemId} onChange={(e) => setItemId(e.target.value)}>
+          <option value="">Selecione o item</option>
+          {itens.map((i) => <option key={i.id} value={i.id}>{i.nome}</option>)}
+        </select>
+        <select className="border border-slate-300 rounded-md px-3 py-2" value={localId} onChange={(e) => setLocalId(e.target.value)}>
+          <option value="">Selecione o local</option>
+          {locais.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+        </select>
+        <select className="border border-slate-300 rounded-md px-3 py-2" value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)}>
+          <option value="">Fornecedor (opcional)</option>
+          {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+        </select>
+        <select className="border border-slate-300 rounded-md px-3 py-2" value={tipoEntrada} onChange={(e) => setTipoEntrada(e.target.value)}>
+          <option value="compra">Compra</option>
+          <option value="devolucao">Devolução</option>
+          <option value="transferencia_recebida">Transferência recebida</option>
+          <option value="ajuste_positivo">Ajuste positivo</option>
+          <option value="retorno_nao_utilizado">Retorno não utilizado</option>
+          <option value="manual">Entrada manual</option>
+        </select>
+        <input type="number" step="0.001" min="0.001" className="border border-slate-300 rounded-md px-3 py-2" placeholder="Quantidade" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} />
+        <input type="number" step="0.01" min="0" className="border border-slate-300 rounded-md px-3 py-2" placeholder="Valor unitário" value={valorUnitario} onChange={(e) => setValorUnitario(e.target.value)} />
+        <input className="md:col-span-2 border border-slate-300 rounded-md px-3 py-2" placeholder="Observações" value={observacoes} onChange={(e) => setObservacoes(e.target.value)} />
 
-      <div className="bg-white border border-slate-200 rounded-xl p-6">
-        {loading ? (
-          <div className="text-slate-600">Carregando...</div>
-        ) : filtradas.length === 0 ? (
-          <div className="text-slate-600">Nenhuma entrada encontrada.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left border-b">
-                  <th className="py-2 pr-3">
-                    <input
-                      type="checkbox"
-                      checked={allFilteredSelected}
-                      onChange={(e) => toggleSelecionarTodosFiltrados(e.target.checked)}
-                      aria-label="Selecionar todas"
-                    />
-                  </th>
-                  <th className="py-2 pr-4">Nº</th>
-                  <th className="py-2 pr-4">Fornecedor</th>
-                  <th className="py-2 pr-4">Depósito</th>
-                  <th className="py-2 pr-4">NF</th>
-                  <th className="py-2 pr-4">Valor</th>
-                  <th className="py-2 pr-4">Status</th>
-                  <th className="py-2">Data</th>
-                  <th className="py-2 text-right">Ações</th>
+        <button disabled={saving} className="md:col-span-4 bg-indigo-600 text-white rounded-md px-4 py-2 hover:bg-indigo-500 disabled:opacity-60">
+          {saving ? "Salvando..." : "Lançar entrada"}
+        </button>
+      </form>
+
+      <div className="bg-white border border-slate-200 rounded-xl p-5 overflow-x-auto">
+        {loading ? <div className="text-sm text-slate-500">Carregando entradas...</div> : null}
+        {!loading && lista.length === 0 ? <div className="text-sm text-slate-500">Nenhuma entrada lançada.</div> : null}
+        {!loading && lista.length > 0 ? (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left border-b">
+                <th className="py-2 pr-4">Data</th>
+                <th className="py-2 pr-4">Item</th>
+                <th className="py-2 pr-4">Tipo</th>
+                <th className="py-2 pr-4">Qtd</th>
+                <th className="py-2 pr-4">Local</th>
+                <th className="py-2 pr-4">Fornecedor</th>
+                <th className="py-2 pr-4">Valor total</th>
+                <th className="py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lista.map((e) => (
+                <tr key={e.id} className="border-b last:border-0">
+                  <td className="py-2 pr-4 text-slate-500">{new Date(e.created_at).toLocaleString("pt-BR")}</td>
+                  <td className="py-2 pr-4 font-medium">{e.itens_estoque?.nome ?? "—"}</td>
+                  <td className="py-2 pr-4 capitalize">{(e.tipo_entrada ?? "manual").replaceAll("_", " ")}</td>
+                  <td className="py-2 pr-4">{Number(e.quantidade).toLocaleString("pt-BR")}</td>
+                  <td className="py-2 pr-4">{e.locais_estoque?.nome ?? "—"}</td>
+                  <td className="py-2 pr-4">{e.fornecedores?.nome ?? "—"}</td>
+                  <td className="py-2 pr-4">{Number(e.valor_total ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</td>
+                  <td className="py-2">{e.status}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {filtradas.map((e) => (
-                  <tr key={e.id} className="border-b last:border-0 hover:bg-slate-50">
-                    <td className="py-2 pr-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(e.id)}
-                        onChange={(ev) => toggleSelecionado(e.id, ev.target.checked)}
-                        aria-label={`Selecionar entrada ${e.numero ?? e.id}`}
-                      />
-                    </td>
-                    <td className="py-2 pr-4 font-medium">
-                      <Link href={`/inventario/entradas/${e.id}`} className="hover:underline">
-                        {e.numero ? `ENT-${String(e.numero).padStart(4, "0")}` : `ENT-${e.id.slice(0, 8).toUpperCase()}`}
-                      </Link>
-                    </td>
-                    <td className="py-2 pr-4 text-slate-500">{e.fornecedores?.nome ?? e.fornecedor ?? "—"}</td>
-                    <td className="py-2 pr-4 text-slate-500">{e.depositos?.nome ?? "—"}</td>
-                    <td className="py-2 pr-4 text-slate-500">{e.nota_fiscal ?? "—"}</td>
-                    <td className="py-2 pr-4">
-                      {e.valor_total != null ? e.valor_total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
-                    </td>
-                    <td className="py-2 pr-4">
-                      <span className={`text-xs px-2 py-1 rounded border ${badgeStatus(e.status)}`}>{e.status}</span>
-                    </td>
-                    <td className="py-2 text-slate-500">
-                      {e.data_entrada ? new Date(e.data_entrada).toLocaleDateString("pt-BR") : new Date(e.created_at).toLocaleDateString("pt-BR")}
-                    </td>
-                    <td className="py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget(e)}
-                        className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
-                        title="Excluir entrada"
-                      >
-                        🗑
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+              ))}
+            </tbody>
+          </table>
+        ) : null}
       </div>
-
-      <DeleteConfirmDialog
-        open={!!deleteTarget}
-        description={`Deseja excluir a entrada "${deleteTarget?.numero ? `ENT-${String(deleteTarget.numero).padStart(4, "0")}` : deleteTarget?.id ?? ""}"?`}
-        loading={deleting}
-        onCancel={() => setDeleteTarget(null)}
-        onConfirm={excluirSelecionado}
-      />
-
-      <DeleteConfirmDialog
-        open={bulkDeleteOpen}
-        title="Excluir entradas selecionadas"
-        description={`Deseja excluir ${selectedIds.length} entrada(s) selecionada(s)?`}
-        loading={deleting}
-        onCancel={() => setBulkDeleteOpen(false)}
-        onConfirm={excluirSelecionadosEmLote}
-      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
@@ -73,6 +73,11 @@ export default function OrdensServicoPage() {
   const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [diaReferencia, setDiaReferencia] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
 
   const [busca, setBusca] = useState(() => searchParams?.get("q") || "");
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>(filtroInicial);
@@ -117,34 +122,56 @@ export default function OrdensServicoPage() {
     return () => clearTimeout(id);
   }, []);
 
-  const filtradas = useMemo(() => {
-    const q = busca.trim().toLowerCase();
+  const q = busca.trim().toLowerCase();
 
-    return osList
-      .filter((o) => {
-        if (filtroStatus === "todas") return true;
-        return (o.status || "").toLowerCase() === filtroStatus;
-      })
-      .filter((o) => {
-        if (!q) return true;
+  const filtradas = osList
+    .filter((o) => ehMesmoDia(o.inicio_em, diaReferencia) || ehStatusPausadaOuEmAndamento(o.status))
+    .filter((o) => {
+      if (filtroStatus === "todas") return true;
+      return (o.status || "").toLowerCase() === filtroStatus;
+    })
+    .filter((o) => {
+      if (!q) return true;
 
-        const alvo = [
-          o.numero ? String(o.numero) : "",
-          o.tipo ?? "",
-          o.status ?? "",
-          o.origem ?? "",
-          o.destino ?? "",
-          o.clientes?.nome ?? "",
-          o.veiculos?.placa ?? "",
-          o.motoristas?.nome ?? "",
-          o.status_pagamento ?? "",
-        ]
-          .join(" ")
-          .toLowerCase();
+      const alvo = [
+        o.numero ? String(o.numero) : "",
+        o.tipo ?? "",
+        o.status ?? "",
+        o.origem ?? "",
+        o.destino ?? "",
+        o.clientes?.nome ?? "",
+        o.veiculos?.placa ?? "",
+        o.motoristas?.nome ?? "",
+        o.status_pagamento ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
 
-        return alvo.includes(q);
-      });
-  }, [osList, busca, filtroStatus]);
+      return alvo.includes(q);
+    });
+
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  const amanha = new Date(hoje);
+  amanha.setDate(amanha.getDate() + 1);
+
+  const ontem = new Date(hoje);
+  ontem.setDate(ontem.getDate() - 1);
+
+  const tituloDia =
+    diaReferencia.getTime() === hoje.getTime()
+      ? "Hoje"
+      : diaReferencia.getTime() === amanha.getTime()
+        ? "Amanhã"
+        : diaReferencia.getTime() === ontem.getTime()
+          ? "Ontem"
+          : diaReferencia.toLocaleDateString("pt-BR", {
+              weekday: "short",
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+            });
 
   const allFilteredSelected =
     filtradas.length > 0 && filtradas.every((o) => selectedIds.includes(o.id));
@@ -162,6 +189,33 @@ export default function OrdensServicoPage() {
       return;
     }
     setSelectedIds((prev) => prev.filter((id) => !filtradas.some((o) => o.id === id)));
+  }
+
+  function somarDias(base: Date, dias: number) {
+    const d = new Date(base);
+    d.setDate(d.getDate() + dias);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  function ehMesmoDia(dataIso: string | null, ref: Date) {
+    if (!dataIso) return false;
+    const d = new Date(dataIso);
+    return (
+      d.getFullYear() === ref.getFullYear() &&
+      d.getMonth() === ref.getMonth() &&
+      d.getDate() === ref.getDate()
+    );
+  }
+
+  function ehStatusPausadaOuEmAndamento(status: string) {
+    const s = (status || "").toLowerCase();
+    return (
+      s === "em_execucao" ||
+      s === "em_andamento" ||
+      s === "pausada" ||
+      s === "pausado"
+    );
   }
 
   function badgeStatus(status: string) {
@@ -279,6 +333,43 @@ export default function OrdensServicoPage() {
       )}
 
       <div className="bg-white border border-slate-200 rounded-xl p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <div>
+            <div className="text-xs text-slate-500">Navegação diária</div>
+            <div className="text-sm font-medium text-slate-900">{tituloDia}</div>
+            <div className="text-xs text-slate-500">
+              Exibe OS do dia selecionado + OS pausadas e em andamento.
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDiaReferencia((prev) => somarDias(prev, -1))}
+              className="px-3 py-1.5 text-sm border border-slate-300 rounded-md hover:bg-white"
+            >
+              ← Dia anterior
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const d = new Date();
+                d.setHours(0, 0, 0, 0);
+                setDiaReferencia(d);
+              }}
+              className="px-3 py-1.5 text-sm border border-slate-300 rounded-md hover:bg-white"
+            >
+              Hoje
+            </button>
+            <button
+              type="button"
+              onClick={() => setDiaReferencia((prev) => somarDias(prev, 1))}
+              className="px-3 py-1.5 text-sm border border-slate-300 rounded-md hover:bg-white"
+            >
+              Próximo dia →
+            </button>
+          </div>
+        </div>
+
         <div className="mb-4 grid gap-3 md:grid-cols-3">
           <div className="md:col-span-2">
             <label className="block text-sm font-medium mb-1">Buscar</label>

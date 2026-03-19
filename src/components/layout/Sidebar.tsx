@@ -22,11 +22,21 @@ type NavItem = {
 const GROUPS = ["Operacional", "Gestão", "Administrativo"];
 
 const INVENTARIO_SUBLINKS = [
-  { href: "/inventario/produtos", label: "Produtos" },
-  { href: "/inventario/fornecedores", label: "Fornecedores" },
+  { href: "/inventario", label: "Dashboard" },
+  { href: "/inventario/itens", label: "Itens de Estoque" },
+  { href: "/inventario/categorias", label: "Categorias" },
+  { href: "/inventario/movimentacoes", label: "Movimentações" },
   { href: "/inventario/entradas", label: "Entradas" },
-  { href: "/inventario/depositos", label: "Depósitos" },
-  { href: "/inventario/movimentos", label: "Movimentos" },
+  { href: "/inventario/saidas", label: "Saídas" },
+  { href: "/inventario/compras", label: "Compras" },
+  { href: "/inventario/fornecedores", label: "Fornecedores" },
+  { href: "/inventario/locais-estoque", label: "Locais de Estoque" },
+  { href: "/inventario/transferencias", label: "Transferências" },
+  { href: "/inventario/ajustes-estoque", label: "Ajustes de Estoque" },
+  { href: "/inventario/inventario-fisico", label: "Inventário Físico" },
+  { href: "/inventario/alertas-reposicao", label: "Alertas e Reposição" },
+  { href: "/inventario/relatorios", label: "Relatórios" },
+  { href: "/inventario/configuracoes", label: "Configurações" },
 ];
 
 const FINANCEIRO_SUBLINKS = [
