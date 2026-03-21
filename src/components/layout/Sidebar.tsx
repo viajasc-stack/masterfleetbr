@@ -90,7 +90,12 @@ const LINKS: NavItem[] = [
   { href: "/agenda", label: "Agenda", icon: "◼", group: "Gestão", modulo: "agenda" },
   { href: "/viagens", label: "Viagens", icon: "◼", group: "Gestão", modulo: "viagens" },
   { href: "/relatorios", label: "Relatórios", icon: "◼", group: "Gestão", modulo: "relatorios" },
+  { href: "/bi/rentabilidade", label: "BI Rentabilidade", icon: "◼", group: "Gestão", modulo: "relatorios" },
+  { href: "/telemetria", label: "Telemetria", icon: "◼", group: "Gestão", modulo: "relatorios" },
   { href: "/observabilidade", label: "Observabilidade", icon: "◼", group: "Administrativo", modulo: "relatorios" },
+  { href: "/portal-cliente", label: "Portal do Cliente", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
+  { href: "/compliance", label: "Compliance", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
+  { href: "/escalas", label: "Escalas", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
   { href: "/suporte", label: "Suporte", icon: "◼", group: "Administrativo", modulo: "suporte" },
   { href: "/configuracoes", label: "Configurações", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
 ];
