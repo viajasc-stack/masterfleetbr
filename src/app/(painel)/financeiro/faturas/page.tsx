@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import Image from "next/image";
+import { financeiroErrorMessage, getAccessTokenOrThrow } from "@/lib/financeiro";
+import { logError, logInfo } from "@/lib/observability";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 type Fatura = {
   id: string;
@@ -39,142 +40,197 @@ export default function FinanceiroFaturasPage() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData.session;
-      if (!session) {
+      setErro("");
+      try {
+        const { data: sessionData, error: sessErr } = await supabase.auth.getSession();
+        if (sessErr) throw sessErr;
+        const session = sessionData.session;
+        if (!session) {
+          throw new Error("Sessão expirada. Faça login novamente.");
+        }
+
+        const { data: profile, error: profileErr } = await supabase
+          .from("profiles")
+          .select("empresa_id")
+          .eq("user_id", session.user.id)
+          .maybeSingle();
+
+        if (profileErr) throw profileErr;
+        if (!profile?.empresa_id) {
+          throw new Error("Empresa não identificada para o usuário logado.");
+        }
+
+        const { data, error } = await supabase
+          .from("faturas")
+          .select("id, valor_centavos, status, vencimento, created_at, pix_qr_code, pix_copia_cola")
+          .eq("empresa_id", profile.empresa_id)
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        if (error) throw error;
+
+        const lista = (data ?? []) as Fatura[];
+        setFaturas(lista);
+        setSelected(lista.find((f) => f.status === "aberta") ?? lista[0] ?? null);
+      } catch (e) {
+        logError("financeiro.faturas", "Falha ao carregar faturas", e);
+        setErro(financeiroErrorMessage(e, "Falha ao carregar faturas."));
+      } finally {
         setLoading(false);
-        return;
       }
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("empresa_id")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
-
-      if (!profile?.empresa_id) {
-        setLoading(false);
-        return;
-      }
-
-      const { data } = await supabase
-        .from("faturas")
-        .select("id, valor_centavos, status, vencimento, created_at, pix_qr_code, pix_copia_cola")
-        .eq("empresa_id", profile.empresa_id)
-        .order("created_at", { ascending: false })
-        .limit(20);
-
-      const lista = (data ?? []) as Fatura[];
-      setFaturas(lista);
-      setSelected(lista.find((f) => f.status === "aberta") ?? lista[0] ?? null);
-      setLoading(false);
     }
     void load();
   }, []);
 
   async function gerarPix() {
     if (!selected) return;
+    if (selected.status !== "aberta") {
+      setErro("Somente faturas em aberto podem gerar pagamento.");
+      return;
+    }
+
     setBusy(true);
     setErro("");
     setOkMsg("");
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const session = sessionData.session;
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/mp-create-pix`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${session?.access_token ?? ANON_KEY}`,
-      },
-      body: JSON.stringify({ fatura_id: selected.id }),
-    });
+    try {
+      const token = await getAccessTokenOrThrow();
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/mp-create-pix`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ fatura_id: selected.id }),
+      });
 
-    const json = await res.json();
-    setBusy(false);
-    if (!res.ok || json.error) {
-      setErro(json.error ?? "Erro ao gerar PIX");
-      return;
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        throw new Error(json.error ?? "Erro ao gerar PIX");
+      }
+
+      setSelected((prev) => prev ? ({ ...prev, pix_qr_code: json.pix_qr_code ?? prev.pix_qr_code, pix_copia_cola: json.pix_copia_cola ?? prev.pix_copia_cola }) : prev);
+      logInfo("financeiro.faturas", "PIX gerado", { fatura_id: selected.id });
+      setOkMsg("PIX gerado com sucesso.");
+    } catch (e) {
+      logError("financeiro.faturas", "Erro ao gerar PIX", e, { fatura_id: selected.id });
+      setErro(financeiroErrorMessage(e, "Erro ao gerar PIX."));
+    } finally {
+      setBusy(false);
     }
-
-    setSelected((prev) => prev ? ({ ...prev, pix_qr_code: json.pix_qr_code ?? prev.pix_qr_code, pix_copia_cola: json.pix_copia_cola ?? prev.pix_copia_cola }) : prev);
   }
 
   async function pagarCartao() {
     if (!selected) return;
+    if (selected.status !== "aberta") {
+      setErro("Somente faturas em aberto podem ser pagas.");
+      return;
+    }
+    if (!cardName || !cardNumber || !cardExpMonth || !cardExpYear || !cardCvv) {
+      setErro("Preencha todos os dados do cartão.");
+      return;
+    }
+    if (!payerDoc.trim()) {
+      setErro("Informe CPF/CNPJ do pagador.");
+      return;
+    }
+
     setBusy(true);
     setErro("");
     setOkMsg("");
     setBoletoUrl(null);
     setBoletoBarcode(null);
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const session = sessionData.session;
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/mp-create-payment`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${session?.access_token ?? ANON_KEY}`,
-      },
-      body: JSON.stringify({
+    try {
+      const token = await getAccessTokenOrThrow();
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/mp-create-payment`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          fatura_id: selected.id,
+          method: "cartao",
+          card: {
+            name: cardName,
+            number: cardNumber,
+            exp_month: cardExpMonth,
+            exp_year: cardExpYear,
+            cvv: cardCvv,
+            installments: Number(cardInstallments || "1"),
+          },
+          payer: {
+            doc_number: payerDoc,
+          },
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        throw new Error(json.error ?? "Erro ao processar cartão");
+      }
+
+      logInfo("financeiro.faturas", "Pagamento em cartão solicitado", {
         fatura_id: selected.id,
-        method: "cartao",
-        card: {
-          name: cardName,
-          number: cardNumber,
-          exp_month: cardExpMonth,
-          exp_year: cardExpYear,
-          cvv: cardCvv,
-          installments: Number(cardInstallments || "1"),
-        },
-        payer: {
-          doc_number: payerDoc,
-        },
-      }),
-    });
-
-    const json = await res.json();
-    setBusy(false);
-    if (!res.ok || json.error) {
-      setErro(json.error ?? "Erro ao processar cartão");
-      return;
+        status: json.status ?? "em_processamento",
+      });
+      setOkMsg(`Pagamento enviado. Status: ${json.status ?? "em processamento"}`);
+    } catch (e) {
+      logError("financeiro.faturas", "Erro ao processar cartão", e, { fatura_id: selected.id });
+      setErro(financeiroErrorMessage(e, "Erro ao processar pagamento em cartão."));
+    } finally {
+      setBusy(false);
     }
-
-    setOkMsg(`Pagamento enviado. Status: ${json.status ?? "em processamento"}`);
   }
 
   async function gerarBoleto() {
     if (!selected) return;
+    if (selected.status !== "aberta") {
+      setErro("Somente faturas em aberto podem gerar boleto.");
+      return;
+    }
+    if (!payerDoc.trim()) {
+      setErro("Informe CPF/CNPJ do pagador.");
+      return;
+    }
+
     setBusy(true);
     setErro("");
     setOkMsg("");
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const session = sessionData.session;
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/mp-create-payment`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${session?.access_token ?? ANON_KEY}`,
-      },
-      body: JSON.stringify({
-        fatura_id: selected.id,
-        method: "boleto",
-        payer: {
-          doc_number: payerDoc,
+    try {
+      const token = await getAccessTokenOrThrow();
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/mp-create-payment`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-      }),
-    });
+        body: JSON.stringify({
+          fatura_id: selected.id,
+          method: "boleto",
+          payer: {
+            doc_number: payerDoc,
+          },
+        }),
+      });
 
-    const json = await res.json();
-    setBusy(false);
-    if (!res.ok || json.error) {
-      setErro(json.error ?? "Erro ao gerar boleto");
-      return;
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        throw new Error(json.error ?? "Erro ao gerar boleto");
+      }
+
+      logInfo("financeiro.faturas", "Boleto gerado", { fatura_id: selected.id });
+      setBoletoUrl(json.boleto_url ?? null);
+      setBoletoBarcode(json.boleto_barcode ?? null);
+      setOkMsg("Boleto gerado com sucesso.");
+    } catch (e) {
+      logError("financeiro.faturas", "Erro ao gerar boleto", e, { fatura_id: selected.id });
+      setErro(financeiroErrorMessage(e, "Erro ao gerar boleto."));
+    } finally {
+      setBusy(false);
     }
-
-    setBoletoUrl(json.boleto_url ?? null);
-    setBoletoBarcode(json.boleto_barcode ?? null);
-    setOkMsg("Boleto gerado com sucesso.");
   }
 
   const fmt = (v: number) => (v / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

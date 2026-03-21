@@ -32,6 +32,8 @@ export default function BloqueadoPage() {
   const [verificando, setVerificando] = useState(false);
   const [copiado, setCopiado] = useState(false);
   const [erro, setErro] = useState("");
+  const [okMsg, setOkMsg] = useState("");
+  const [cupomCode, setCupomCode] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -93,6 +95,7 @@ export default function BloqueadoPage() {
     if (!fatura) return;
     setGerandoPix(true);
     setErro("");
+    setOkMsg("");
 
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch(`${SUPABASE_URL}/functions/v1/mp-create-pix`, {
@@ -139,6 +142,7 @@ export default function BloqueadoPage() {
     if (!fatura) return;
     setGerandoCheckout(true);
     setErro("");
+    setOkMsg("");
 
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch(`${SUPABASE_URL}/functions/v1/mp-create-payment`, {
@@ -171,6 +175,39 @@ export default function BloqueadoPage() {
     await navigator.clipboard.writeText(fatura.pix_copia_cola);
     setCopiado(true);
     setTimeout(() => setCopiado(false), 3000);
+  }
+
+  async function aplicarCupom() {
+    if (!cupomCode.trim()) {
+      setErro("Informe um cupom para aplicar.");
+      return;
+    }
+    setErro("");
+    setOkMsg("");
+
+    const { error: cupomErr } = await supabase.rpc("apply_my_billing_coupon_code", {
+      p_code: cupomCode.trim().toUpperCase(),
+      p_fatura_id: fatura?.id ?? null,
+    });
+
+    if (cupomErr) {
+      setErro(cupomErr.message);
+      return;
+    }
+
+    if (fatura?.id) {
+      const { data: faturaAtualizada } = await supabase
+        .from("faturas")
+        .select("id, valor_centavos, status, vencimento, pix_qr_code, pix_copia_cola")
+        .eq("id", fatura.id)
+        .maybeSingle();
+      if (faturaAtualizada) {
+        setFatura(faturaAtualizada as Fatura);
+      }
+    }
+
+    setOkMsg("Cupom aplicado com sucesso.");
+    setCupomCode("");
   }
 
   async function sair() {
@@ -208,6 +245,12 @@ export default function BloqueadoPage() {
           </div>
         )}
 
+        {okMsg && (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+            {okMsg}
+          </div>
+        )}
+
         {loading ? (
           <div className="text-slate-500 text-sm">Carregando...</div>
         ) : fatura ? (
@@ -225,6 +268,24 @@ export default function BloqueadoPage() {
             )}
 
             <div className="space-y-4">
+              <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 space-y-2">
+                <p className="text-xs text-slate-400">Tem cupom de desconto?</p>
+                <div className="flex gap-2">
+                  <input
+                    value={cupomCode}
+                    onChange={(e) => setCupomCode(e.target.value.toUpperCase())}
+                    placeholder="EX: BOASVINDAS50"
+                    className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 uppercase"
+                  />
+                  <button
+                    onClick={aplicarCupom}
+                    className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300 hover:bg-emerald-500/20"
+                  >
+                    Aplicar
+                  </button>
+                </div>
+              </div>
+
               <div className="flex gap-2">
                 <button onClick={() => setMetodo("pix")}
                   className={`flex-1 py-2 rounded-lg text-sm font-semibold ${metodo === "pix" ? "bg-slate-700 text-white" : "bg-slate-950 text-slate-400 border border-slate-800"}`}>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { financeiroErrorMessage } from "@/lib/financeiro";
 import { supabase } from "@/lib/supabase/client";
 
 type Resumo = {
@@ -41,46 +42,58 @@ export default function FinanceiroPage() {
   const [contas, setContas] = useState<Conta[]>([]);
   const [loading, setLoading] = useState(true);
   const [billing, setBilling] = useState<Billing | null>(null);
+  const [erro, setErro] = useState("");
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const hoje = new Date().toISOString().slice(0, 10);
+      setErro("");
+      try {
+        const hoje = new Date().toISOString().slice(0, 10);
 
-      const { data } = await supabase.from("contas_financeiras")
-        .select("id, descricao, tipo, valor, data_vencimento, status, categoria")
-        .in("status", ["pendente", "pago", "recebido"])
-        .order("data_vencimento", { ascending: true })
-        .limit(500);
+        const [{ data, error: contasErr }, { data: bill, error: billErr }] = await Promise.all([
+          supabase
+            .from("contas_financeiras")
+            .select("id, descricao, tipo, valor, data_vencimento, status, categoria")
+            .in("status", ["pendente", "pago", "recebido"])
+            .order("data_vencimento", { ascending: true })
+            .limit(500),
+          supabase.rpc("get_billing_current"),
+        ]);
 
-      const lista = (data as Conta[]) ?? [];
-      setContas(lista);
+        if (contasErr) throw contasErr;
+        if (billErr) throw billErr;
 
-      const pendPagar = lista.filter((c) => c.tipo === "pagar" && c.status === "pendente");
-      const pendReceber = lista.filter((c) => c.tipo === "receber" && c.status === "pendente");
+        const lista = (data as Conta[]) ?? [];
+        setContas(lista);
 
-      setResumo({
-        a_pagar: pendPagar.length,
-        a_receber: pendReceber.length,
-        vencidas_pagar: pendPagar.filter((c) => c.data_vencimento < hoje).length,
-        vencidas_receber: pendReceber.filter((c) => c.data_vencimento < hoje).length,
-        total_pagar: pendPagar.reduce((s, c) => s + c.valor, 0),
-        total_receber: pendReceber.reduce((s, c) => s + c.valor, 0),
-      });
+        const pendPagar = lista.filter((c) => c.tipo === "pagar" && c.status === "pendente");
+        const pendReceber = lista.filter((c) => c.tipo === "receber" && c.status === "pendente");
 
-      const { data: bill } = await supabase.rpc("get_billing_current");
-      if (bill) {
-        setBilling({
-          status: bill.status ?? "trial",
-          plano_nome: bill.plano_nome ?? null,
-          trial_ate: bill.trial_ate ?? null,
-          proxima_cobranca: bill.proxima_cobranca ?? null,
+        setResumo({
+          a_pagar: pendPagar.length,
+          a_receber: pendReceber.length,
+          vencidas_pagar: pendPagar.filter((c) => c.data_vencimento < hoje).length,
+          vencidas_receber: pendReceber.filter((c) => c.data_vencimento < hoje).length,
+          total_pagar: pendPagar.reduce((s, c) => s + c.valor, 0),
+          total_receber: pendReceber.reduce((s, c) => s + c.valor, 0),
         });
-      }
 
-      setLoading(false);
+        if (bill) {
+          setBilling({
+            status: bill.status ?? "trial",
+            plano_nome: bill.plano_nome ?? null,
+            trial_ate: bill.trial_ate ?? null,
+            proxima_cobranca: bill.proxima_cobranca ?? null,
+          });
+        }
+      } catch (e) {
+        setErro(financeiroErrorMessage(e, "Falha ao carregar dashboard financeiro."));
+      } finally {
+        setLoading(false);
+      }
     }
-    load();
+    void load();
   }, []);
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -154,6 +167,8 @@ export default function FinanceiroPage() {
           + Nova Conta
         </Link>
       </div>
+
+      {erro ? <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{erro}</div> : null}
 
       {billing && (
         <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm flex items-center justify-between">

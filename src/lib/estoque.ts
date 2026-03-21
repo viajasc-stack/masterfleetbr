@@ -16,6 +16,12 @@ export function numberBR(value: number | null | undefined, maximumFractionDigits
   return Number(value ?? 0).toLocaleString("pt-BR", { maximumFractionDigits });
 }
 
+export function errorMessage(error: unknown, fallback = "Ocorreu um erro inesperado.") {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return fallback;
+}
+
 export async function getEmpresaIdFromSession() {
   const {
     data: { session },

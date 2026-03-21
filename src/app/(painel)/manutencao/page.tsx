@@ -1,302 +1,219 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { createBrowserClient } from "@supabase/ssr";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { supabase } from "@/lib/supabase/client";
+import { moeda } from "@/lib/manutencao";
 
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-type Manutencao = {
+type Ordem = {
   id: string;
-  numero: number | null;
-  tipo: string;
-  descricao: string;
-  status: string;
-  urgencia: string | null;
-  data_prevista: string | null;
-  data_realizada: string | null;
-  km_previsto: number | null;
-  custo_total: number | null;
+  status: "aberta" | "analise" | "aguardando_pecas" | "andamento" | "finalizada";
+  prioridade: "baixa" | "media" | "alta";
+  custo_total: number;
   created_at: string;
-  veiculos: { placa: string; modelo: string | null } | null;
+  veiculos: { placa: string | null; modelo: string | null } | null;
 };
 
-function badgeStatus(s: string) {
-  if (["concluida", "concluida_observacao", "concluida_parcial"].includes(s)) return "border-green-200 text-green-700 bg-green-50";
-  if (["cancelada", "reprovada", "sem_solucao_tecnica"].includes(s)) return "border-slate-200 text-slate-500 bg-slate-50";
-  if (["em_andamento", "programada", "pecas_reservadas"].includes(s)) return "border-blue-200 text-blue-700 bg-blue-50";
-  return "border-amber-200 text-amber-700 bg-amber-50";
+type Preventiva = {
+  id: string;
+  status: "em_dia" | "vencendo" | "vencida" | "concluida";
+};
+
+function statusBadge(status: string) {
+  if (status === "finalizada" || status === "concluida") return "bg-emerald-50 border-emerald-200 text-emerald-700";
+  if (status === "andamento") return "bg-blue-50 border-blue-200 text-blue-700";
+  if (status === "aguardando_pecas") return "bg-amber-50 border-amber-200 text-amber-700";
+  if (status === "vencida") return "bg-rose-50 border-rose-200 text-rose-700";
+  return "bg-slate-50 border-slate-200 text-slate-700";
 }
 
-export default function ManutencaoPage() {
-  const [manutencoes, setManutencoes] = useState<Manutencao[]>([]);
+export default function ManutencaoDashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [deleteTarget, setDeleteTarget] = useState<Manutencao | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
-  const [filtroStatus, setFiltroStatus] = useState("pendente");
-  const [busca, setBusca] = useState("");
+  const [ordens, setOrdens] = useState<Ordem[]>([]);
+  const [preventivas, setPreventivas] = useState<Preventiva[]>([]);
 
   async function carregar() {
     setLoading(true);
-    const { data } = await supabase.from("manutencoes")
-      .select("id, numero, tipo, descricao, status, urgencia, data_prevista, data_realizada, km_previsto, custo_total, created_at, veiculos(placa, modelo)")
-      .order("created_at", { ascending: false });
-    setTimeout(() => {
-      setManutencoes((data as unknown as Manutencao[]) ?? []);
-      setSelectedIds((prev) => prev.filter((id) => (data as Manutencao[] | null)?.some((m) => m.id === id)));
-      setLoading(false);
-    }, 0);
+
+    const [ordensRes, prevRes] = await Promise.all([
+      supabase
+        .from("ordens_manutencao")
+        .select("id,status,prioridade,custo_total,created_at,veiculos(placa,modelo)")
+        .order("created_at", { ascending: false })
+        .limit(300),
+      supabase.from("preventiva_execucoes").select("id,status"),
+    ]);
+
+    setOrdens((ordensRes.data as Ordem[] | null) ?? []);
+    setPreventivas((prevRes.data as Preventiva[] | null) ?? []);
+    setLoading(false);
   }
 
   useEffect(() => {
-    const id = setTimeout(() => { carregar(); }, 0);
-    return () => clearTimeout(id);
+    const t = setTimeout(() => {
+      void carregar();
+    }, 0);
+    return () => clearTimeout(t);
   }, []);
 
-  const hoje = new Date().toISOString().slice(0, 10);
+  const cards = useMemo(() => {
+    const abertas = ordens.filter((o) => o.status === "aberta").length;
+    const andamento = ordens.filter((o) => o.status === "andamento").length;
+    const aguardando = ordens.filter((o) => o.status === "aguardando_pecas").length;
+    const vencidas = preventivas.filter((p) => p.status === "vencida").length;
 
-  const filtradas = useMemo(() => {
-    const q = busca.trim().toLowerCase();
-    return manutencoes
-      .filter((m) => filtroStatus === "todos" || m.status === filtroStatus)
-      .filter((m) => !q || [m.tipo, m.descricao, m.veiculos?.placa ?? ""].join(" ").toLowerCase().includes(q));
-  }, [manutencoes, filtroStatus, busca]);
+    const mesAtual = new Date().getMonth();
+    const anoAtual = new Date().getFullYear();
+    const custoMes = ordens
+      .filter((o) => {
+        const d = new Date(o.created_at);
+        return d.getMonth() === mesAtual && d.getFullYear() === anoAtual;
+      })
+      .reduce((acc, o) => acc + Number(o.custo_total ?? 0), 0);
 
-  const allFilteredSelected =
-    filtradas.length > 0 && filtradas.every((m) => selectedIds.includes(m.id));
+    return { abertas, andamento, aguardando, vencidas, custoMes };
+  }, [ordens, preventivas]);
 
-  function toggleSelecionado(id: string, checked: boolean) {
-    setSelectedIds((prev) => {
-      if (checked) return prev.includes(id) ? prev : [...prev, id];
-      return prev.filter((x) => x !== id);
+  const custoPorMes = useMemo(() => {
+    const map = new Map<string, number>();
+    ordens.forEach((o) => {
+      const d = new Date(o.created_at);
+      const key = `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+      map.set(key, (map.get(key) ?? 0) + Number(o.custo_total ?? 0));
     });
-  }
+    return [...map.entries()].map(([mes, total]) => ({ mes, total })).slice(-6);
+  }, [ordens]);
 
-  function toggleSelecionarTodosFiltrados(checked: boolean) {
-    if (checked) {
-      setSelectedIds((prev) => [...new Set([...prev, ...filtradas.map((m) => m.id)])]);
-      return;
-    }
-    setSelectedIds((prev) => prev.filter((id) => !filtradas.some((m) => m.id === id)));
-  }
+  const custoPorVeiculo = useMemo(() => {
+    const map = new Map<string, number>();
+    ordens.forEach((o) => {
+      const nome = o.veiculos?.placa ?? "Sem placa";
+      map.set(nome, (map.get(nome) ?? 0) + Number(o.custo_total ?? 0));
+    });
 
-  const alertas = manutencoes.filter(
-    (m) => m.status === "pendente" && m.data_prevista && m.data_prevista <= hoje
+    return [...map.entries()]
+      .map(([veiculo, total]) => ({ veiculo, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 6);
+  }, [ordens]);
+
+  const urgentes = useMemo(
+    () => ordens.filter((o) => o.prioridade === "alta" && o.status !== "finalizada").slice(0, 8),
+    [ordens],
   );
-
-  async function excluirSelecionado() {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    const { error } = await supabase.from("manutencoes").delete().eq("id", deleteTarget.id);
-    setDeleting(false);
-
-    if (error) {
-      alert("Erro ao excluir manutenção: " + error.message);
-      return;
-    }
-
-    setDeleteTarget(null);
-    await carregar();
-  }
-
-  async function excluirSelecionadasEmLote() {
-    if (selectedIds.length === 0) return;
-    setDeleting(true);
-    const { error } = await supabase.from("manutencoes").delete().in("id", selectedIds);
-    setDeleting(false);
-
-    if (error) {
-      alert("Erro ao excluir manutenções selecionadas: " + error.message);
-      return;
-    }
-
-    setBulkDeleteOpen(false);
-    setSelectedIds([]);
-    await carregar();
-  }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Manutenção"
-        description="Plano de manutenção preventiva e corretiva da frota."
+        title="Manutenção · Dashboard"
+        description="Visão geral de ordens, preventiva e custos do módulo de manutenção."
         actions={
           <>
-            <Link href="/manutencao/estoque" className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 transition">
-              Estoque da manutenção
+            <Link href="/manutencao/solicitacoes" className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50">
+              Solicitações
             </Link>
-            <Link href="/manutencao/nova" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition">
-              + Nova Manutenção
+            <Link href="/manutencao/ordens" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500">
+              Ordens
             </Link>
-            <button onClick={carregar} className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 transition">
-              Recarregar
-            </button>
           </>
         }
       />
 
-      {alertas.length > 0 && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-5 py-4 text-sm text-amber-300">
-          {alertas.length} manutenção(ões) vencida(s) aguardando execução.
-        </div>
-      )}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <Card titulo="OS abertas" valor={String(cards.abertas)} />
+        <Card titulo="OS em andamento" valor={String(cards.andamento)} />
+        <Card titulo="Aguardando peças" valor={String(cards.aguardando)} />
+        <Card titulo="Preventivas vencidas" valor={String(cards.vencidas)} />
+        <Card titulo="Custo do mês" valor={moeda(cards.custoMes)} />
+      </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl p-6">
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium mb-1">Buscar</label>
-            <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={busca}
-              onChange={(e) => setBusca(e.target.value)} placeholder="Tipo, veículo, descrição..." />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Status</label>
-            <select className="w-full border border-slate-300 rounded-md px-3 py-2" value={filtroStatus}
-              onChange={(e) => setFiltroStatus(e.target.value)}>
-              <option value="todos">Todos</option>
-              <option value="pendente">Pendente</option>
-              <option value="em_triagem">Em triagem</option>
-              <option value="em_analise">Em análise</option>
-              <option value="analisada">Analisada</option>
-              <option value="aguardando_aprovacao">Aguardando aprovação</option>
-              <option value="aguardando_pecas">Aguardando peças</option>
-              <option value="pecas_reservadas">Peças reservadas</option>
-              <option value="programada">Programada</option>
-              <option value="em_andamento">Em andamento</option>
-              <option value="pausada">Pausada</option>
-              <option value="concluida">Concluída</option>
-              <option value="concluida_observacao">Concluída com observação</option>
-              <option value="concluida_parcial">Concluída parcial</option>
-              <option value="sem_solucao_tecnica">Sem solução técnica</option>
-              <option value="reprovada">Reprovada</option>
-              <option value="cancelada">Cancelada</option>
-            </select>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <GraficoBarras
+          titulo="Custo por mês"
+          itens={custoPorMes.map((m) => ({ label: m.mes, valor: m.total }))}
+        />
+        <GraficoBarras
+          titulo="Custo por veículo"
+          itens={custoPorVeiculo.map((m) => ({ label: m.veiculo, valor: m.total }))}
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-slate-900 mb-3">Veículos com maior custo</h2>
+          <div className="space-y-2 text-sm">
+            {custoPorVeiculo.length === 0 ? (
+              <div className="text-slate-500">Sem dados.</div>
+            ) : (
+              custoPorVeiculo.map((item) => (
+                <div key={item.veiculo} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0">
+                  <span>{item.veiculo}</span>
+                  <span className="font-medium">{moeda(item.total)}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
-        <div className="mt-4 text-sm text-slate-600">
-          Mostrando <strong>{filtradas.length}</strong> de <strong>{manutencoes.length}</strong>.
-        </div>
 
-        <div className="mt-3 flex items-center gap-3">
-          <span className="text-xs text-slate-500">Selecionadas: {selectedIds.length}</span>
-          <button
-            type="button"
-            disabled={selectedIds.length === 0}
-            onClick={() => setBulkDeleteOpen(true)}
-            className="px-3 py-1.5 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50 disabled:opacity-50"
-          >
-            Excluir selecionadas
-          </button>
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-slate-900 mb-3">OS urgentes</h2>
+          <div className="space-y-2 text-sm">
+            {urgentes.length === 0 ? (
+              <div className="text-slate-500">Sem urgências no momento.</div>
+            ) : (
+              urgentes.map((o) => (
+                <Link
+                  key={o.id}
+                  href={`/manutencao/ordens/${o.id}`}
+                  className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 hover:text-indigo-700"
+                >
+                  <span>{o.veiculos?.placa ?? "Sem veículo"}</span>
+                  <span className={`inline-flex rounded px-2 py-0.5 text-xs border ${statusBadge(o.status)}`}>{o.status.replaceAll("_", " ")}</span>
+                </Link>
+              ))
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl p-6">
-        {loading ? (
-          <div className="text-slate-600">Carregando...</div>
-        ) : filtradas.length === 0 ? (
-          <div className="text-slate-600">Nenhuma manutenção encontrada.</div>
+      {loading ? <div className="text-sm text-slate-500">Carregando dashboard...</div> : null}
+    </div>
+  );
+}
+
+function Card({ titulo, valor }: { titulo: string; valor: string }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4">
+      <p className="text-xs uppercase tracking-wide text-slate-500">{titulo}</p>
+      <p className="mt-2 text-2xl font-semibold text-slate-900">{valor}</p>
+    </div>
+  );
+}
+
+function GraficoBarras({ titulo, itens }: { titulo: string; itens: Array<{ label: string; valor: number }> }) {
+  const max = Math.max(...itens.map((i) => i.valor), 1);
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5">
+      <h2 className="text-sm font-semibold text-slate-900 mb-4">{titulo}</h2>
+      <div className="space-y-3">
+        {itens.length === 0 ? (
+          <div className="text-sm text-slate-500">Sem dados.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left border-b">
-                  <th className="py-2 pr-3">
-                    <input
-                      type="checkbox"
-                      checked={allFilteredSelected}
-                      onChange={(e) => toggleSelecionarTodosFiltrados(e.target.checked)}
-                      aria-label="Selecionar todas"
-                    />
-                  </th>
-                  <th className="py-2 pr-4">Veículo</th>
-                  <th className="py-2 pr-4">Nº</th>
-                  <th className="py-2 pr-4">Tipo</th>
-                  <th className="py-2 pr-4">Descrição</th>
-                  <th className="py-2 pr-4">Urgência</th>
-                  <th className="py-2 pr-4">Prev. Data</th>
-                  <th className="py-2 pr-4">KM Prev.</th>
-                  <th className="py-2 pr-4">Custo</th>
-                  <th className="py-2">Status</th>
-                  <th className="py-2 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtradas.map((m) => {
-                  const vencida = m.status === "pendente" && m.data_prevista && m.data_prevista <= hoje;
-                  return (
-                    <tr key={m.id} className={`border-b last:border-0 hover:bg-slate-50 ${vencida ? "bg-red-50/50" : ""}`}>
-                      <td className="py-2 pr-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(m.id)}
-                          onChange={(e) => toggleSelecionado(m.id, e.target.checked)}
-                          aria-label={`Selecionar manutenção ${m.descricao}`}
-                        />
-                      </td>
-                      <td className="py-2 pr-4 font-medium">
-                        <Link href={`/manutencao/${m.id}`} className="hover:underline">
-                          {m.veiculos?.placa ?? "—"}
-                        </Link>
-                        {m.veiculos?.modelo && <div className="text-xs text-slate-500">{m.veiculos.modelo}</div>}
-                      </td>
-                      <td className="py-2 pr-4 text-slate-500">{m.numero ? `MNT-${String(m.numero).padStart(5, "0")}` : "—"}</td>
-                      <td className="py-2 pr-4">{m.tipo}</td>
-                      <td className="py-2 pr-4 text-slate-500 max-w-[200px] truncate">{m.descricao}</td>
-                      <td className="py-2 pr-4 text-slate-500">{m.urgencia ?? "—"}</td>
-                      <td className={`py-2 pr-4 ${vencida ? "text-red-600 font-medium" : "text-slate-500"}`}>
-                        {m.data_prevista ? new Date(m.data_prevista + "T00:00:00").toLocaleDateString("pt-BR") : "—"}
-                        {vencida && " ⚠"}
-                      </td>
-                      <td className="py-2 pr-4 text-slate-500">{m.km_previsto ?? "—"}</td>
-                      <td className="py-2 pr-4">
-                        {m.custo_total != null ? m.custo_total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
-                      </td>
-                      <td className="py-2">
-                        <span className={`text-xs px-2 py-1 rounded border ${badgeStatus(m.status)}`}>
-                          {m.status.replace("_", " ")}
-                        </span>
-                      </td>
-                      <td className="py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setDeleteTarget(m)}
-                          className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
-                          title="Excluir manutenção"
-                        >
-                          🗑
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          itens.map((i) => (
+            <div key={i.label}>
+              <div className="flex items-center justify-between text-xs text-slate-600 mb-1">
+                <span>{i.label}</span>
+                <span>{moeda(i.valor)}</span>
+              </div>
+              <div className="h-2 rounded bg-slate-100 overflow-hidden">
+                <div className="h-2 bg-indigo-500" style={{ width: `${(i.valor / max) * 100}%` }} />
+              </div>
+            </div>
+          ))
         )}
       </div>
-
-      <DeleteConfirmDialog
-        open={!!deleteTarget}
-        description={`Deseja excluir a manutenção "${deleteTarget?.descricao ?? ""}"?`}
-        loading={deleting}
-        onCancel={() => setDeleteTarget(null)}
-        onConfirm={excluirSelecionado}
-      />
-
-      <DeleteConfirmDialog
-        open={bulkDeleteOpen}
-        title="Excluir manutenções selecionadas"
-        description={`Deseja excluir ${selectedIds.length} manutenção(ões) selecionada(s)?`}
-        loading={deleting}
-        onCancel={() => setBulkDeleteOpen(false)}
-        onConfirm={excluirSelecionadasEmLote}
-      />
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
+import { financeiroErrorMessage } from "@/lib/financeiro";
+import { logError, logInfo } from "@/lib/observability";
 
  
 
@@ -38,6 +40,7 @@ export default function NovaContaPage() {
   });
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
+  const [okMsg, setOkMsg] = useState("");
   const [modoParcela, setModoParcela] = useState<"unica" | "carne">("unica");
   const [quantidadeParcelas, setQuantidadeParcelas] = useState("12");
   const [modoValorCarne, setModoValorCarne] = useState<"parcela" | "total">("parcela");
@@ -48,6 +51,8 @@ export default function NovaContaPage() {
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
+    setErro("");
+    setOkMsg("");
     if (!form.descricao.trim()) { setErro("Descrição é obrigatória."); return; }
     if (!form.valor || parseFloat(form.valor) <= 0) { setErro("Valor inválido."); return; }
     if (modoParcela === "carne") {
@@ -58,60 +63,85 @@ export default function NovaContaPage() {
       }
     }
 
-    setLoading(true); setErro("");
+    setLoading(true);
 
     const valor = parseFloat(form.valor);
     const baseDescricao = form.descricao.trim();
     const baseObservacoes = form.observacoes.trim() || null;
 
-    let error: { message?: string } | null = null;
-    if (modoParcela === "unica") {
-      const resp = await supabase.from("contas_financeiras").insert({
-        descricao: baseDescricao,
+    try {
+      let error: { message?: string } | null = null;
+      if (modoParcela === "unica") {
+        const resp = await supabase.from("contas_financeiras").insert({
+          descricao: baseDescricao,
+          tipo: form.tipo,
+          valor,
+          data_vencimento: form.data_vencimento,
+          categoria: form.categoria || null,
+          observacoes: baseObservacoes,
+          status: "pendente",
+        });
+        error = resp.error;
+      } else {
+        const qtd = Number(quantidadeParcelas);
+        const grupoId = (typeof crypto !== "undefined" && "randomUUID" in crypto)
+          ? crypto.randomUUID()
+          : `carne-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const valoresParcelas = modoValorCarne === "total"
+          ? splitTotalEmParcelas(valor, qtd)
+          : Array.from({ length: qtd }, () => valor);
+        const valorTotalCarne = modoValorCarne === "total"
+          ? valor
+          : Number((valor * qtd).toFixed(2));
+
+        const linhas = Array.from({ length: qtd }, (_, i) => ({
+          descricao: `${baseDescricao} (${i + 1}/${qtd})`,
+          tipo: form.tipo,
+          valor: valoresParcelas[i],
+          data_vencimento: addMonths(form.data_vencimento, i),
+          categoria: form.categoria || null,
+          observacoes: [
+            baseObservacoes,
+            `Carnê/parcelado: parcela ${i + 1} de ${qtd}`,
+            `Grupo: ${grupoId}`,
+          ].filter(Boolean).join(" • "),
+          status: "pendente",
+          carne_grupo_id: grupoId,
+          parcela_numero: i + 1,
+          parcela_total: qtd,
+          valor_total_carne: valorTotalCarne,
+        }));
+
+        const resp = await supabase.from("contas_financeiras").insert(linhas);
+        error = resp.error;
+      }
+
+      if (error) {
+        logError("financeiro.contas_nova", "Erro ao salvar conta", error, {
+          tipo: form.tipo,
+          modo_parcela: modoParcela,
+        });
+        setErro(error.message ?? "Erro ao salvar conta.");
+        return;
+      }
+
+      logInfo("financeiro.contas_nova", "Conta salva com sucesso", {
         tipo: form.tipo,
-        valor,
-        data_vencimento: form.data_vencimento,
-        categoria: form.categoria || null,
-        observacoes: baseObservacoes,
-        status: "pendente",
+        modo_parcela: modoParcela,
+        quantidade_parcelas: modoParcela === "carne" ? Number(quantidadeParcelas) : 1,
       });
-      error = resp.error;
-    } else {
-      const qtd = Number(quantidadeParcelas);
-      const grupoId = (typeof crypto !== "undefined" && "randomUUID" in crypto)
-        ? crypto.randomUUID()
-        : `carne-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const valoresParcelas = modoValorCarne === "total"
-        ? splitTotalEmParcelas(valor, qtd)
-        : Array.from({ length: qtd }, () => valor);
-      const valorTotalCarne = modoValorCarne === "total"
-        ? valor
-        : Number((valor * qtd).toFixed(2));
-
-      const linhas = Array.from({ length: qtd }, (_, i) => ({
-        descricao: `${baseDescricao} (${i + 1}/${qtd})`,
+      setOkMsg(modoParcela === "carne" && form.tipo === "pagar" ? "Carnê criado com sucesso." : "Conta criada com sucesso.");
+    } catch (e) {
+      logError("financeiro.contas_nova", "Exceção ao salvar conta", e, {
         tipo: form.tipo,
-        valor: valoresParcelas[i],
-        data_vencimento: addMonths(form.data_vencimento, i),
-        categoria: form.categoria || null,
-        observacoes: [
-          baseObservacoes,
-          `Carnê/parcelado: parcela ${i + 1} de ${qtd}`,
-          `Grupo: ${grupoId}`,
-        ].filter(Boolean).join(" • "),
-        status: "pendente",
-        carne_grupo_id: grupoId,
-        parcela_numero: i + 1,
-        parcela_total: qtd,
-        valor_total_carne: valorTotalCarne,
-      }));
-
-      const resp = await supabase.from("contas_financeiras").insert(linhas);
-      error = resp.error;
+        modo_parcela: modoParcela,
+      });
+      setErro(financeiroErrorMessage(e, "Erro ao salvar conta."));
+      return;
+    } finally {
+      setLoading(false);
     }
 
-    setLoading(false);
-    if (error) { setErro(error.message ?? "Erro ao salvar conta."); return; }
     router.push("/financeiro");
   }
 
@@ -120,12 +150,13 @@ export default function NovaContaPage() {
   return (
     <div className="max-w-xl space-y-6">
       <div className="flex items-center gap-3">
-        <Link href="/financeiro" className="text-sm text-slate-400 hover:text-white">← Financeiro</Link>
-        <h1 className="text-xl font-semibold text-white">Nova Conta</h1>
+        <Link href="/financeiro" className="text-sm text-slate-500 hover:text-slate-800">← Financeiro</Link>
+        <h1 className="text-xl font-semibold text-slate-900">Nova Conta</h1>
       </div>
 
       <form onSubmit={salvar} className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 text-sm">
         {erro && <div className="bg-red-50 border border-red-200 text-red-700 rounded px-3 py-2">{erro}</div>}
+        {okMsg && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded px-3 py-2">{okMsg}</div>}
 
         <div>
           <label className="block font-medium mb-1">Tipo *</label>

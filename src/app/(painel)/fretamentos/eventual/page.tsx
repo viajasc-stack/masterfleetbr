@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
 import { supabase } from "@/lib/supabase/client";
+import { logError, logInfo } from "@/lib/observability";
 
 type FretamentoRow = {
   id: string;
@@ -52,27 +53,42 @@ export default function FretamentoEventualPage() {
 
   const [deleteTarget, setDeleteTarget] = useState<FretamentoRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [erro, setErro] = useState("");
+  const [okMsg, setOkMsg] = useState("");
 
   async function carregar() {
     setLoading(true);
+    setErro("");
 
-    const { data: osData } = await supabase
-      .from("ordens_servico")
-      .select("id, status, cliente_id, destino, inicio_em, fim_em, created_at, clientes:cliente_id(nome)")
-      .eq("tipo", "eventual");
+    try {
+      const { data: osData, error: osErr } = await supabase
+        .from("ordens_servico")
+        .select("id, status, cliente_id, destino, inicio_em, fim_em, created_at, clientes:cliente_id(nome)")
+        .eq("tipo", "eventual");
 
-    const { data: clientesData } = await supabase
-      .from("clientes")
-      .select("id, nome")
-      .order("nome", { ascending: true });
+      const { data: clientesData, error: cliErr } = await supabase
+        .from("clientes")
+        .select("id, nome")
+        .order("nome", { ascending: true });
 
-    setLista((osData ?? []) as FretamentoRow[]);
-    setClientes((clientesData ?? []) as Cliente[]);
-    setLoading(false);
+      if (osErr) throw osErr;
+      if (cliErr) throw cliErr;
+
+      setLista((osData ?? []) as FretamentoRow[]);
+      setClientes((clientesData ?? []) as Cliente[]);
+    } catch (e) {
+      logError("operacao.fretamento_eventual", "Falha ao carregar fretamentos", e);
+      setErro("Erro ao carregar fretamentos eventuais.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
-    void carregar();
+    const id = setTimeout(() => {
+      void carregar();
+    }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   const filtrados = useMemo(() => {
@@ -120,13 +136,21 @@ export default function FretamentoEventualPage() {
   async function excluirSelecionado() {
     if (!deleteTarget) return;
     setDeleting(true);
-    const { error } = await supabase.from("ordens_servico").delete().eq("id", deleteTarget.id);
+    setErro("");
+    setOkMsg("");
+    const { error } = await supabase
+      .from("ordens_servico")
+      .update({ status: "cancelada" })
+      .eq("id", deleteTarget.id);
     setDeleting(false);
     if (error) {
-      alert("Erro ao excluir fretamento: " + error.message);
+      logError("operacao.fretamento_eventual", "Erro ao cancelar fretamento", error, { os_id: deleteTarget.id });
+      setErro("Erro ao cancelar fretamento: " + error.message);
       return;
     }
+    logInfo("operacao.fretamento_eventual", "Fretamento cancelado", { os_id: deleteTarget.id });
     setDeleteTarget(null);
+    setOkMsg("Fretamento cancelado com sucesso.");
     await carregar();
   }
 
@@ -146,6 +170,9 @@ export default function FretamentoEventualPage() {
           </div>
         }
       />
+
+      {erro ? <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{erro}</div> : null}
+      {okMsg ? <div className="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{okMsg}</div> : null}
 
       <div className="bg-white border border-slate-200 rounded-xl p-6 grid gap-4 md:grid-cols-5">
         <div className="md:col-span-2">
@@ -221,7 +248,7 @@ export default function FretamentoEventualPage() {
                       <div className="inline-flex items-center gap-2">
                         <Link href={`/ordens-servico/${item.id}`} className="px-2 py-1 text-xs border border-slate-300 rounded-md hover:bg-slate-50" title="Visualizar">👁️</Link>
                         <Link href={`/ordens-servico/${item.id}`} className="px-2 py-1 text-xs border border-blue-200 text-blue-700 rounded-md hover:bg-blue-50" title="Editar">✏️</Link>
-                        <button type="button" onClick={() => setDeleteTarget(item)} className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50" title="Excluir">🗑</button>
+                        <button type="button" onClick={() => setDeleteTarget(item)} className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50" title="Cancelar">Cancelar</button>
                       </div>
                     </td>
                   </tr>
@@ -234,7 +261,9 @@ export default function FretamentoEventualPage() {
 
       <DeleteConfirmDialog
         open={!!deleteTarget}
-        description={`Deseja excluir este fretamento eventual?`}
+        title="Cancelar fretamento eventual"
+        description="Deseja cancelar este fretamento eventual?"
+        confirmLabel="Cancelar"
         loading={deleting}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={excluirSelecionado}

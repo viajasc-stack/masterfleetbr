@@ -7,8 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "lint:critical": "eslint \"src/lib/observability.ts\" \"src/app/(painel)/financeiro/faturas/page.tsx\" \"src/app/(painel)/ordens-servico/page.tsx\"",
     "ci:verify": "npm run lint && npm run build",
-    "smoke:web": "node scripts/smoke_web_critical.js"
+    "smoke:web": "node scripts/smoke_web_critical.js",
+    "verify:etapa4": "npm run lint:critical && npm run smoke:web"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

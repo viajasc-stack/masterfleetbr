@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { logError, logInfo } from "@/lib/observability";
 
 type Billing = {
   status: string;
@@ -56,6 +57,26 @@ function formatNumeroOS(numero: number | null, createdAt: string) {
   return `OS-${ano}-${seq}`;
 }
 
+function ehMesmoDia(dataIso: string | null, ref: Date) {
+  if (!dataIso) return false;
+  const d = new Date(dataIso);
+  return (
+    d.getFullYear() === ref.getFullYear() &&
+    d.getMonth() === ref.getMonth() &&
+    d.getDate() === ref.getDate()
+  );
+}
+
+function ehStatusPausadaOuEmAndamento(status: string) {
+  const s = (status || "").toLowerCase();
+  return (
+    s === "em_execucao" ||
+    s === "em_andamento" ||
+    s === "pausada" ||
+    s === "pausado"
+  );
+}
+
 export default function OrdensServicoPage() {
   const searchParams = useSearchParams();
   const statusParam = String(searchParams?.get("status") || "").toLowerCase();
@@ -73,6 +94,8 @@ export default function OrdensServicoPage() {
   const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [erro, setErro] = useState("");
+  const [okMsg, setOkMsg] = useState("");
   const [diaReferencia, setDiaReferencia] = useState<Date>(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -102,7 +125,10 @@ export default function OrdensServicoPage() {
       const lista = data as unknown as OsRow[];
       setOsList(lista);
       setSelectedIds((prev) => prev.filter((id) => lista.some((o) => o.id === id)));
-    } else setOsList([]);
+    } else {
+      logError("operacao.ordens_servico", "Falha ao carregar lista de OS", error);
+      setOsList([]);
+    }
 
     const { data: bill } = await supabase.rpc("get_billing_current");
     if (bill) {
@@ -124,31 +150,35 @@ export default function OrdensServicoPage() {
 
   const q = busca.trim().toLowerCase();
 
-  const filtradas = osList
-    .filter((o) => ehMesmoDia(o.inicio_em, diaReferencia) || ehStatusPausadaOuEmAndamento(o.status))
-    .filter((o) => {
-      if (filtroStatus === "todas") return true;
-      return (o.status || "").toLowerCase() === filtroStatus;
-    })
-    .filter((o) => {
-      if (!q) return true;
+  const filtradas = useMemo(
+    () =>
+      osList
+        .filter((o) => ehMesmoDia(o.inicio_em, diaReferencia) || ehStatusPausadaOuEmAndamento(o.status))
+        .filter((o) => {
+          if (filtroStatus === "todas") return true;
+          return (o.status || "").toLowerCase() === filtroStatus;
+        })
+        .filter((o) => {
+          if (!q) return true;
 
-      const alvo = [
-        o.numero ? String(o.numero) : "",
-        o.tipo ?? "",
-        o.status ?? "",
-        o.origem ?? "",
-        o.destino ?? "",
-        o.clientes?.nome ?? "",
-        o.veiculos?.placa ?? "",
-        o.motoristas?.nome ?? "",
-        o.status_pagamento ?? "",
-      ]
-        .join(" ")
-        .toLowerCase();
+          const alvo = [
+            o.numero ? String(o.numero) : "",
+            o.tipo ?? "",
+            o.status ?? "",
+            o.origem ?? "",
+            o.destino ?? "",
+            o.clientes?.nome ?? "",
+            o.veiculos?.placa ?? "",
+            o.motoristas?.nome ?? "",
+            o.status_pagamento ?? "",
+          ]
+            .join(" ")
+            .toLowerCase();
 
-      return alvo.includes(q);
-    });
+          return alvo.includes(q);
+        }),
+    [osList, diaReferencia, filtroStatus, q]
+  );
 
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
@@ -198,26 +228,6 @@ export default function OrdensServicoPage() {
     return d;
   }
 
-  function ehMesmoDia(dataIso: string | null, ref: Date) {
-    if (!dataIso) return false;
-    const d = new Date(dataIso);
-    return (
-      d.getFullYear() === ref.getFullYear() &&
-      d.getMonth() === ref.getMonth() &&
-      d.getDate() === ref.getDate()
-    );
-  }
-
-  function ehStatusPausadaOuEmAndamento(status: string) {
-    const s = (status || "").toLowerCase();
-    return (
-      s === "em_execucao" ||
-      s === "em_andamento" ||
-      s === "pausada" ||
-      s === "pausado"
-    );
-  }
-
   function badgeStatus(status: string) {
     const s = (status || "").toLowerCase();
     if (s === "pendente") return "border-amber-200 text-amber-800 bg-amber-50";
@@ -257,34 +267,53 @@ export default function OrdensServicoPage() {
   async function excluirSelecionado() {
     if (!deleteTarget) return;
     setDeleting(true);
+    setErro("");
+    setOkMsg("");
     const { error } = await supabase
       .from("ordens_servico")
-      .delete()
+      .update({ status: "cancelada" })
       .eq("id", deleteTarget.id);
     setDeleting(false);
 
     if (error) {
-      alert("Erro ao excluir OS: " + error.message);
+      logError("operacao.ordens_servico", "Falha ao cancelar OS individual", error, {
+        os_id: deleteTarget.id,
+      });
+      setErro(`Não foi possível cancelar a OS: ${error.message}`);
       return;
     }
 
+    logInfo("operacao.ordens_servico", "OS cancelada", { os_id: deleteTarget.id });
     setDeleteTarget(null);
+    setOkMsg("OS cancelada com sucesso.");
     await carregarOS();
   }
 
   async function excluirSelecionadosEmLote() {
     if (selectedIds.length === 0) return;
     setDeleting(true);
-    const { error } = await supabase.from("ordens_servico").delete().in("id", selectedIds);
+    setErro("");
+    setOkMsg("");
+    const { error } = await supabase
+      .from("ordens_servico")
+      .update({ status: "cancelada" })
+      .in("id", selectedIds);
     setDeleting(false);
 
     if (error) {
-      alert("Erro ao excluir OS selecionadas: " + error.message);
+      logError("operacao.ordens_servico", "Falha ao cancelar OS em lote", error, {
+        total_ids: selectedIds.length,
+      });
+      setErro(`Não foi possível cancelar OS selecionadas: ${error.message}`);
       return;
     }
 
+    logInfo("operacao.ordens_servico", "OS canceladas em lote", {
+      total_ids: selectedIds.length,
+    });
     setBulkDeleteOpen(false);
     setSelectedIds([]);
+    setOkMsg("OS selecionadas canceladas com sucesso.");
     await carregarOS();
   }
 
@@ -311,6 +340,9 @@ export default function OrdensServicoPage() {
           </>
         }
       />
+
+      {erro ? <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{erro}</div> : null}
+      {okMsg ? <div className="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{okMsg}</div> : null}
 
       {billing && (
         <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 flex items-center justify-between">
@@ -405,7 +437,7 @@ export default function OrdensServicoPage() {
             onClick={() => setBulkDeleteOpen(true)}
             className="px-3 py-1.5 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50 disabled:opacity-50"
           >
-            Excluir selecionadas
+            Cancelar selecionadas
           </button>
         </div>
 
@@ -499,9 +531,9 @@ export default function OrdensServicoPage() {
                           type="button"
                           onClick={() => setDeleteTarget(o)}
                           className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
-                          title="Excluir OS"
+                          title="Cancelar OS"
                         >
-                          🗑
+                          Cancelar
                         </button>
                       </div>
                     </td>
@@ -515,7 +547,9 @@ export default function OrdensServicoPage() {
 
       <DeleteConfirmDialog
         open={!!deleteTarget}
-        description={`Deseja excluir a OS "${deleteTarget ? formatNumeroOS(deleteTarget.numero, deleteTarget.created_at) : ""}"?`}
+        title="Cancelar OS"
+        description={`Deseja cancelar a OS "${deleteTarget ? formatNumeroOS(deleteTarget.numero, deleteTarget.created_at) : ""}"?`}
+        confirmLabel="Cancelar OS"
         loading={deleting}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={excluirSelecionado}
@@ -523,8 +557,9 @@ export default function OrdensServicoPage() {
 
       <DeleteConfirmDialog
         open={bulkDeleteOpen}
-        title="Excluir OS selecionadas"
-        description={`Deseja excluir ${selectedIds.length} OS selecionada(s)?`}
+        title="Cancelar OS selecionadas"
+        description={`Deseja cancelar ${selectedIds.length} OS selecionada(s)?`}
+        confirmLabel="Cancelar selecionadas"
         loading={deleting}
         onCancel={() => setBulkDeleteOpen(false)}
         onConfirm={excluirSelecionadosEmLote}

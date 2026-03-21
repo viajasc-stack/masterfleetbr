@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { financeiroErrorMessage } from "@/lib/financeiro";
 import { supabase } from "@/lib/supabase/client";
+import { logError, logInfo } from "@/lib/observability";
 
 type Conta = {
   id: string;
@@ -25,37 +28,81 @@ export default function DetalheContaPage() {
   const [loading, setLoading] = useState(true);
   const [acao, setAcao] = useState(false);
   const [dataPag, setDataPag] = useState(new Date().toISOString().slice(0, 10));
+  const [erro, setErro] = useState("");
+  const [okMsg, setOkMsg] = useState("");
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
       if (!id) return;
 
-      const { data } = await supabase.from("contas_financeiras").select("*").eq("id", id).maybeSingle();
-      if (!data) {
-        router.replace("/financeiro/contas");
-        return;
-      }
+      setErro("");
+      try {
+        const { data, error } = await supabase.from("contas_financeiras").select("*").eq("id", id).maybeSingle();
+        if (error) throw error;
+        if (!data) {
+          router.replace("/financeiro/contas");
+          return;
+        }
 
-      setConta(data as Conta);
-      setLoading(false);
+        setConta(data as Conta);
+      } catch (e) {
+        logError("financeiro.contas_detalhe", "Falha ao carregar conta", e, { conta_id: id });
+        setErro(financeiroErrorMessage(e, "Falha ao carregar conta."));
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, [id, router]);
 
   async function marcarPago() {
     if (!conta) return;
+    if (!dataPag) {
+      setErro("Informe a data de liquidação.");
+      return;
+    }
+
+    setErro("");
+    setOkMsg("");
     setAcao(true);
     const novoStatus = conta.tipo === "pagar" ? "pago" : "recebido";
-    await supabase.from("contas_financeiras").update({ status: novoStatus, data_pagamento: dataPag }).eq("id", id);
+    const { error } = await supabase.from("contas_financeiras").update({ status: novoStatus, data_pagamento: dataPag }).eq("id", id);
+    if (error) {
+      logError("financeiro.contas_detalhe", "Falha ao registrar liquidação", error, {
+        conta_id: id,
+        novo_status: novoStatus,
+      });
+      setErro(financeiroErrorMessage(error, "Falha ao atualizar conta."));
+      setAcao(false);
+      return;
+    }
+    logInfo("financeiro.contas_detalhe", "Liquidação registrada", {
+      conta_id: id,
+      novo_status: novoStatus,
+      data_pagamento: dataPag,
+    });
     setConta((prev) => prev ? { ...prev, status: novoStatus, data_pagamento: dataPag } : prev);
+    setOkMsg(conta.tipo === "pagar" ? "Pagamento registrado com sucesso." : "Recebimento registrado com sucesso.");
     setAcao(false);
   }
 
   async function cancelar() {
-    if (!confirm("Cancelar esta conta?")) return;
+    if (!conta) return;
+    setErro("");
+    setOkMsg("");
     setAcao(true);
-    await supabase.from("contas_financeiras").update({ status: "cancelado" }).eq("id", id);
+    const { error } = await supabase.from("contas_financeiras").update({ status: "cancelado" }).eq("id", id);
+    if (error) {
+      logError("financeiro.contas_detalhe", "Falha ao cancelar conta", error, { conta_id: id });
+      setErro(financeiroErrorMessage(error, "Falha ao cancelar conta."));
+      setAcao(false);
+      return;
+    }
+    logInfo("financeiro.contas_detalhe", "Conta cancelada", { conta_id: id });
     setConta((prev) => prev ? { ...prev, status: "cancelado" } : prev);
+    setOkMsg("Conta cancelada com sucesso.");
+    setCancelOpen(false);
     setAcao(false);
   }
 
@@ -68,6 +115,9 @@ export default function DetalheContaPage() {
 
   return (
     <div className="max-w-xl space-y-6">
+      {erro ? <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{erro}</div> : null}
+      {okMsg ? <div className="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{okMsg}</div> : null}
+
       <div className="flex items-center gap-3">
         <Link href="/financeiro/contas" className="text-sm text-slate-500 hover:text-slate-800">← Contas</Link>
         <h1 className="text-xl font-semibold text-slate-900">{conta.descricao}</h1>
@@ -139,7 +189,7 @@ export default function DetalheContaPage() {
               className="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 disabled:opacity-60 transition">
               {acao ? "Processando..." : conta.tipo === "pagar" ? "Marcar como Pago" : "Marcar como Recebido"}
             </button>
-            <button onClick={cancelar} disabled={acao}
+            <button onClick={() => setCancelOpen(true)} disabled={acao}
               className="border border-red-300 text-red-600 px-4 py-2 rounded-md hover:bg-red-50 disabled:opacity-60 transition">
               Cancelar conta
             </button>
@@ -149,6 +199,16 @@ export default function DetalheContaPage() {
           </div>
         </div>
       )}
+
+      <DeleteConfirmDialog
+        open={cancelOpen}
+        title="Cancelar conta"
+        description="Deseja cancelar esta conta? Essa ação altera o status para cancelado."
+        confirmLabel="Cancelar conta"
+        loading={acao}
+        onCancel={() => setCancelOpen(false)}
+        onConfirm={cancelar}
+      />
     </div>
   );
 }

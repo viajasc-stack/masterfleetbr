@@ -52,7 +52,10 @@ export default function ContratosPage() {
   }
 
   useEffect(() => {
-    void carregar();
+    const t = setTimeout(() => {
+      void carregar();
+    }, 0);
+    return () => clearTimeout(t);
   }, []);
 
   const filtrados = useMemo(() => {

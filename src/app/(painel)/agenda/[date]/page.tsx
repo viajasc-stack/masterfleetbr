@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { supabase } from "@/lib/supabase/client";
 import { getFeriadosNacionais } from "@/lib/feriados";
+import { logError, logInfo } from "@/lib/observability";
 
 type ContratoRec = {
   id: string;
@@ -103,6 +104,8 @@ export default function AgendaDiaPage() {
   const [novoFeriadoNome, setNovoFeriadoNome] = useState("");
   const [novoFeriadoCor, setNovoFeriadoCor] = useState("#fef3c7");
   const [novaDataOS, setNovaDataOS] = useState(selectedDate || "");
+  const [erroAcaoOs, setErroAcaoOs] = useState("");
+  const [okAcaoOs, setOkAcaoOs] = useState("");
 
   function normalizarOS(rows: OSDiaRaw[]): OSDia[] {
     return rows.map((r) => ({
@@ -131,49 +134,53 @@ export default function AgendaDiaPage() {
   async function carregarDia() {
     if (!selectedDate) return;
     setLoading(true);
+    try {
+      const [cRes, osEventualRes, osRecorrenteRes, agendaRes, feriadosRes, financeiroRes] = await Promise.all([
+        supabase
+          .from("contratos")
+          .select("id, nome, dias_semana, data_inicio, data_fim, ativo")
+          .eq("ativo", true),
+        supabase
+          .from("ordens_servico")
+          .select("id, numero, inicio_em, status, origem, destino, contrato_id, cliente:clientes(nome), veiculo:veiculos(placa, modelo), motorista:motoristas(nome)")
+          .eq("tipo", "eventual")
+          .neq("status", "concluida")
+          .gte("inicio_em", `${selectedDate}T00:00:00`)
+          .lte("inicio_em", `${selectedDate}T23:59:59`),
+        supabase
+          .from("ordens_servico")
+          .select("id, numero, inicio_em, status, origem, destino, contrato_id, cliente:clientes(nome), veiculo:veiculos(placa, modelo), motorista:motoristas(nome)")
+          .eq("tipo", "recorrente")
+          .neq("status", "concluida")
+          .gte("inicio_em", `${selectedDate}T00:00:00`)
+          .lte("inicio_em", `${selectedDate}T23:59:59`),
+        supabase
+          .from("agenda_eventos")
+          .select("id, data, horario, titulo, tipo, descricao")
+          .eq("data", selectedDate)
+          .order("horario"),
+        supabase
+          .from("agenda_feriados")
+          .select("id, data, nome, cor")
+          .eq("data", selectedDate),
+        supabase
+          .from("contas_financeiras")
+          .select("id, descricao, data_vencimento, status, valor")
+          .eq("data_vencimento", selectedDate)
+          .neq("status", "cancelado"),
+      ]);
 
-    const [cRes, osEventualRes, osRecorrenteRes, agendaRes, feriadosRes, financeiroRes] = await Promise.all([
-      supabase
-        .from("contratos")
-        .select("id, nome, dias_semana, data_inicio, data_fim, ativo")
-        .eq("ativo", true),
-      supabase
-        .from("ordens_servico")
-        .select("id, numero, inicio_em, status, origem, destino, contrato_id, cliente:clientes(nome), veiculo:veiculos(placa, modelo), motorista:motoristas(nome)")
-        .eq("tipo", "eventual")
-        .neq("status", "concluida")
-        .gte("inicio_em", `${selectedDate}T00:00:00`)
-        .lte("inicio_em", `${selectedDate}T23:59:59`),
-      supabase
-        .from("ordens_servico")
-        .select("id, numero, inicio_em, status, origem, destino, contrato_id, cliente:clientes(nome), veiculo:veiculos(placa, modelo), motorista:motoristas(nome)")
-        .eq("tipo", "recorrente")
-        .neq("status", "concluida")
-        .gte("inicio_em", `${selectedDate}T00:00:00`)
-        .lte("inicio_em", `${selectedDate}T23:59:59`),
-      supabase
-        .from("agenda_eventos")
-        .select("id, data, horario, titulo, tipo, descricao")
-        .eq("data", selectedDate)
-        .order("horario"),
-      supabase
-        .from("agenda_feriados")
-        .select("id, data, nome, cor")
-        .eq("data", selectedDate),
-      supabase
-        .from("contas_financeiras")
-        .select("id, descricao, data_vencimento, status, valor")
-        .eq("data_vencimento", selectedDate)
-        .neq("status", "cancelado"),
-    ]);
-
-    setContratos((cRes.data ?? []) as ContratoRec[]);
-    setOsEventuais(normalizarOS((osEventualRes.data ?? []) as OSDiaRaw[]));
-    setOsRecorrentes(normalizarOS((osRecorrenteRes.data ?? []) as OSDiaRaw[]));
-    setAgendaEventos((agendaRes.data ?? []) as AgendaEvento[]);
-    setFeriados((feriadosRes.data ?? []) as AgendaFeriado[]);
-    setContas((financeiroRes.data ?? []) as ContaFin[]);
-    setLoading(false);
+      setContratos((cRes.data ?? []) as ContratoRec[]);
+      setOsEventuais(normalizarOS((osEventualRes.data ?? []) as OSDiaRaw[]));
+      setOsRecorrentes(normalizarOS((osRecorrenteRes.data ?? []) as OSDiaRaw[]));
+      setAgendaEventos((agendaRes.data ?? []) as AgendaEvento[]);
+      setFeriados((feriadosRes.data ?? []) as AgendaFeriado[]);
+      setContas((financeiroRes.data ?? []) as ContaFin[]);
+    } catch (e) {
+      logError("operacao.agenda_dia", "Falha ao carregar agenda do dia", e, { selectedDate });
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -277,15 +284,30 @@ export default function AgendaDiaPage() {
       .from("ordens_servico")
       .update({ inicio_em: `${novaDataOS}T08:00:00` })
       .eq("id", id);
-    if (error) return alert("Erro ao mover OS: " + error.message);
+    if (error) {
+      logError("operacao.agenda_dia", "Erro ao mover OS", error, { os_id: id, nova_data: novaDataOS });
+      return alert("Erro ao mover OS: " + error.message);
+    }
+    logInfo("operacao.agenda_dia", "OS movida", { os_id: id, nova_data: novaDataOS });
     await carregarDia();
   }
 
   async function excluirOS(id: string) {
-    const ok = confirm("Excluir apenas esta OS?");
+    const ok = confirm("Cancelar apenas esta OS?");
     if (!ok) return;
-    const { error } = await supabase.from("ordens_servico").delete().eq("id", id);
-    if (error) return alert("Erro ao excluir OS: " + error.message);
+    setErroAcaoOs("");
+    setOkAcaoOs("");
+    const { error } = await supabase
+      .from("ordens_servico")
+      .update({ status: "cancelada" })
+      .eq("id", id);
+    if (error) {
+      logError("operacao.agenda_dia", "Erro ao cancelar OS individual", error, { os_id: id });
+      setErroAcaoOs("Erro ao cancelar OS: " + error.message);
+      return;
+    }
+    logInfo("operacao.agenda_dia", "OS cancelada na agenda", { os_id: id });
+    setOkAcaoOs("OS cancelada com sucesso.");
     await carregarDia();
   }
 
@@ -300,21 +322,37 @@ export default function AgendaDiaPage() {
         .from("ordens_servico")
         .update({ inicio_em: `${novaDataOS}T08:00:00` })
         .eq("id", os.id);
-      if (error) return alert("Erro ao mover lote: " + error.message);
+      if (error) {
+        logError("operacao.agenda_dia", "Erro ao mover lote de OS", error, {
+          contrato_id: contratoId,
+          os_id: os.id,
+          nova_data: novaDataOS,
+        });
+        return alert("Erro ao mover lote: " + error.message);
+      }
     }
+    logInfo("operacao.agenda_dia", "Lote de OS movido", { contrato_id: contratoId, nova_data: novaDataOS });
     await carregarDia();
   }
 
   async function excluirLoteContrato(contratoId: string) {
-    const ok = confirm("Excluir todas as OS deste contrato neste dia?");
+    const ok = confirm("Cancelar todas as OS deste contrato neste dia?");
     if (!ok) return;
+    setErroAcaoOs("");
+    setOkAcaoOs("");
     const { error } = await supabase
       .from("ordens_servico")
-      .delete()
+      .update({ status: "cancelada" })
       .eq("contrato_id", contratoId)
       .gte("inicio_em", `${selectedDate}T00:00:00`)
       .lte("inicio_em", `${selectedDate}T23:59:59`);
-    if (error) return alert("Erro ao excluir lote: " + error.message);
+    if (error) {
+      logError("operacao.agenda_dia", "Erro ao cancelar lote de OS", error, { contrato_id: contratoId, selectedDate });
+      setErroAcaoOs("Erro ao cancelar lote: " + error.message);
+      return;
+    }
+    logInfo("operacao.agenda_dia", "Lote de OS cancelado", { contrato_id: contratoId, selectedDate });
+    setOkAcaoOs("Lote de OS cancelado com sucesso.");
     await carregarDia();
   }
 
@@ -368,6 +406,9 @@ export default function AgendaDiaPage() {
         }
       />
 
+      {erroAcaoOs ? <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{erroAcaoOs}</div> : null}
+      {okAcaoOs ? <div className="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{okAcaoOs}</div> : null}
+
       <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-6 shadow-sm">
         <div className="flex flex-wrap gap-4 text-sm">
           <label className="inline-flex items-center gap-2"><input type="checkbox" checked={showRecorrente} onChange={(e) => setShowRecorrente(e.target.checked)} /> Recorrentes</label>
@@ -399,7 +440,7 @@ export default function AgendaDiaPage() {
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <button onClick={() => moverOS(x.id)} className="text-xs border border-slate-300 rounded px-2 py-1">Mover data</button>
-                    <button onClick={() => excluirOS(x.id)} className="text-xs border border-red-200 text-red-700 rounded px-2 py-1">Excluir</button>
+                    <button onClick={() => excluirOS(x.id)} className="text-xs border border-red-200 text-red-700 rounded px-2 py-1">Cancelar</button>
                   </div>
                 </div>
               ))}
@@ -415,7 +456,7 @@ export default function AgendaDiaPage() {
                     <span className="text-sm">{c.nome}</span>
                     <div className="flex gap-2">
                       <button onClick={() => moverLoteContrato(c.id)} className="text-xs border border-slate-300 rounded px-2 py-1">Mover todas para nova data</button>
-                      <button onClick={() => excluirLoteContrato(c.id)} className="text-xs border border-red-200 text-red-700 rounded px-2 py-1">Excluir todas do dia</button>
+                      <button onClick={() => excluirLoteContrato(c.id)} className="text-xs border border-red-200 text-red-700 rounded px-2 py-1">Cancelar todas do dia</button>
                     </div>
                   </div>
                 ))}

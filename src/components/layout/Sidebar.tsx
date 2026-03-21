@@ -49,15 +49,15 @@ const FINANCEIRO_SUBLINKS = [
 ];
 
 const MANUTENCAO_SUBLINKS = [
-  { href: "/manutencao", label: "Painel" },
-  { href: "/manutencao/oficina", label: "Painel oficina (PDV)" },
-  { href: "/manutencao/nova", label: "Nova solicitação" },
-  { href: "/manutencao/compras", label: "Compras da manutenção" },
-  { href: "/manutencao/preventivas", label: "Preventivas" },
-  { href: "/manutencao/indicadores", label: "Indicadores" },
-  { href: "/manutencao/estoque", label: "Estoque da manutenção" },
-  { href: "/manutencao/estoque/reservas", label: "Reservas de peças" },
-  { href: "/manutencao/estoque/consumo", label: "Consumo/baixas" },
+  { href: "/manutencao", label: "Dashboard" },
+  { href: "/manutencao/solicitacoes", label: "Solicitações" },
+  { href: "/manutencao/ordens", label: "Ordens de manutenção" },
+  { href: "/manutencao/preventiva", label: "Preventiva" },
+  { href: "/manutencao/planos", label: "Planos de manutenção" },
+  { href: "/manutencao/fornecedores", label: "Fornecedores" },
+  { href: "/manutencao/tipos-servico", label: "Tipos de serviço" },
+  { href: "/manutencao/historico", label: "Histórico" },
+  { href: "/manutencao/relatorios", label: "Relatórios" },
 ];
 
 const FRETAMENTOS_SUBLINKS = [
@@ -90,6 +90,7 @@ const LINKS: NavItem[] = [
   { href: "/agenda", label: "Agenda", icon: "◼", group: "Gestão", modulo: "agenda" },
   { href: "/viagens", label: "Viagens", icon: "◼", group: "Gestão", modulo: "viagens" },
   { href: "/relatorios", label: "Relatórios", icon: "◼", group: "Gestão", modulo: "relatorios" },
+  { href: "/observabilidade", label: "Observabilidade", icon: "◼", group: "Administrativo", modulo: "relatorios" },
   { href: "/suporte", label: "Suporte", icon: "◼", group: "Administrativo", modulo: "suporte" },
   { href: "/configuracoes", label: "Configurações", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
 ];

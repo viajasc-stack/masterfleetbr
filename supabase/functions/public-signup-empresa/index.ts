@@ -38,6 +38,7 @@ serve(async (req) => {
     const emailAdmin = String(body?.email_admin ?? "").trim().toLowerCase();
     const senha = String(body?.senha ?? "");
     const referralCode = String(body?.referral_code ?? "").trim().toLowerCase() || null;
+    const billingCouponCode = String(body?.billing_coupon_code ?? "").trim().toUpperCase() || null;
 
     const cnpj = onlyDigits(body?.cnpj);
     const telefone = String(body?.telefone ?? "").trim() || null;
@@ -201,6 +202,17 @@ serve(async (req) => {
         });
         if (referralRes.error) {
           console.warn("apply_referral_on_signup warning:", referralRes.error.message);
+        }
+      }
+
+      if (billingCouponCode) {
+        const couponRes = await supabase.rpc("apply_billing_coupon_on_signup", {
+          p_coupon_code: billingCouponCode,
+          p_empresa_id: empresaId,
+          p_admin_email: emailAdmin,
+        });
+        if (couponRes.error) {
+          console.warn("apply_billing_coupon_on_signup warning:", couponRes.error.message);
         }
       }
 

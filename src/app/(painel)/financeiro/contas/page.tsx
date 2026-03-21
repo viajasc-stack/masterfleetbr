@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { financeiroErrorMessage } from "@/lib/financeiro";
+import { logError, logInfo } from "@/lib/observability";
 
 type Conta = {
   id: string;
@@ -31,17 +33,29 @@ export default function ContasPage() {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [erro, setErro] = useState("");
+  const [okMsg, setOkMsg] = useState("");
 
   async function carregar() {
     setLoading(true);
-    const { data } = await supabase.from("contas_financeiras")
-      .select("id, descricao, tipo, valor, data_vencimento, data_pagamento, status, categoria, created_at")
-      .order("data_vencimento", { ascending: true });
-    setTimeout(() => {
-      setContas((data as Conta[]) ?? []);
-      setSelectedIds((prev) => prev.filter((id) => (data as Conta[] | null)?.some((c) => c.id === id)));
+    setErro("");
+    try {
+      const { data, error } = await supabase
+        .from("contas_financeiras")
+        .select("id, descricao, tipo, valor, data_vencimento, data_pagamento, status, categoria, created_at")
+        .order("data_vencimento", { ascending: true });
+
+      if (error) throw error;
+
+      const lista = (data as Conta[]) ?? [];
+      setContas(lista);
+      setSelectedIds((prev) => prev.filter((id) => lista.some((c) => c.id === id)));
+    } catch (e) {
+      logError("financeiro.contas", "Falha ao carregar contas", e);
+      setErro(financeiroErrorMessage(e, "Falha ao carregar contas."));
+    } finally {
       setLoading(false);
-    }, 0);
+    }
   }
 
   useEffect(() => {
@@ -91,31 +105,43 @@ export default function ContasPage() {
   async function excluirSelecionado() {
     if (!deleteTarget) return;
     setDeleting(true);
+    setErro("");
+    setOkMsg("");
     const { error } = await supabase.from("contas_financeiras").delete().eq("id", deleteTarget.id);
     setDeleting(false);
 
     if (error) {
-      alert("Erro ao excluir conta: " + error.message);
+      logError("financeiro.contas", "Erro ao excluir conta", error, { conta_id: deleteTarget.id });
+      setErro(financeiroErrorMessage(error, "Erro ao excluir conta."));
       return;
     }
 
+    logInfo("financeiro.contas", "Conta excluída", { conta_id: deleteTarget.id });
     setDeleteTarget(null);
+    setOkMsg("Conta excluída com sucesso.");
     await carregar();
   }
 
   async function excluirSelecionadasEmLote() {
     if (selectedIds.length === 0) return;
     setDeleting(true);
+    setErro("");
+    setOkMsg("");
     const { error } = await supabase.from("contas_financeiras").delete().in("id", selectedIds);
     setDeleting(false);
 
     if (error) {
-      alert("Erro ao excluir contas selecionadas: " + error.message);
+      logError("financeiro.contas", "Erro ao excluir contas em lote", error, {
+        total_ids: selectedIds.length,
+      });
+      setErro(financeiroErrorMessage(error, "Erro ao excluir contas selecionadas."));
       return;
     }
 
+    logInfo("financeiro.contas", "Contas excluídas em lote", { total_ids: selectedIds.length });
     setBulkDeleteOpen(false);
     setSelectedIds([]);
+    setOkMsg("Contas selecionadas excluídas com sucesso.");
     await carregar();
   }
 
@@ -126,6 +152,8 @@ export default function ContasPage() {
     const hoje = new Date().toISOString().slice(0, 10);
 
     setProcessingId(conta.id);
+    setErro("");
+    setOkMsg("");
     const { error } = await supabase
       .from("contas_financeiras")
       .update({ status: novoStatus, data_pagamento: hoje })
@@ -133,10 +161,16 @@ export default function ContasPage() {
     setProcessingId(null);
 
     if (error) {
-      alert("Erro ao atualizar conta: " + error.message);
+      logError("financeiro.contas", "Erro ao marcar conta como liquidada", error, {
+        conta_id: conta.id,
+        novo_status: novoStatus,
+      });
+      setErro(financeiroErrorMessage(error, "Erro ao atualizar conta."));
       return;
     }
 
+    logInfo("financeiro.contas", "Conta liquidada", { conta_id: conta.id, novo_status: novoStatus });
+    setOkMsg(conta.tipo === "pagar" ? "Conta marcada como paga." : "Conta marcada como recebida.");
     await carregar();
   }
 
@@ -156,6 +190,9 @@ export default function ContasPage() {
           </>
         }
       />
+
+      {erro ? <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{erro}</div> : null}
+      {okMsg ? <div className="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{okMsg}</div> : null}
 
       <div className="bg-white border border-slate-200 rounded-xl p-6">
         <div className="grid gap-4 md:grid-cols-4">

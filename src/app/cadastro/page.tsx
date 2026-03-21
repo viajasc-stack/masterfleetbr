@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 
@@ -37,6 +37,7 @@ type CnpjData = {
 
 export default function CadastroPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [cnpj, setCnpj] = useState("");
   const [nomeEmpresa, setNomeEmpresa] = useState("");
@@ -50,11 +51,19 @@ export default function CadastroPage() {
   const [emailAdmin, setEmailAdmin] = useState("");
   const [senha, setSenha] = useState("");
   const [referralCode, setReferralCode] = useState("");
+  const [billingCouponCode, setBillingCouponCode] = useState("");
 
   const [loadingBusca, setLoadingBusca] = useState(false);
   const [loadingCadastro, setLoadingCadastro] = useState(false);
   const [erro, setErro] = useState("");
   const [info, setInfo] = useState("");
+
+  useEffect(() => {
+    const ref = (searchParams.get("ref") || "").trim().toLowerCase();
+    const coupon = (searchParams.get("cupom") || searchParams.get("coupon") || "").trim().toUpperCase();
+    if (ref) setReferralCode(ref);
+    if (coupon) setBillingCouponCode(coupon);
+  }, [searchParams]);
 
   async function buscarCnpj() {
     setErro("");
@@ -131,6 +140,7 @@ export default function CadastroPage() {
           cidade: cidadeEmpresa.trim() || null,
           estado: estadoEmpresa.trim().toUpperCase() || null,
           referral_code: referralCode.trim().toLowerCase() || null,
+          billing_coupon_code: billingCouponCode.trim().toUpperCase() || null,
         }),
       });
 
@@ -320,6 +330,17 @@ export default function CadastroPage() {
                   onChange={(e) => setReferralCode(e.target.value.toLowerCase())}
                   type="text"
                   placeholder="ex: a1b2c3d4e5"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-200">Cupom de desconto (opcional)</label>
+                <input
+                  className="mt-1 w-full rounded-xl bg-slate-800 border border-slate-600 px-3 py-2.5 text-sm text-slate-100 uppercase"
+                  value={billingCouponCode}
+                  onChange={(e) => setBillingCouponCode(e.target.value.toUpperCase())}
+                  type="text"
+                  placeholder="EX: BOASVINDAS50"
                 />
               </div>
             </section>

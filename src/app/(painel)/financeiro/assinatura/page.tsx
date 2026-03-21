@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { financeiroErrorMessage } from "@/lib/financeiro";
 import { supabase } from "@/lib/supabase/client";
+import { logError, logInfo } from "@/lib/observability";
 
 type Billing = {
   status: string;
@@ -30,9 +32,11 @@ export default function AssinaturaPage() {
   const [msgPlano, setMsgPlano] = useState<string | null>(null);
   const [savingFatura, setSavingFatura] = useState(false);
   const [msgFatura, setMsgFatura] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
 
   async function carregarBilling() {
-    const { data: billingAtualizado } = await supabase.rpc("get_billing_current");
+    const { data: billingAtualizado, error } = await supabase.rpc("get_billing_current");
+    if (error) throw error;
     if (!billingAtualizado) return;
 
     setBilling({
@@ -51,27 +55,37 @@ export default function AssinaturaPage() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const [{ data }, { data: planosData }] = await Promise.all([
-        supabase.rpc("get_billing_current"),
-        supabase.from("planos").select("id, nome, valor_centavos").eq("ativo", true).order("ordem", { ascending: true }),
-      ]);
+      setErro(null);
+      try {
+        const [{ data, error: billingErr }, { data: planosData, error: planosErr }] = await Promise.all([
+          supabase.rpc("get_billing_current"),
+          supabase.from("planos").select("id, nome, valor_centavos").eq("ativo", true).order("ordem", { ascending: true }),
+        ]);
 
-      setPlanos((planosData as Plano[]) ?? []);
+        if (billingErr) throw billingErr;
+        if (planosErr) throw planosErr;
 
-      if (data) {
-        setBilling({
-          status: data.status ?? "trial",
-          plano_id: data.plano_id ?? null,
-          plano_nome: data.plano_nome ?? null,
-          trial_ate: data.trial_ate ?? null,
-          proxima_cobranca: data.proxima_cobranca ?? null,
-          fatura_id: data.fatura_id ?? null,
-          valor_centavos: data.valor_centavos ?? null,
-          fatura_status: data.fatura_status ?? null,
-          vencimento: data.vencimento ?? null,
-        });
+        setPlanos((planosData as Plano[]) ?? []);
+
+        if (data) {
+          setBilling({
+            status: data.status ?? "trial",
+            plano_id: data.plano_id ?? null,
+            plano_nome: data.plano_nome ?? null,
+            trial_ate: data.trial_ate ?? null,
+            proxima_cobranca: data.proxima_cobranca ?? null,
+            fatura_id: data.fatura_id ?? null,
+            valor_centavos: data.valor_centavos ?? null,
+            fatura_status: data.fatura_status ?? null,
+            vencimento: data.vencimento ?? null,
+          });
+        }
+      } catch (e) {
+        logError("financeiro.assinatura", "Falha ao carregar dados de assinatura", e);
+        setErro(financeiroErrorMessage(e, "Falha ao carregar dados de assinatura."));
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     void load();
   }, []);
@@ -88,17 +102,25 @@ export default function AssinaturaPage() {
   async function alterarPlano(planoId: string) {
     setSavingPlano(true);
     setMsgPlano(null);
+    setErro(null);
 
     const { data, error } = await supabase.rpc("change_my_plan", { p_plano_id: planoId });
 
     if (error || !data) {
-      setMsgPlano(`Erro ao alterar plano: ${error?.message ?? "não foi possível concluir."}`);
+      logError("financeiro.assinatura", "Erro ao alterar plano", error, { plano_id: planoId });
+      setMsgPlano(financeiroErrorMessage(error, "Erro ao alterar plano."));
       setSavingPlano(false);
       return;
     }
 
-    await carregarBilling();
+    try {
+      await carregarBilling();
+    } catch (e) {
+      logError("financeiro.assinatura", "Plano alterado, mas falhou ao recarregar billing", e, { plano_id: planoId });
+      setErro(financeiroErrorMessage(e, "Plano alterado, mas falhou ao recarregar resumo."));
+    }
 
+    logInfo("financeiro.assinatura", "Plano alterado com sucesso", { plano_id: planoId });
     setMsgPlano("Plano alterado com sucesso.");
     setSavingPlano(false);
   }
@@ -106,16 +128,24 @@ export default function AssinaturaPage() {
   async function gerarFaturaManual() {
     setSavingFatura(true);
     setMsgFatura(null);
+    setErro(null);
 
     const { data, error } = await supabase.rpc("generate_my_manual_invoice");
 
     if (error || !data) {
-      setMsgFatura(`Erro ao gerar fatura: ${error?.message ?? "não foi possível concluir."}`);
+      logError("financeiro.assinatura", "Erro ao gerar fatura manual", error);
+      setMsgFatura(financeiroErrorMessage(error, "Erro ao gerar fatura manual."));
       setSavingFatura(false);
       return;
     }
 
-    await carregarBilling();
+    try {
+      await carregarBilling();
+    } catch (e) {
+      logError("financeiro.assinatura", "Fatura gerada, mas falhou ao recarregar billing", e, { fatura_id: String(data) });
+      setErro(financeiroErrorMessage(e, "Fatura criada, mas falhou ao recarregar resumo."));
+    }
+    logInfo("financeiro.assinatura", "Fatura manual gerada", { fatura_id: String(data) });
     setMsgFatura(`Fatura pronta (ID: ${String(data)}).`);
     setSavingFatura(false);
   }
@@ -131,6 +161,8 @@ export default function AssinaturaPage() {
           Ver faturas
         </Link>
       </div>
+
+      {erro ? <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{erro}</div> : null}
 
       {loading ? (
         <div className="text-sm text-slate-500">Carregando...</div>
