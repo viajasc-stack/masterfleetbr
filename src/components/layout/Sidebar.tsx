@@ -110,6 +110,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   const [configuracoesOpenManual, setConfiguracoesOpenManual] = useState<boolean | null>(null);
   const [canUseAllModules, setCanUseAllModules] = useState(false);
   const [allowedModules, setAllowedModules] = useState<string[]>([]);
+  const [globalActiveModules, setGlobalActiveModules] = useState<string[]>([]);
   const [supportUnread, setSupportUnread] = useState(0);
   const [canShowReferralMenu, setCanShowReferralMenu] = useState(false);
 
@@ -118,6 +119,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
       const access = await loadEmpresaModuleAccess();
       setCanUseAllModules(access.canUseAllModules);
       setAllowedModules(access.allowedModules);
+      setGlobalActiveModules(access.globalActiveModules ?? []);
     }
     void loadModules();
   }, []);
@@ -156,6 +158,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   }
 
   function hasModulo(modulo: string) {
+    if (globalActiveModules.length > 0 && !globalActiveModules.includes(modulo)) return false;
     if (canUseAllModules) return true;
     return allowedModules.includes(modulo);
   }

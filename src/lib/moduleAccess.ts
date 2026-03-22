@@ -60,7 +60,18 @@ export async function loadEmpresaModuleAccess() {
       empresaId: null as string | null,
       canUseAllModules: false,
       allowedModules: [] as string[],
+      globalActiveModules: [] as string[],
     };
+  }
+
+  const { data: globalModulesData } = await supabase.rpc("get_modulos_globais_ativos");
+  const globalActiveModules = Array.isArray(globalModulesData)
+    ? globalModulesData.map((m) => String(m))
+    : [];
+
+  function applyGlobalFilter(modules: string[]) {
+    if (globalActiveModules.length === 0) return modules;
+    return modules.filter((m) => globalActiveModules.includes(m));
   }
 
   const { data: profile } = await supabase
@@ -75,7 +86,8 @@ export async function loadEmpresaModuleAccess() {
       assinaturaStatus: null as string | null,
       empresaId,
       canUseAllModules: true,
-      allowedModules: BASE_MODULES,
+      allowedModules: applyGlobalFilter(BASE_MODULES),
+      globalActiveModules,
     };
   }
 
@@ -92,12 +104,13 @@ export async function loadEmpresaModuleAccess() {
   const plano = Array.isArray(assinatura?.planos) ? assinatura?.planos[0] : assinatura?.planos;
   const modulosPlano = parseModulos(plano?.modulos);
 
-  const allowedModules = Array.from(new Set([...BASE_MODULES, ...modulosPlano]));
+  const allowedModules = applyGlobalFilter(Array.from(new Set([...BASE_MODULES, ...modulosPlano])));
 
   return {
     assinaturaStatus: status,
     empresaId,
     canUseAllModules: status === "trial",
     allowedModules,
+    globalActiveModules,
   };
 }

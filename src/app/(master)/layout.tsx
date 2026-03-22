@@ -45,6 +45,7 @@ export default function MasterLayout({ children }: { children: React.ReactNode }
     { href: "/master", label: "Visão Geral" },
     { href: "/master/empresas", label: "Empresas" },
     { href: "/master/cupons", label: "Cupons" },
+    { href: "/master/modulos", label: "Módulos" },
     { href: "/master/suporte", label: "Suporte" },
     { href: "/master/planos", label: "Planos" },
     { href: "/master/financeiro", label: "Financeiro" },
