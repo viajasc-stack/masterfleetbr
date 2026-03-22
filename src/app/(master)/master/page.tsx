@@ -108,6 +108,11 @@ export default function MasterPage() {
           </div>
 
           <div className="flex gap-4">
+            <Link href="/master/governanca"
+              className="rounded-xl border border-slate-200 bg-white p-5 hover:bg-slate-50 transition">
+              <div className="text-sm font-semibold text-slate-900">Governança</div>
+              <div className="text-xs text-slate-500 mt-0.5">Risco, saúde, auditoria e operação executiva</div>
+            </Link>
             <Link href="/master/empresas"
               className="rounded-xl border border-slate-200 bg-white p-5 hover:bg-slate-50 transition">
               <div className="text-sm font-semibold text-slate-900">Gerenciar Empresas</div>

@@ -61,11 +61,15 @@ export default function MasterEmpresasPage() {
   const [empresas, setEmpresas] = useState<EmpresaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
+  const [msg, setMsg] = useState("");
 
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkAction, setBulkAction] = useState("bloquear");
+  const [bulkPlanoId, setBulkPlanoId] = useState("");
+  const [bulkCouponId, setBulkCouponId] = useState("");
 
   const [creating, setCreating] = useState(false);
   const [novoNome, setNovoNome] = useState("");
@@ -74,6 +78,7 @@ export default function MasterEmpresasPage() {
   async function carregar() {
     setLoading(true);
     setErro("");
+    setMsg("");
     const { data, error } = await supabase.rpc("master_list_empresas");
     if (error) {
       setErro(error.message);
@@ -117,6 +122,7 @@ export default function MasterEmpresasPage() {
     if (!novoNome.trim()) return;
     setCreating(true);
     setErro("");
+    setMsg("");
     const { error } = await supabase.rpc("master_create_empresa", {
       p_nome: novoNome.trim(),
       p_email: novoEmail.trim() || null,
@@ -128,6 +134,7 @@ export default function MasterEmpresasPage() {
     }
     setNovoNome("");
     setNovoEmail("");
+    setMsg("Empresa adicionada com sucesso.");
     await carregar();
   }
 
@@ -135,24 +142,53 @@ export default function MasterEmpresasPage() {
     if (selectedIds.length === 0) return;
     if (!confirm(`Excluir ${selectedIds.length} empresa(s)? Esta ação não pode ser desfeita.`)) return;
     setErro("");
+    setMsg("");
     const { error } = await supabase.rpc("master_delete_empresas", { p_ids: selectedIds });
     if (error) {
       setErro(error.message);
       return;
     }
     setSelectedIds([]);
+    setMsg("Empresas excluídas com sucesso.");
     await carregar();
   }
 
   async function excluirUma(id: string) {
     if (!confirm("Excluir esta empresa? Esta ação não pode ser desfeita.")) return;
     setErro("");
+    setMsg("");
     const { error } = await supabase.rpc("master_delete_empresas", { p_ids: [id] });
     if (error) {
       setErro(error.message);
       return;
     }
     setSelectedIds((prev) => prev.filter((x) => x !== id));
+    setMsg("Empresa excluída com sucesso.");
+    await carregar();
+  }
+
+  async function executarAcaoMassa() {
+    if (selectedIds.length === 0) return;
+    setErro("");
+    setMsg("");
+
+    const payload: Record<string, string> = {};
+    if (bulkPlanoId) payload.plano_id = bulkPlanoId;
+    if (bulkCouponId) payload.coupon_id = bulkCouponId;
+
+    const { data, error } = await supabase.rpc("master_bulk_empresa_action", {
+      p_ids: selectedIds,
+      p_action: bulkAction,
+      p_payload: payload,
+    });
+
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+
+    const total = Number(data ?? 0);
+    setMsg(`Ação "${bulkAction}" executada em ${total} empresa(s).`);
     await carregar();
   }
 
@@ -176,6 +212,9 @@ export default function MasterEmpresasPage() {
           <p className="text-slate-500 mt-0.5 text-sm">{empresas.length} empresa(s) cadastrada(s)</p>
         </div>
         <div className="flex gap-2">
+          <Link href="/master/governanca" className="border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm transition">
+            Governança
+          </Link>
           <button onClick={carregar} className="border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm transition">
             Recarregar
           </button>
@@ -185,6 +224,38 @@ export default function MasterEmpresasPage() {
             className="border border-rose-300 bg-white text-rose-700 hover:bg-rose-50 px-4 py-2 rounded-lg text-sm transition disabled:opacity-50"
           >
             Excluir em massa ({selectedIds.length})
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+        <h2 className="font-semibold text-slate-900">Ações em massa</h2>
+        <div className="grid md:grid-cols-4 gap-3">
+          <select className="border border-slate-300 rounded-md px-3 py-2 text-sm" value={bulkAction} onChange={(e) => setBulkAction(e.target.value)}>
+            <option value="bloquear">Bloquear</option>
+            <option value="ativar">Ativar</option>
+            <option value="trial_plus_7">Extender trial +7 dias</option>
+            <option value="trocar_plano">Trocar plano</option>
+            <option value="aplicar_cupom">Aplicar cupom</option>
+          </select>
+          <input
+            className="border border-slate-300 rounded-md px-3 py-2 text-sm"
+            value={bulkPlanoId}
+            onChange={(e) => setBulkPlanoId(e.target.value)}
+            placeholder="plano_id (trocar_plano)"
+          />
+          <input
+            className="border border-slate-300 rounded-md px-3 py-2 text-sm"
+            value={bulkCouponId}
+            onChange={(e) => setBulkCouponId(e.target.value)}
+            placeholder="coupon_id (aplicar_cupom)"
+          />
+          <button
+            onClick={executarAcaoMassa}
+            disabled={selectedIds.length === 0}
+            className="bg-slate-900 text-white hover:bg-slate-800 px-4 py-2 rounded-md text-sm transition disabled:opacity-60"
+          >
+            Executar em selecionadas ({selectedIds.length})
           </button>
         </div>
       </div>
@@ -247,6 +318,11 @@ export default function MasterEmpresasPage() {
       {erro && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {erro}
+        </div>
+      )}
+      {msg && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {msg}
         </div>
       )}
 
