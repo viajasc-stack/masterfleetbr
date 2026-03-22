@@ -104,6 +104,8 @@ export default function OrdensServicoPage() {
 
   const [busca, setBusca] = useState(() => searchParams?.get("q") || "");
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>(filtroInicial);
+  const [periodoInicio, setPeriodoInicio] = useState("");
+  const [periodoFim, setPeriodoFim] = useState("");
 
   async function carregarOS() {
     setLoading(true);
@@ -150,10 +152,37 @@ export default function OrdensServicoPage() {
 
   const q = busca.trim().toLowerCase();
 
+  const periodoInicioDate = useMemo(() => {
+    if (!periodoInicio) return null;
+    const d = new Date(`${periodoInicio}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [periodoInicio]);
+
+  const periodoFimDate = useMemo(() => {
+    if (!periodoFim) return null;
+    const d = new Date(`${periodoFim}T23:59:59`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [periodoFim]);
+
+  const usandoFiltroPeriodo = Boolean(periodoInicioDate || periodoFimDate);
+
   const filtradas = useMemo(
     () =>
       osList
-        .filter((o) => ehMesmoDia(o.inicio_em, diaReferencia) || ehStatusPausadaOuEmAndamento(o.status))
+        .filter((o) => {
+          if (!usandoFiltroPeriodo) {
+            return ehMesmoDia(o.inicio_em, diaReferencia) || ehStatusPausadaOuEmAndamento(o.status);
+          }
+
+          if (!o.inicio_em) return false;
+          const inicio = new Date(o.inicio_em);
+          if (Number.isNaN(inicio.getTime())) return false;
+
+          if (periodoInicioDate && inicio < periodoInicioDate) return false;
+          if (periodoFimDate && inicio > periodoFimDate) return false;
+
+          return true;
+        })
         .filter((o) => {
           if (filtroStatus === "todas") return true;
           return (o.status || "").toLowerCase() === filtroStatus;
@@ -177,7 +206,7 @@ export default function OrdensServicoPage() {
 
           return alvo.includes(q);
         }),
-    [osList, diaReferencia, filtroStatus, q]
+    [osList, diaReferencia, filtroStatus, q, usandoFiltroPeriodo, periodoInicioDate, periodoFimDate]
   );
 
   const hoje = new Date();
@@ -370,7 +399,9 @@ export default function OrdensServicoPage() {
             <div className="text-xs text-slate-500">Navegação diária</div>
             <div className="text-sm font-medium text-slate-900">{tituloDia}</div>
             <div className="text-xs text-slate-500">
-              Exibe OS do dia selecionado + OS pausadas e em andamento.
+              {usandoFiltroPeriodo
+                ? "Exibindo OS do período selecionado."
+                : "Exibe OS do dia selecionado + OS pausadas e em andamento."}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -378,6 +409,7 @@ export default function OrdensServicoPage() {
               type="button"
               onClick={() => setDiaReferencia((prev) => somarDias(prev, -1))}
               className="px-3 py-1.5 text-sm border border-slate-300 rounded-md hover:bg-white"
+              disabled={usandoFiltroPeriodo}
             >
               ← Dia anterior
             </button>
@@ -389,6 +421,7 @@ export default function OrdensServicoPage() {
                 setDiaReferencia(d);
               }}
               className="px-3 py-1.5 text-sm border border-slate-300 rounded-md hover:bg-white"
+              disabled={usandoFiltroPeriodo}
             >
               Hoje
             </button>
@@ -396,8 +429,42 @@ export default function OrdensServicoPage() {
               type="button"
               onClick={() => setDiaReferencia((prev) => somarDias(prev, 1))}
               className="px-3 py-1.5 text-sm border border-slate-300 rounded-md hover:bg-white"
+              disabled={usandoFiltroPeriodo}
             >
               Próximo dia →
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Período inicial</label>
+            <input
+              type="date"
+              className="w-full border border-slate-300 rounded-md px-3 py-2"
+              value={periodoInicio}
+              onChange={(e) => setPeriodoInicio(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Período final</label>
+            <input
+              type="date"
+              className="w-full border border-slate-300 rounded-md px-3 py-2"
+              value={periodoFim}
+              onChange={(e) => setPeriodoFim(e.target.value)}
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={() => {
+                setPeriodoInicio("");
+                setPeriodoFim("");
+              }}
+              className="w-full border border-slate-300 px-3 py-2 rounded-md hover:bg-slate-50"
+            >
+              Limpar período
             </button>
           </div>
         </div>

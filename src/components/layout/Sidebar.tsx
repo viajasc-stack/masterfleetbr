@@ -81,6 +81,7 @@ const LINKS: NavItem[] = [
   { href: "/motoristas", label: "Motoristas", icon: "◼", group: "Operacional", modulo: "motoristas" },
   { href: "/fretamentos", label: "Fretamentos", icon: "◼", group: "Operacional", modulo: "ordens_servico" },
   { href: "/contratos", label: "Contratos", icon: "◼", group: "Operacional", modulo: "ordens_servico" },
+  { href: "/passageiros", label: "Passageiros", icon: "◼", group: "Operacional", modulo: "ordens_servico" },
   { href: "/clientes", label: "Clientes", icon: "◼", group: "Operacional", modulo: "clientes" },
   { href: "/inventario", label: "Estoque", icon: "◼", group: "Gestão", modulo: "inventario" },
   { href: "/financeiro", label: "Financeiro", icon: "◼", group: "Gestão", modulo: "financeiro" },

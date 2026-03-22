@@ -6,15 +6,6 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { supabase } from "@/lib/supabase/client";
 import { getFeriadosNacionais } from "@/lib/feriados";
 
-type ContratoRec = {
-  id: string;
-  nome: string;
-  dias_semana: number[] | null;
-  data_inicio: string | null;
-  data_fim: string | null;
-  ativo: boolean;
-};
-
 type OSEventual = {
   id: string;
   numero: number | null;
@@ -48,12 +39,6 @@ function addDays(base: Date, days: number) {
   return d;
 }
 
-function isDateInRange(dateKey: string, from: string | null, to: string | null) {
-  if (from && dateKey < from) return false;
-  if (to && dateKey > to) return false;
-  return true;
-}
-
 export default function AgendaPage() {
   const router = useRouter();
   const todayKey = toDateKey(new Date());
@@ -64,7 +49,7 @@ export default function AgendaPage() {
 
   const [loading, setLoading] = useState(true);
 
-  const [contratos, setContratos] = useState<ContratoRec[]>([]);
+  const [osRecorrentes, setOsRecorrentes] = useState<OSEventual[]>([]);
   const [osEventuais, setOsEventuais] = useState<OSEventual[]>([]);
   const [eventosCountByDate, setEventosCountByDate] = useState<Record<string, number>>({});
   const [feriados, setFeriados] = useState<AgendaFeriado[]>([]);
@@ -80,11 +65,13 @@ export default function AgendaPage() {
     const start = toDateKey(new Date(mesRef.getFullYear(), mesRef.getMonth(), 1));
     const end = toDateKey(new Date(mesRef.getFullYear(), mesRef.getMonth() + 1, 0));
 
-    const [cRes, osRes, evRes, fRes, finRes] = await Promise.all([
+    const [osRecRes, osRes, evRes, fRes, finRes] = await Promise.all([
       supabase
-        .from("contratos")
-        .select("id, nome, dias_semana, data_inicio, data_fim, ativo")
-        .eq("ativo", true),
+        .from("ordens_servico")
+        .select("id, numero, inicio_em, status")
+        .eq("tipo", "recorrente")
+        .gte("inicio_em", `${start}T00:00:00`)
+        .lte("inicio_em", `${end}T23:59:59`),
       supabase
         .from("ordens_servico")
         .select("id, numero, inicio_em, status")
@@ -106,7 +93,7 @@ export default function AgendaPage() {
         .neq("status", "cancelado"),
     ]);
 
-    setContratos((cRes.data ?? []) as ContratoRec[]);
+    setOsRecorrentes((osRecRes.data ?? []) as OSEventual[]);
     setOsEventuais((osRes.data ?? []) as OSEventual[]);
     const evCount: Record<string, number> = {};
     ((evRes.data ?? []) as Array<{ data: string }>).forEach((e) => {
@@ -173,19 +160,13 @@ export default function AgendaPage() {
 
   const recorrenteByDate = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const d of dayCells) {
-      const key = toDateKey(d);
-      const dow = d.getDay();
-      const total = contratos.filter(
-        (c) =>
-          c.ativo &&
-          (c.dias_semana ?? []).includes(dow) &&
-          isDateInRange(key, c.data_inicio, c.data_fim)
-      ).length;
-      if (total > 0) map[key] = total;
+    for (const os of osRecorrentes) {
+      if (!os.inicio_em) continue;
+      const key = os.inicio_em.slice(0, 10);
+      map[key] = (map[key] ?? 0) + 1;
     }
     return map;
-  }, [contratos, dayCells]);
+  }, [osRecorrentes]);
 
   const resumoMes = useMemo(() => {
     const osRec = Object.values(recorrenteByDate).reduce((acc, n) => acc + n, 0);
