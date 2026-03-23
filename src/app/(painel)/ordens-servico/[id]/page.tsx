@@ -67,7 +67,15 @@ type PresencaRow = {
   hora_registro: string | null;
 };
 
-type PassageiroMini = { id: string; nome: string };
+type PassageiroMini = {
+  passageiro_id: string;
+  nome: string | null;
+  telefone: string | null;
+  cpf: string | null;
+  status: string | null;
+  contato_emergencia_nome: string | null;
+  contato_emergencia_telefone: string | null;
+};
 
 function isoToInputLocal(iso: string | null) {
   if (!iso) return "";
@@ -99,7 +107,7 @@ export default function EditarOSPage() {
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [presencas, setPresencas] = useState<PresencaRow[]>([]);
-  const [passageirosMap, setPassageirosMap] = useState<Record<string, string>>({});
+  const [passageirosMap, setPassageirosMap] = useState<Record<string, PassageiroMini>>({});
   const [syncingPresencas, setSyncingPresencas] = useState(false);
 
   const [os, setOs] = useState<OsDb | null>(null);
@@ -256,14 +264,13 @@ export default function EditarOSPage() {
       return;
     }
 
-    const { data: pData } = await supabase
-      .from("passageiros")
-      .select("id, nome")
-      .in("id", ids);
+    const { data: pData } = await supabase.rpc("rpc_os_passageiros_detalhes", {
+      p_os_id: osId,
+    });
 
-    const map: Record<string, string> = {};
+    const map: Record<string, PassageiroMini> = {};
     ((pData ?? []) as PassageiroMini[]).forEach((p) => {
-      map[p.id] = p.nome;
+      map[p.passageiro_id] = p;
     });
     setPassageirosMap(map);
   }
@@ -817,7 +824,13 @@ export default function EditarOSPage() {
                 <tbody>
                   {presencas.map((p) => (
                     <tr key={p.id} className="border-b last:border-b-0">
-                      <td className="py-2 pr-4">{passageirosMap[p.passageiro_id] ?? p.passageiro_id.slice(0, 8)}</td>
+                      <td className="py-2 pr-4">
+                        <div>{passageirosMap[p.passageiro_id]?.nome ?? p.passageiro_id.slice(0, 8)}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {passageirosMap[p.passageiro_id]?.telefone ?? "sem telefone"}
+                          {passageirosMap[p.passageiro_id]?.cpf ? ` • CPF ${passageirosMap[p.passageiro_id]?.cpf}` : ""}
+                        </div>
+                      </td>
                       <td className="py-2 pr-4">{p.status}</td>
                       <td className="py-2 pr-4">{p.hora_registro ? new Date(p.hora_registro).toLocaleString("pt-BR") : "—"}</td>
                       <td className="py-2 pr-0 text-right">

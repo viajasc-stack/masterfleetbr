@@ -8,9 +8,14 @@ import { supabase } from "@/lib/supabase/client";
 type Passageiro = {
   id: string;
   nome: string;
+  email: string | null;
   cpf: string | null;
+  rg: string | null;
+  data_nascimento: string | null;
   telefone: string | null;
   status: string;
+  cidade: string | null;
+  uf: string | null;
   created_at: string;
 };
 
@@ -28,7 +33,14 @@ type ContratoPassageiro = {
   tipo_pagante: "PARTICULAR" | "EMPRESA";
   tipo_cobranca: "DIARIA" | "MENSAL";
   valor: number;
+  data_inicio: string | null;
+  data_fim: string | null;
 };
+
+function toMoney(v: string, fallback = 0) {
+  const n = Number(v.replace(".", "").replace(",", ".").trim());
+  return Number.isFinite(n) ? n : fallback;
+}
 
 export default function PassageirosPage() {
   const [loading, setLoading] = useState(true);
@@ -46,6 +58,9 @@ export default function PassageirosPage() {
   const [tipoPagante, setTipoPagante] = useState<"PARTICULAR" | "EMPRESA">("PARTICULAR");
   const [tipoCobranca, setTipoCobranca] = useState<"DIARIA" | "MENSAL">("DIARIA");
   const [valor, setValor] = useState("0");
+  const [statusVinculo, setStatusVinculo] = useState<"ATIVO" | "INATIVO">("ATIVO");
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
 
   async function carregarTudo() {
     setLoading(true);
@@ -54,7 +69,7 @@ export default function PassageirosPage() {
     const [pRes, cRes, cpRes] = await Promise.all([
       supabase
         .from("passageiros")
-        .select("id, nome, cpf, telefone, status, created_at")
+        .select("id, nome, email, cpf, rg, data_nascimento, telefone, status, cidade, uf, created_at")
         .order("nome", { ascending: true }),
       supabase
         .from("contratos")
@@ -62,7 +77,7 @@ export default function PassageirosPage() {
         .order("nome", { ascending: true }),
       supabase
         .from("contrato_passageiros")
-        .select("id, contrato_id, passageiro_id, status, tipo_pagante, tipo_cobranca, valor")
+        .select("id, contrato_id, passageiro_id, status, tipo_pagante, tipo_cobranca, valor, data_inicio, data_fim")
         .order("created_at", { ascending: false }),
     ]);
 
@@ -90,7 +105,18 @@ export default function PassageirosPage() {
     const q = busca.trim().toLowerCase();
     if (!q) return passageiros;
     return passageiros.filter((p) => {
-      const alvo = [p.nome, p.cpf ?? "", p.telefone ?? "", p.status].join(" ").toLowerCase();
+      const alvo = [
+        p.nome,
+        p.email ?? "",
+        p.cpf ?? "",
+        p.rg ?? "",
+        p.telefone ?? "",
+        p.cidade ?? "",
+        p.uf ?? "",
+        p.status,
+      ]
+        .join(" ")
+        .toLowerCase();
       return alvo.includes(q);
     });
   }, [passageiros, busca]);
@@ -109,16 +135,22 @@ export default function PassageirosPage() {
 
   async function vincularPassageiroContrato() {
     if (!passageiroSel || !contratoSel) return;
+    if (dataInicio && dataFim && dataFim < dataInicio) {
+      setErro("Data fim do vínculo não pode ser menor que data início.");
+      return;
+    }
     setErro("");
     setOkMsg("");
 
     const { error } = await supabase.from("contrato_passageiros").insert({
       passageiro_id: passageiroSel,
       contrato_id: contratoSel,
-      status: "ATIVO",
+      status: statusVinculo,
       tipo_pagante: tipoPagante,
       tipo_cobranca: tipoCobranca,
-      valor: Number(valor || 0),
+      valor: toMoney(valor, 0),
+      data_inicio: dataInicio || null,
+      data_fim: dataFim || null,
     });
 
     if (error) {
@@ -129,8 +161,44 @@ export default function PassageirosPage() {
     setPassageiroSel("");
     setContratoSel("");
     setValor("0");
+    setStatusVinculo("ATIVO");
+    setDataInicio("");
+    setDataFim("");
     setOkMsg("Passageiro vinculado ao contrato com sucesso.");
     await carregarTudo();
+  }
+
+  async function salvarVinculo(v: ContratoPassageiro) {
+    if (v.data_inicio && v.data_fim && v.data_fim < v.data_inicio) {
+      setErro("Data fim do vínculo não pode ser menor que data início.");
+      return;
+    }
+    setErro("");
+    setOkMsg("");
+
+    const { error } = await supabase
+      .from("contrato_passageiros")
+      .update({
+        status: v.status,
+        tipo_pagante: v.tipo_pagante,
+        tipo_cobranca: v.tipo_cobranca,
+        valor: v.valor,
+        data_inicio: v.data_inicio,
+        data_fim: v.data_fim,
+      })
+      .eq("id", v.id);
+
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+
+    setOkMsg("Vínculo atualizado com sucesso.");
+    await carregarTudo();
+  }
+
+  function atualizarVinculoLocal(id: string, patch: Partial<ContratoPassageiro>) {
+    setVinculos((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   }
 
   async function removerVinculo(vinculoId: string) {
@@ -214,6 +282,28 @@ export default function PassageirosPage() {
               placeholder="Valor"
             />
           </div>
+          <div className="grid grid-cols-3 gap-2">
+            <select
+              className="border border-slate-300 rounded-md px-3 py-2"
+              value={statusVinculo}
+              onChange={(e) => setStatusVinculo(e.target.value as "ATIVO" | "INATIVO")}
+            >
+              <option value="ATIVO">Ativo</option>
+              <option value="INATIVO">Inativo</option>
+            </select>
+            <input
+              type="date"
+              className="border border-slate-300 rounded-md px-3 py-2"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+            />
+            <input
+              type="date"
+              className="border border-slate-300 rounded-md px-3 py-2"
+              value={dataFim}
+              onChange={(e) => setDataFim(e.target.value)}
+            />
+          </div>
           <button
             onClick={vincularPassageiroContrato}
             disabled={!passageiroSel || !contratoSel}
@@ -246,6 +336,7 @@ export default function PassageirosPage() {
                   <th className="py-2 pr-4">Passageiro</th>
                   <th className="py-2 pr-4">Contato</th>
                   <th className="py-2 pr-4">Status</th>
+                  <th className="py-2 pr-4">Localidade</th>
                   <th className="py-2 pr-4">Contratos vinculados</th>
                 </tr>
               </thead>
@@ -257,9 +348,18 @@ export default function PassageirosPage() {
                       <td className="py-2 pr-4">
                         <div className="font-medium text-slate-900">{p.nome}</div>
                         <div className="text-xs text-slate-500">CPF: {p.cpf ?? "—"}</div>
+                        <div className="text-xs text-slate-500">E-mail: {p.email ?? "—"}</div>
                       </td>
-                      <td className="py-2 pr-4 text-slate-700">{p.telefone ?? "—"}</td>
+                      <td className="py-2 pr-4 text-slate-700">
+                        <div>{p.telefone ?? "—"}</div>
+                        <div className="mt-1">
+                          <Link href={`/passageiros/${p.id}`} className="text-xs text-blue-700 hover:underline">
+                            Editar cadastro
+                          </Link>
+                        </div>
+                      </td>
                       <td className="py-2 pr-4 text-slate-700">{p.status}</td>
+                      <td className="py-2 pr-4 text-slate-700">{[p.cidade, p.uf].filter(Boolean).join("/") || "—"}</td>
                       <td className="py-2 pr-4">
                         {vincs.length === 0 ? (
                           <span className="text-xs text-slate-500">Sem vínculo</span>
@@ -269,9 +369,60 @@ export default function PassageirosPage() {
                               <div key={v.id} className="rounded border border-slate-200 px-2 py-1.5 flex items-center justify-between gap-2">
                                 <div className="text-xs text-slate-700">
                                   <div className="font-medium">{contratosMap[v.contrato_id]?.nome ?? "Contrato"}</div>
-                                  <div>{v.tipo_cobranca} • R$ {Number(v.valor ?? 0).toFixed(2)} • {v.status}</div>
+                                  <div className="grid grid-cols-2 md:grid-cols-5 gap-1 mt-1">
+                                    <select
+                                      className="border border-slate-300 rounded px-1.5 py-1"
+                                      value={v.status}
+                                      onChange={(e) => atualizarVinculoLocal(v.id, { status: e.target.value as "ATIVO" | "INATIVO" })}
+                                    >
+                                      <option value="ATIVO">ATIVO</option>
+                                      <option value="INATIVO">INATIVO</option>
+                                    </select>
+                                    <select
+                                      className="border border-slate-300 rounded px-1.5 py-1"
+                                      value={v.tipo_pagante}
+                                      onChange={(e) => atualizarVinculoLocal(v.id, { tipo_pagante: e.target.value as "PARTICULAR" | "EMPRESA" })}
+                                    >
+                                      <option value="PARTICULAR">PARTICULAR</option>
+                                      <option value="EMPRESA">EMPRESA</option>
+                                    </select>
+                                    <select
+                                      className="border border-slate-300 rounded px-1.5 py-1"
+                                      value={v.tipo_cobranca}
+                                      onChange={(e) => atualizarVinculoLocal(v.id, { tipo_cobranca: e.target.value as "DIARIA" | "MENSAL" })}
+                                    >
+                                      <option value="DIARIA">DIARIA</option>
+                                      <option value="MENSAL">MENSAL</option>
+                                    </select>
+                                    <input
+                                      className="border border-slate-300 rounded px-1.5 py-1"
+                                      value={String(v.valor ?? 0)}
+                                      onChange={(e) => atualizarVinculoLocal(v.id, { valor: toMoney(e.target.value, 0) })}
+                                    />
+                                    <div className="text-[11px] text-slate-500 flex items-center">R$ {Number(v.valor ?? 0).toFixed(2)}</div>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-1 mt-1">
+                                    <input
+                                      type="date"
+                                      className="border border-slate-300 rounded px-1.5 py-1"
+                                      value={v.data_inicio ?? ""}
+                                      onChange={(e) => atualizarVinculoLocal(v.id, { data_inicio: e.target.value || null })}
+                                    />
+                                    <input
+                                      type="date"
+                                      className="border border-slate-300 rounded px-1.5 py-1"
+                                      value={v.data_fim ?? ""}
+                                      onChange={(e) => atualizarVinculoLocal(v.id, { data_fim: e.target.value || null })}
+                                    />
+                                  </div>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => salvarVinculo(v)}
+                                    className="text-xs border border-emerald-300 text-emerald-700 rounded px-2 py-1 hover:bg-emerald-50"
+                                  >
+                                    Salvar
+                                  </button>
                                   <Link
                                     href={`/contratos/${v.contrato_id}/passageiros`}
                                     className="text-xs border border-slate-300 rounded px-2 py-1 hover:bg-slate-50"
