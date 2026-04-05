@@ -4,11 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
 
 export default function NovoUsuarioPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
 
   const [nome, setNome] = useState("");
   const [apelido, setApelido] = useState("");
@@ -38,6 +40,11 @@ export default function NovoUsuarioPage() {
   const [conta, setConta] = useState("");
 
   const [observacoes, setObservacoes] = useState("");
+
+  function confirmarSucesso() {
+    router.push("/usuarios");
+    router.refresh();
+  }
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
@@ -92,9 +99,7 @@ export default function NovoUsuarioPage() {
         return;
       }
 
-      alert("Usuário criado com sucesso. Senha padrão: CPF. No primeiro acesso será obrigatório alterar a senha.");
-      router.push(`/usuarios/${result.usuario.id}`);
-      router.refresh();
+      setSuccessModalOpen(true);
     } catch (err) {
       alert(`Falha de conexão ao criar usuário: ${err instanceof Error ? err.message : "erro desconhecido"}`);
     } finally {
@@ -215,6 +220,21 @@ export default function NovoUsuarioPage() {
           <Link href="/usuarios" className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 transition">Cancelar</Link>
         </div>
       </form>
+
+      <SuccessRedirectModal
+        open={successModalOpen}
+        title="Usuário adicionado com sucesso"
+        description="Cadastro concluído."
+        onConfirm={confirmarSucesso}
+        detailsTitle="Dados para primeiro acesso"
+        details={
+          <>
+            <p><strong>Login:</strong> E-mail cadastrado</p>
+            <p><strong>Senha inicial:</strong> CPF do usuário</p>
+            <p>No primeiro acesso, será obrigatória a alteração de senha.</p>
+          </>
+        }
+      />
     </div>
   );
 }

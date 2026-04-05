@@ -133,7 +133,6 @@ export default function EntradasPage() {
         <select className="border border-slate-300 rounded-md px-3 py-2" value={tipoEntrada} onChange={(e) => setTipoEntrada(e.target.value)}>
           <option value="compra">Compra</option>
           <option value="devolucao">Devolução</option>
-          <option value="transferencia_recebida">Transferência recebida</option>
           <option value="ajuste_positivo">Ajuste positivo</option>
           <option value="retorno_nao_utilizado">Retorno não utilizado</option>
           <option value="manual">Entrada manual</option>

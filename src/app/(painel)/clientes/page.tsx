@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { supabase } from "@/lib/supabase/client";
 import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { ActionIconButton } from "@/components/ui/ActionIcon";
 
 type Cliente = {
   id: string;
@@ -300,14 +301,9 @@ export default function ClientesPage() {
                       {new Date(c.created_at).toLocaleString("pt-BR")}
                     </td>
                     <td className="py-2 pr-0 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget(c)}
-                        className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
-                        title="Excluir cliente"
-                      >
-                        🗑
-                      </button>
+                      <ActionIconButton title="Excluir cliente" variant="danger" onClick={() => setDeleteTarget(c)}>
+                        🗑️
+                      </ActionIconButton>
                     </td>
                   </tr>
                 ))}

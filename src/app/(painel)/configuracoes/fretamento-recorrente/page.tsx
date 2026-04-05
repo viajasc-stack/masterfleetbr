@@ -96,10 +96,10 @@ export default function ConfiguracoesFretamentoRecorrentePage() {
   if (loading) return <div className="text-sm text-slate-500">Carregando configurações...</div>;
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-4xl">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Configurações • Fretamento Recorrente</h1>
-        <p className="text-slate-400 text-sm mt-0.5">
+        <h1 className="text-2xl font-semibold text-slate-900">Configurações • Fretamento Recorrente</h1>
+        <p className="text-slate-600 text-sm mt-0.5">
           Controle a geração automática de OS dos contratos recorrentes.
         </p>
       </div>
@@ -108,15 +108,15 @@ export default function ConfiguracoesFretamentoRecorrentePage() {
         <div
           className={`rounded-lg border px-4 py-3 text-sm ${
             msg.startsWith("Erro")
-              ? "border-red-500/30 bg-red-500/10 text-red-300"
-              : "border-green-500/30 bg-green-500/10 text-green-300"
+              ? "border-rose-200 bg-rose-50 text-rose-700"
+              : "border-emerald-200 bg-emerald-50 text-emerald-700"
           }`}
         >
           {msg}
         </div>
       ) : null}
 
-      <form onSubmit={salvar} className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+      <form onSubmit={salvar} className="rounded-xl border border-slate-200 bg-white shadow-sm p-5 space-y-4">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="font-semibold text-slate-900">Geração automática de OS</h2>
@@ -140,7 +140,7 @@ export default function ConfiguracoesFretamentoRecorrentePage() {
         <button
           type="submit"
           disabled={saving}
-          className="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 disabled:opacity-60"
+          className="bg-indigo-600 text-white px-5 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-60"
         >
           {saving ? "Salvando..." : "Salvar configuração"}
         </button>

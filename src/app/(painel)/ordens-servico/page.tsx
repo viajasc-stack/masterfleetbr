@@ -6,14 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { ActionIconButton, ActionIconLink } from "@/components/ui/ActionIcon";
 import { logError, logInfo } from "@/lib/observability";
-
-type Billing = {
-  status: string;
-  plano_nome?: string | null;
-  trial_ate?: string | null;
-  proxima_cobranca?: string | null;
-};
 
 type OsRow = {
   id: string;
@@ -31,14 +25,30 @@ type OsRow = {
   status_pagamento: string | null;
 
   cliente_id: string | null;
+  contrato_id: string | null;
   veiculo_id: string | null;
   motorista_id: string | null;
 
   created_at: string;
 
   clientes?: { nome: string } | null;
+  contratos?: { nome: string } | null;
   veiculos?: { placa: string } | null;
   motoristas?: { nome: string } | null;
+};
+
+type VeiculoQuickOpt = {
+  id: string;
+  placa: string;
+  marca: string | null;
+  modelo: string | null;
+  status?: string | null;
+};
+
+type MotoristaQuickOpt = {
+  id: string;
+  nome: string;
+  ativo?: boolean | null;
 };
 
 type FiltroStatus =
@@ -89,13 +99,19 @@ export default function OrdensServicoPage() {
       : "todas";
   const [osList, setOsList] = useState<OsRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [billing, setBilling] = useState<Billing | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<OsRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [erro, setErro] = useState("");
   const [okMsg, setOkMsg] = useState("");
+  const [contratosMap, setContratosMap] = useState<Record<string, string>>({});
+  const [veiculosOpts, setVeiculosOpts] = useState<VeiculoQuickOpt[]>([]);
+  const [motoristasOpts, setMotoristasOpts] = useState<MotoristaQuickOpt[]>([]);
+  const [quickEditId, setQuickEditId] = useState<string | null>(null);
+  const [quickVeiculoId, setQuickVeiculoId] = useState("");
+  const [quickMotoristaId, setQuickMotoristaId] = useState("");
+  const [quickSaving, setQuickSaving] = useState(false);
   const [diaReferencia, setDiaReferencia] = useState<Date>(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -115,7 +131,7 @@ export default function OrdensServicoPage() {
       .select(
         `
         id, numero, tipo, status, inicio_em, fim_em, origem, destino,
-        valor_total, status_pagamento, cliente_id, veiculo_id, motorista_id, created_at,
+        valor_total, status_pagamento, cliente_id, contrato_id, veiculo_id, motorista_id, created_at,
         clientes:cliente_id ( nome ),
         veiculos:veiculo_id ( placa ),
         motoristas:motorista_id ( nome )
@@ -127,22 +143,134 @@ export default function OrdensServicoPage() {
       const lista = data as unknown as OsRow[];
       setOsList(lista);
       setSelectedIds((prev) => prev.filter((id) => lista.some((o) => o.id === id)));
+
+      const contratoIds = Array.from(
+        new Set(
+          lista
+            .filter((o) => o.tipo === "recorrente" && !!o.contrato_id)
+            .map((o) => o.contrato_id as string)
+        )
+      );
+
+      if (contratoIds.length > 0) {
+        const { data: contratosData, error: contratosError } = await supabase
+          .from("contratos")
+          .select("id, nome")
+          .in("id", contratoIds);
+
+        if (!contratosError && contratosData) {
+          const mapa: Record<string, string> = {};
+          (contratosData as Array<{ id: string; nome: string | null }>).forEach((c) => {
+            mapa[c.id] = c.nome ?? "Sem nome";
+          });
+          setContratosMap(mapa);
+        } else {
+          setContratosMap({});
+        }
+      } else {
+        setContratosMap({});
+      }
     } else {
       logError("operacao.ordens_servico", "Falha ao carregar lista de OS", error);
       setOsList([]);
+      setContratosMap({});
     }
 
-    const { data: bill } = await supabase.rpc("get_billing_current");
-    if (bill) {
-      setBilling({
-        status: bill.status ?? "trial",
-        plano_nome: bill.plano_nome ?? null,
-        trial_ate: bill.trial_ate ?? null,
-        proxima_cobranca: bill.proxima_cobranca ?? null,
-      });
+    const [veiculosResp, motoristasResp] = await Promise.all([
+      supabase
+        .from("veiculos")
+        .select("id, placa, marca, modelo, status")
+        .order("placa"),
+      supabase
+        .from("motoristas")
+        .select("id, nome, ativo")
+        .order("nome"),
+    ]);
+
+    if (!veiculosResp.error) {
+      const veiculos = ((veiculosResp.data ?? []) as VeiculoQuickOpt[]).filter(
+        (v) => (v.status || "").toLowerCase() !== "inativo"
+      );
+      setVeiculosOpts(veiculos);
+    }
+
+    if (!motoristasResp.error) {
+      const motoristas = ((motoristasResp.data ?? []) as MotoristaQuickOpt[]).filter(
+        (m) => m.ativo !== false
+      );
+      setMotoristasOpts(motoristas);
     }
 
     setLoading(false);
+  }
+
+  function iniciarEdicaoRapida(os: OsRow) {
+    setQuickEditId(os.id);
+    setQuickVeiculoId(os.veiculo_id ?? "");
+    setQuickMotoristaId(os.motorista_id ?? "");
+  }
+
+  function cancelarEdicaoRapida() {
+    if (quickSaving) return;
+    setQuickEditId(null);
+    setQuickVeiculoId("");
+    setQuickMotoristaId("");
+  }
+
+  async function salvarEdicaoRapida() {
+    if (!quickEditId) return;
+
+    setQuickSaving(true);
+    setErro("");
+    setOkMsg("");
+
+    const payload = {
+      veiculo_id: quickVeiculoId || null,
+      motorista_id: quickMotoristaId || null,
+    };
+
+    const { error } = await supabase
+      .from("ordens_servico")
+      .update(payload)
+      .eq("id", quickEditId);
+
+    setQuickSaving(false);
+
+    if (error) {
+      logError("operacao.ordens_servico", "Falha na edição rápida de veículo/motorista", error, {
+        os_id: quickEditId,
+      });
+      setErro(`Não foi possível atualizar veículo/motorista: ${error.message}`);
+      return;
+    }
+
+    const veiculo = veiculosOpts.find((v) => v.id === quickVeiculoId);
+    const motorista = motoristasOpts.find((m) => m.id === quickMotoristaId);
+
+    setOsList((prev) =>
+      prev.map((o) =>
+        o.id === quickEditId
+          ? {
+              ...o,
+              veiculo_id: quickVeiculoId || null,
+              motorista_id: quickMotoristaId || null,
+              veiculos: veiculo ? { placa: veiculo.placa } : null,
+              motoristas: motorista ? { nome: motorista.nome } : null,
+            }
+          : o
+      )
+    );
+
+    logInfo("operacao.ordens_servico", "Edição rápida de OS concluída", {
+      os_id: quickEditId,
+      veiculo_id: quickVeiculoId || null,
+      motorista_id: quickMotoristaId || null,
+    });
+
+    setOkMsg("OS atualizada com sucesso (veículo e/ou motorista).");
+    setQuickEditId(null);
+    setQuickVeiculoId("");
+    setQuickMotoristaId("");
   }
 
   useEffect(() => {
@@ -197,6 +325,7 @@ export default function OrdensServicoPage() {
             o.origem ?? "",
             o.destino ?? "",
             o.clientes?.nome ?? "",
+            o.contrato_id ? contratosMap[o.contrato_id] ?? "" : "",
             o.veiculos?.placa ?? "",
             o.motoristas?.nome ?? "",
             o.status_pagamento ?? "",
@@ -206,7 +335,16 @@ export default function OrdensServicoPage() {
 
           return alvo.includes(q);
         }),
-    [osList, diaReferencia, filtroStatus, q, usandoFiltroPeriodo, periodoInicioDate, periodoFimDate]
+    [
+      osList,
+      diaReferencia,
+      filtroStatus,
+      q,
+      usandoFiltroPeriodo,
+      periodoInicioDate,
+      periodoFimDate,
+      contratosMap,
+    ]
   );
 
   const hoje = new Date();
@@ -373,26 +511,6 @@ export default function OrdensServicoPage() {
       {erro ? <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{erro}</div> : null}
       {okMsg ? <div className="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{okMsg}</div> : null}
 
-      {billing && (
-        <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 flex items-center justify-between">
-          <div className="text-sm">
-            <span className="text-slate-600">Assinatura</span>
-            <span className={`ml-2 text-xs px-2 py-1 rounded border ${
-              billing.status === "ativa" ? "border-green-200 text-green-700 bg-green-50"
-              : billing.status === "trial" ? "border-blue-200 text-blue-700 bg-blue-50"
-              : billing.status === "past_due" ? "border-amber-200 text-amber-700 bg-amber-50"
-              : "border-red-200 text-red-700 bg-red-50"
-            }`}>{billing.status}</span>
-            {billing.plano_nome && <span className="ml-2 text-slate-600">Plano: <span className="text-slate-900 font-medium">{billing.plano_nome}</span></span>}
-            {billing.proxima_cobranca && <span className="ml-2 text-slate-600">Próx.: <span className="text-slate-900">{new Date(billing.proxima_cobranca).toLocaleDateString("pt-BR")}</span></span>}
-            {billing.trial_ate && <span className="ml-2 text-slate-600">Trial: <span className="text-slate-900">{new Date(billing.trial_ate).toLocaleDateString("pt-BR")}</span></span>}
-          </div>
-          {(billing.status === "past_due" || billing.status === "bloqueada") && (
-            <Link href="/bloqueado" className="text-xs text-amber-700 hover:underline">Regularizar</Link>
-          )}
-        </div>
-      )}
-
       <div className="bg-white border border-slate-200 rounded-xl p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
           <div>
@@ -537,7 +655,11 @@ export default function OrdensServicoPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtradas.map((o) => (
+                {filtradas.map((o) => {
+                  const emEdicaoRapida = quickEditId === o.id;
+                  const nomeContrato = o.contrato_id ? contratosMap[o.contrato_id] : "";
+
+                  return (
                   <tr
                     key={o.id}
                     className="border-b last:border-b-0 hover:bg-slate-50 transition"
@@ -560,11 +682,53 @@ export default function OrdensServicoPage() {
                       <div className="text-xs text-slate-500">
                         {o.tipo === "recorrente" ? "Recorrente" : "Eventual"}
                       </div>
+                      {o.tipo === "recorrente" && nomeContrato ? (
+                        <div className="text-xs text-indigo-700">Contrato: {nomeContrato}</div>
+                      ) : null}
                     </td>
 
                     <td className="py-2 pr-4">{o.clientes?.nome ?? "—"}</td>
-                    <td className="py-2 pr-4">{o.veiculos?.placa ?? "—"}</td>
-                    <td className="py-2 pr-4">{o.motoristas?.nome ?? "—"}</td>
+                    <td className="py-2 pr-4">
+                      {emEdicaoRapida ? (
+                        <select
+                          className="w-full min-w-[220px] border border-slate-300 rounded-md px-2 py-1 text-xs"
+                          value={quickVeiculoId}
+                          onChange={(e) => setQuickVeiculoId(e.target.value)}
+                          disabled={quickSaving}
+                        >
+                          <option value="">(sem veículo)</option>
+                          {veiculosOpts.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.placa}
+                              {v.marca || v.modelo
+                                ? ` — ${[v.marca, v.modelo].filter(Boolean).join(" ")}`
+                                : ""}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        o.veiculos?.placa ?? "—"
+                      )}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {emEdicaoRapida ? (
+                        <select
+                          className="w-full min-w-[220px] border border-slate-300 rounded-md px-2 py-1 text-xs"
+                          value={quickMotoristaId}
+                          onChange={(e) => setQuickMotoristaId(e.target.value)}
+                          disabled={quickSaving}
+                        >
+                          <option value="">(sem motorista)</option>
+                          {motoristasOpts.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.nome}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        o.motoristas?.nome ?? "—"
+                      )}
+                    </td>
                     <td className="py-2 pr-4">{formatDt(o.inicio_em)}</td>
 
                     <td className="py-2 pr-4">
@@ -586,26 +750,57 @@ export default function OrdensServicoPage() {
                     </td>
                     <td className="py-2 pr-0 text-right">
                       <div className="inline-flex items-center gap-2">
-                        <Link
-                          href={`/ordens-servico/${o.id}`}
-                          className="px-2 py-1 text-xs border border-blue-200 text-blue-700 rounded-md hover:bg-blue-50"
-                          title="Ver detalhes e editar OS"
-                        >
-                          Editar
-                        </Link>
+                        {emEdicaoRapida ? (
+                          <>
+                            <ActionIconButton
+                              type="button"
+                              title={quickSaving ? "Salvando alteração rápida" : "Salvar alteração rápida"}
+                              variant="success"
+                              onClick={() => void salvarEdicaoRapida()}
+                              disabled={quickSaving}
+                            >
+                              {quickSaving ? "⏳" : "✅"}
+                            </ActionIconButton>
+                            <ActionIconButton
+                              type="button"
+                              title="Cancelar edição rápida"
+                              onClick={cancelarEdicaoRapida}
+                              disabled={quickSaving}
+                            >
+                              ❌
+                            </ActionIconButton>
+                          </>
+                        ) : (
+                          <ActionIconButton
+                            type="button"
+                            title="Edição rápida de veículo/motorista"
+                            variant="success"
+                            onClick={() => iniciarEdicaoRapida(o)}
+                          >
+                            ⚡
+                          </ActionIconButton>
+                        )}
 
-                        <button
-                          type="button"
-                          onClick={() => setDeleteTarget(o)}
-                          className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
-                          title="Cancelar OS"
+                        <ActionIconLink
+                          href={`/ordens-servico/${o.id}`}
+                          title="Ver detalhes e edição completa"
+                          variant="primary"
                         >
-                          Cancelar
-                        </button>
+                          ✏️
+                        </ActionIconLink>
+
+                        <ActionIconButton
+                          type="button"
+                          title="Cancelar OS"
+                          variant="danger"
+                          onClick={() => setDeleteTarget(o)}
+                        >
+                          🛑
+                        </ActionIconButton>
                       </div>
                     </td>
                   </tr>
-                ))}
+                );})}
               </tbody>
             </table>
           </div>

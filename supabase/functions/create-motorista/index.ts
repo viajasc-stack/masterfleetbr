@@ -215,6 +215,7 @@ serve(async (req) => {
       status: ["ativo", "ferias", "afastado", "inativo"].includes(String(body?.status ?? ""))
         ? String(body?.status)
         : "ativo",
+      pode_abastecer: Boolean(body?.pode_abastecer),
       data_admissao: body?.data_admissao || null,
       data_demissao: body?.data_demissao || null,
       chave_pix: String(body?.chave_pix ?? "").trim() || null,

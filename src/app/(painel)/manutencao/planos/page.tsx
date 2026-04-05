@@ -1,161 +1,233 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { supabase } from "@/lib/supabase/client";
-import { loadOptions } from "@/lib/manutencao";
 
 type Plano = {
   id: string;
   nome: string;
   tipo_veiculo: string | null;
-  ativo: boolean;
-};
-
-type PlanoItem = {
-  id: string;
-  plano_id: string;
   intervalo_km: number | null;
   intervalo_dias: number | null;
-  tipos_servico: { nome: string | null } | null;
+  ativo: boolean;
+  created_at?: string;
 };
+
+const TIPOS_VEICULO = ["automovel", "van", "microonibus", "onibus"] as const;
+const INTERVALOS_DIAS = [30, 60, 90, 180, 365] as const;
 
 export default function PlanosManutencaoPage() {
   const [planos, setPlanos] = useState<Plano[]>([]);
-  const [itens, setItens] = useState<PlanoItem[]>([]);
-  const [tiposServico, setTiposServico] = useState<Array<{ id: string; nome: string }>>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [openModal, setOpenModal] = useState(false);
 
   const [nome, setNome] = useState("");
-  const [tipoVeiculo, setTipoVeiculo] = useState("");
-  const [planoSelecionado, setPlanoSelecionado] = useState("");
-  const [tipoServicoId, setTipoServicoId] = useState("");
+  const [tipoVeiculo, setTipoVeiculo] = useState<(typeof TIPOS_VEICULO)[number]>("van");
   const [intervaloKm, setIntervaloKm] = useState("");
-  const [intervaloDias, setIntervaloDias] = useState("");
+  const [intervaloDias, setIntervaloDias] = useState<string>("30");
 
-  async function carregar() {
+  const loadData = useCallback(async () => {
     setLoading(true);
-    const [plRes, itRes, tsRes] = await Promise.all([
-      supabase.from("planos_manutencao").select("id,nome,tipo_veiculo,ativo").order("nome"),
-      supabase.from("plano_itens").select("id,plano_id,intervalo_km,intervalo_dias,tipos_servico(nome)").order("created_at", { ascending: false }),
-      loadOptions("tipos_servico", "nome", true),
-    ]);
+    try {
+      const { data, error } = await supabase
+        .from("manutencao_planos")
+        .select("id, nome, tipo_veiculo, intervalo_km, intervalo_dias, ativo, created_at")
+        .order("nome", { ascending: true });
 
-    setPlanos((plRes.data as Plano[] | null) ?? []);
-    setItens((itRes.data as PlanoItem[] | null) ?? []);
-    setTiposServico(tsRes);
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    const t = setTimeout(() => void carregar(), 0);
-    return () => clearTimeout(t);
+      if (error) throw error;
+      setPlanos((data ?? []) as Plano[]);
+    } catch (err) {
+      console.error("Erro ao carregar planos:", err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const itensDoPlano = useMemo(() => itens.filter((i) => (planoSelecionado ? i.plano_id === planoSelecionado : true)), [itens, planoSelecionado]);
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
-  async function criarPlano(e: React.FormEvent<HTMLFormElement>) {
+  function resetForm() {
+    setNome("");
+    setTipoVeiculo("van");
+    setIntervaloKm("");
+    setIntervaloDias("30");
+  }
+
+  async function handleCriarPlano(e: React.FormEvent) {
     e.preventDefault();
     if (!nome.trim()) return;
-    await supabase.from("planos_manutencao").insert({ nome: nome.trim(), tipo_veiculo: tipoVeiculo || null, ativo: true });
-    setNome("");
-    setTipoVeiculo("");
-    await carregar();
-  }
 
-  async function addItemPlano(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!planoSelecionado) return;
-    await supabase.from("plano_itens").insert({
-      plano_id: planoSelecionado,
-      tipo_servico_id: tipoServicoId || null,
-      intervalo_km: intervaloKm ? Number(intervaloKm) : null,
-      intervalo_dias: intervaloDias ? Number(intervaloDias) : null,
-    });
-    setTipoServicoId("");
-    setIntervaloKm("");
-    setIntervaloDias("");
-    await carregar();
-  }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from("manutencao_planos").insert({
+        nome: nome.trim(),
+        tipo_veiculo: tipoVeiculo,
+        intervalo_km: intervaloKm ? parseInt(intervaloKm, 10) : null,
+        intervalo_dias: parseInt(intervaloDias, 10),
+      });
 
-  async function togglePlano(id: string, ativo: boolean) {
-    await supabase.from("planos_manutencao").update({ ativo: !ativo }).eq("id", id);
-    await carregar();
+      if (error) throw error;
+
+      setOpenModal(false);
+      resetForm();
+      await loadData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao criar plano.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Manutenção · Planos" description="CRUD de planos de manutenção e itens por intervalo de KM/dias." />
+      <PageHeader
+        title="Manutenção · Planos"
+        description="Listagem dos planos preventivos cadastrados pela empresa"
+        actions={
+          <button
+            type="button"
+            onClick={() => setOpenModal(true)}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500 text-sm"
+          >
+            + Novo Plano
+          </button>
+        }
+      />
 
-      <form onSubmit={criarPlano} className="bg-white border border-slate-200 rounded-xl p-5 grid gap-3 md:grid-cols-4">
-        <input className="md:col-span-2 border border-slate-300 rounded-md px-3 py-2" placeholder="Nome do plano" value={nome} onChange={(e) => setNome(e.target.value)} required />
-        <input className="border border-slate-300 rounded-md px-3 py-2" placeholder="Tipo de veículo" value={tipoVeiculo} onChange={(e) => setTipoVeiculo(e.target.value)} />
-        <button type="submit" className="bg-indigo-600 text-white rounded-md px-4 py-2 hover:bg-indigo-500">Criar plano</button>
-      </form>
-
-      <div className="bg-white border border-slate-200 rounded-xl p-5 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left border-b">
-              <th className="py-2 pr-4">Plano</th>
-              <th className="py-2 pr-4">Tipo de veículo</th>
-              <th className="py-2 pr-4">Status</th>
-              <th className="py-2 text-right">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? <tr><td colSpan={4} className="py-3 text-slate-500">Carregando...</td></tr> : null}
-            {!loading && planos.map((p) => (
-              <tr key={p.id} className="border-b last:border-0">
-                <td className="py-2 pr-4 font-medium">{p.nome}</td>
-                <td className="py-2 pr-4">{p.tipo_veiculo ?? "—"}</td>
-                <td className="py-2 pr-4">{p.ativo ? "Ativo" : "Inativo"}</td>
-                <td className="py-2 text-right">
-                  <div className="inline-flex gap-1">
-                    <button type="button" onClick={() => setPlanoSelecionado(p.id)} className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-50">Ver itens</button>
-                    <button type="button" onClick={() => void togglePlano(p.id, p.ativo)} className="px-2 py-1 text-xs border border-indigo-300 text-indigo-700 rounded hover:bg-indigo-50">{p.ativo ? "Desativar" : "Ativar"}</button>
-                  </div>
-                </td>
+      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+        {loading ? (
+          <div className="p-8 text-center text-slate-500">Carregando planos...</div>
+        ) : planos.length === 0 ? (
+          <div className="p-8 text-center text-slate-500">Nenhum plano preventivo cadastrado ainda.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left border-b border-slate-200 bg-slate-50">
+                <th className="py-3 px-4">Nome do Plano</th>
+                <th className="py-3 px-4">Tipo de Veículo</th>
+                <th className="py-3 px-4">Intervalo de KM</th>
+                <th className="py-3 px-4">Intervalo de Dias</th>
+                <th className="py-3 px-4">Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {planos.map((p) => (
+                <tr key={p.id} className="hover:bg-slate-50">
+                  <td className="py-3 px-4 font-medium text-slate-900">{p.nome}</td>
+                  <td className="py-3 px-4 text-slate-700">{p.tipo_veiculo ?? "—"}</td>
+                  <td className="py-3 px-4 text-slate-700">{p.intervalo_km ? `${p.intervalo_km.toLocaleString("pt-BR")} km` : "—"}</td>
+                  <td className="py-3 px-4 text-slate-700">{p.intervalo_dias ? `${p.intervalo_dias} dias` : "—"}</td>
+                  <td className="py-3 px-4">
+                    <span className={`px-2 py-1 rounded-full text-xs ${p.ativo ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                      {p.ativo ? "Ativo" : "Inativo"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      <form onSubmit={addItemPlano} className="bg-white border border-slate-200 rounded-xl p-5 grid gap-3 md:grid-cols-5">
-        <select className="border border-slate-300 rounded-md px-3 py-2" value={planoSelecionado} onChange={(e) => setPlanoSelecionado(e.target.value)} required>
-          <option value="">Plano</option>
-          {planos.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-        </select>
-        <select className="border border-slate-300 rounded-md px-3 py-2" value={tipoServicoId} onChange={(e) => setTipoServicoId(e.target.value)}>
-          <option value="">Tipo de serviço</option>
-          {tiposServico.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
-        </select>
-        <input type="number" className="border border-slate-300 rounded-md px-3 py-2" placeholder="Intervalo KM" value={intervaloKm} onChange={(e) => setIntervaloKm(e.target.value)} />
-        <input type="number" className="border border-slate-300 rounded-md px-3 py-2" placeholder="Intervalo dias" value={intervaloDias} onChange={(e) => setIntervaloDias(e.target.value)} />
-        <button type="submit" className="bg-indigo-600 text-white rounded-md px-4 py-2 hover:bg-indigo-500">Adicionar item</button>
-      </form>
+      {openModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl bg-white rounded-xl border border-slate-200 shadow-xl">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="font-semibold text-slate-900">Novo Plano Preventivo</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenModal(false);
+                  resetForm();
+                }}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl p-5 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left border-b">
-              <th className="py-2 pr-4">Tipo de serviço</th>
-              <th className="py-2 pr-4">Intervalo KM</th>
-              <th className="py-2 pr-4">Intervalo dias</th>
-            </tr>
-          </thead>
-          <tbody>
-            {itensDoPlano.map((i) => (
-              <tr key={i.id} className="border-b last:border-0">
-                <td className="py-2 pr-4">{i.tipos_servico?.nome ?? "—"}</td>
-                <td className="py-2 pr-4">{i.intervalo_km ?? "—"}</td>
-                <td className="py-2 pr-4">{i.intervalo_dias ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            <form onSubmit={handleCriarPlano} className="p-5 space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="text-sm font-medium text-slate-700">Nome do plano *</label>
+                  <input
+                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                    placeholder="Ex.: Revisão preventiva urbana"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Tipo de veículo *</label>
+                  <select
+                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                    value={tipoVeiculo}
+                    onChange={(e) => setTipoVeiculo(e.target.value as (typeof TIPOS_VEICULO)[number])}
+                  >
+                    {TIPOS_VEICULO.map((tipo) => (
+                      <option key={tipo} value={tipo}>
+                        {tipo}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Intervalo de KM</label>
+                  <input
+                    type="number"
+                    min={0}
+                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                    value={intervaloKm}
+                    onChange={(e) => setIntervaloKm(e.target.value)}
+                    placeholder="Ex.: 10000"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Intervalo de dias *</label>
+                  <select
+                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                    value={intervaloDias}
+                    onChange={(e) => setIntervaloDias(e.target.value)}
+                  >
+                    {INTERVALOS_DIAS.map((dias) => (
+                      <option key={dias} value={String(dias)}>
+                        {dias} dias
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenModal(false);
+                    resetForm();
+                  }}
+                  className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500 text-sm disabled:opacity-60"
+                >
+                  {saving ? "Salvando..." : "Criar Plano"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
 import { supabase } from "@/lib/supabase/client";
 
 type Categoria = {
@@ -14,13 +16,10 @@ type Categoria = {
 
 export default function CategoriasEstoquePage() {
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [erro, setErro] = useState("");
   const [categorias, setCategorias] = useState<Categoria[]>([]);
-
-  const [nome, setNome] = useState("");
-  const [descricao, setDescricao] = useState("");
-  const [corIcone, setCorIcone] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Categoria | null>(null);
 
   async function carregar() {
     setLoading(true);
@@ -42,52 +41,16 @@ export default function CategoriasEstoquePage() {
     return () => clearTimeout(t);
   }, []);
 
-  async function criarCategoria(e: FormEvent) {
-    e.preventDefault();
-    if (!nome.trim()) return;
-
-    setSaving(true);
-    setErro("");
-
-    const { error } = await supabase.from("categorias_estoque").insert({
-      nome: nome.trim(),
-      descricao: descricao.trim() || null,
-      cor_icone: corIcone.trim() || null,
-      ativo: true,
-    });
-
-    setSaving(false);
+  async function excluirSelecionada() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const { error } = await supabase.from("categorias_estoque").delete().eq("id", deleteTarget.id);
+    setDeleting(false);
     if (error) {
       setErro(error.message);
       return;
     }
-
-    setNome("");
-    setDescricao("");
-    setCorIcone("");
-    await carregar();
-  }
-
-  async function toggleAtivo(item: Categoria) {
-    const { error } = await supabase
-      .from("categorias_estoque")
-      .update({ ativo: !item.ativo })
-      .eq("id", item.id);
-    if (error) {
-      setErro(error.message);
-      return;
-    }
-    await carregar();
-  }
-
-  async function excluir(id: string) {
-    const ok = window.confirm("Excluir categoria?");
-    if (!ok) return;
-    const { error } = await supabase.from("categorias_estoque").delete().eq("id", id);
-    if (error) {
-      setErro(error.message);
-      return;
-    }
+    setDeleteTarget(null);
     await carregar();
   }
 
@@ -95,19 +58,15 @@ export default function CategoriasEstoquePage() {
     <div className="space-y-6">
       <PageHeader
         title="Estoque · Categorias"
-        description="Cadastro de categorias para organização inteligente dos itens do estoque."
+        description="Listagem de categorias com status e ações de manutenção."
+        actions={
+          <Link href="/inventario/categorias/nova" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500">
+            + Adicionar categoria
+          </Link>
+        }
       />
 
       {erro ? <div className="rounded-md border border-rose-300 bg-rose-50 text-rose-700 text-sm px-3 py-2">{erro}</div> : null}
-
-      <form onSubmit={criarCategoria} className="bg-white border border-slate-200 rounded-xl p-5 grid md:grid-cols-4 gap-3">
-        <input className="border border-slate-300 rounded-md px-3 py-2" placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
-        <input className="border border-slate-300 rounded-md px-3 py-2" placeholder="Descrição" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
-        <input className="border border-slate-300 rounded-md px-3 py-2" placeholder="Cor/ícone (opcional)" value={corIcone} onChange={(e) => setCorIcone(e.target.value)} />
-        <button disabled={saving} className="bg-indigo-600 text-white rounded-md px-4 py-2 hover:bg-indigo-500 disabled:opacity-60">
-          {saving ? "Salvando..." : "+ Nova categoria"}
-        </button>
-      </form>
 
       <div className="bg-white border border-slate-200 rounded-xl p-5">
         {loading ? (
@@ -121,7 +80,6 @@ export default function CategoriasEstoquePage() {
                 <tr className="text-left border-b">
                   <th className="py-2 pr-4">Nome</th>
                   <th className="py-2 pr-4">Descrição</th>
-                  <th className="py-2 pr-4">Cor/ícone</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 text-right">Ações</th>
                 </tr>
@@ -131,19 +89,29 @@ export default function CategoriasEstoquePage() {
                   <tr key={c.id} className="border-b last:border-0">
                     <td className="py-2 pr-4 font-medium">{c.nome}</td>
                     <td className="py-2 pr-4 text-slate-600">{c.descricao ?? "—"}</td>
-                    <td className="py-2 pr-4 text-slate-600">{c.cor_icone ?? "—"}</td>
                     <td className="py-2 pr-4">
                       <span className={`inline-flex rounded px-2 py-1 text-xs border ${c.ativo ? "border-emerald-200 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-700 bg-slate-50"}`}>
                         {c.ativo ? "Ativa" : "Inativa"}
                       </span>
                     </td>
-                    <td className="py-2 text-right space-x-2">
-                      <button type="button" className="text-xs px-2 py-1 border border-slate-300 rounded hover:bg-slate-50" onClick={() => toggleAtivo(c)}>
-                        {c.ativo ? "Inativar" : "Ativar"}
-                      </button>
-                      <button type="button" className="text-xs px-2 py-1 border border-rose-200 text-rose-700 rounded hover:bg-rose-50" onClick={() => excluir(c.id)}>
-                        Excluir
-                      </button>
+                    <td className="py-2 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <Link
+                          href={`/inventario/categorias/${c.id}`}
+                          className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-50"
+                          title="Editar categoria"
+                        >
+                          ✏️
+                        </Link>
+                        <button
+                          type="button"
+                          className="px-2 py-1 text-xs border border-rose-200 text-rose-700 rounded hover:bg-rose-50"
+                          onClick={() => setDeleteTarget(c)}
+                          title="Excluir categoria"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -152,6 +120,15 @@ export default function CategoriasEstoquePage() {
           </div>
         )}
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        title="Excluir categoria"
+        description={`Deseja excluir a categoria "${deleteTarget?.nome ?? ""}"?`}
+        loading={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={excluirSelecionada}
+      />
     </div>
   );
 }

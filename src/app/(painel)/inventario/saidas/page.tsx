@@ -121,7 +121,6 @@ export default function SaidasPage() {
           <option value="avaria">Avaria</option>
           <option value="vencimento">Vencimento</option>
           <option value="devolucao_fornecedor">Devolução ao fornecedor</option>
-          <option value="transferencia_enviada">Transferência enviada</option>
           <option value="ajuste_negativo">Ajuste negativo</option>
           <option value="manual">Saída manual</option>
         </select>

@@ -12,8 +12,30 @@ type EmpresaRow = {
   status: string | null;
   proxima_cobranca: string | null;
   trial_ate: string | null;
-  plano_nome: string | null;
+  modulos_ativos: string[] | null;
+  total_modulos: number | null;
+  valor_mensal_centavos: number | null;
 };
+
+const MODULE_LABELS: Record<string, string> = {
+  operacional: "Operacional",
+  configuracoes: "Configurações",
+  usuarios: "Usuários",
+  suporte: "Suporte",
+  inventario: "Estoque",
+  financeiro: "Financeiro",
+  manutencao: "Manutenção",
+  oficina: "Oficina",
+  agenda: "Agenda",
+  viagens: "Viagens",
+  relatorios: "Relatórios",
+};
+
+const HIDDEN_MODULE_CODES = new Set(["api_integracoes", "automacoes"]);
+
+function formatModuloLabel(codigo: string) {
+  return MODULE_LABELS[codigo] ?? codigo;
+}
 
 function EyeIcon() {
   return (
@@ -68,7 +90,6 @@ export default function MasterEmpresasPage() {
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState("bloquear");
-  const [bulkPlanoId, setBulkPlanoId] = useState("");
   const [bulkCouponId, setBulkCouponId] = useState("");
 
   const [creating, setCreating] = useState(false);
@@ -173,7 +194,6 @@ export default function MasterEmpresasPage() {
     setMsg("");
 
     const payload: Record<string, string> = {};
-    if (bulkPlanoId) payload.plano_id = bulkPlanoId;
     if (bulkCouponId) payload.coupon_id = bulkCouponId;
 
     const { data, error } = await supabase.rpc("master_bulk_empresa_action", {
@@ -212,9 +232,6 @@ export default function MasterEmpresasPage() {
           <p className="text-slate-500 mt-0.5 text-sm">{empresas.length} empresa(s) cadastrada(s)</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/master/governanca" className="border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm transition">
-            Governança
-          </Link>
           <button onClick={carregar} className="border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm transition">
             Recarregar
           </button>
@@ -235,21 +252,17 @@ export default function MasterEmpresasPage() {
             <option value="bloquear">Bloquear</option>
             <option value="ativar">Ativar</option>
             <option value="trial_plus_7">Extender trial +7 dias</option>
-            <option value="trocar_plano">Trocar plano</option>
             <option value="aplicar_cupom">Aplicar cupom</option>
           </select>
-          <input
-            className="border border-slate-300 rounded-md px-3 py-2 text-sm"
-            value={bulkPlanoId}
-            onChange={(e) => setBulkPlanoId(e.target.value)}
-            placeholder="plano_id (trocar_plano)"
-          />
           <input
             className="border border-slate-300 rounded-md px-3 py-2 text-sm"
             value={bulkCouponId}
             onChange={(e) => setBulkCouponId(e.target.value)}
             placeholder="coupon_id (aplicar_cupom)"
           />
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 flex items-center">
+            Gerenciamento de módulos é feito na edição individual da empresa.
+          </div>
           <button
             onClick={executarAcaoMassa}
             disabled={selectedIds.length === 0}
@@ -340,7 +353,8 @@ export default function MasterEmpresasPage() {
                 </th>
                 <th className="px-4 py-3 text-slate-600 font-medium">Empresa</th>
                 <th className="px-4 py-3 text-slate-600 font-medium">Status</th>
-                <th className="px-4 py-3 text-slate-600 font-medium">Plano</th>
+                <th className="px-4 py-3 text-slate-600 font-medium">Módulos</th>
+                <th className="px-4 py-3 text-slate-600 font-medium">Valor mensal</th>
                 <th className="px-4 py-3 text-slate-600 font-medium">Vencimento</th>
                 <th className="px-4 py-3 text-slate-600 font-medium">Cadastro</th>
                 <th className="px-4 py-3 text-slate-600 font-medium">Ações</th>
@@ -350,6 +364,9 @@ export default function MasterEmpresasPage() {
               {filtradas.map((e) => {
                 const isSelected = selectedIds.includes(e.id);
                 const vencimento = e.proxima_cobranca ? formatData(e.proxima_cobranca) : (e.trial_ate ? `Trial até ${formatData(e.trial_ate)}` : "—");
+                const modulos = (Array.isArray(e.modulos_ativos) ? e.modulos_ativos : []).filter(
+                  (codigo) => !HIDDEN_MODULE_CODES.has(codigo),
+                );
                 return (
                   <tr key={e.id} className="border-b border-slate-100 hover:bg-slate-50 transition">
                     <td className="px-4 py-3">
@@ -371,7 +388,19 @@ export default function MasterEmpresasPage() {
                       </span>
                     </td>
 
-                    <td className="px-4 py-3 text-slate-600">{e.plano_nome ?? "—"}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {modulos.length === 0 ? (
+                        "—"
+                      ) : (
+                        <div className="flex flex-wrap gap-1 max-w-[240px]">
+                          {modulos.slice(0, 3).map((m) => (
+                            <span key={m} className="text-[11px] px-2 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-700">{formatModuloLabel(m)}</span>
+                          ))}
+                          {modulos.length > 3 ? <span className="text-[11px] text-slate-500">+{modulos.length - 3}</span> : null}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{((e.valor_mensal_centavos ?? 0) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</td>
                     <td className="px-4 py-3 text-slate-600">{vencimento}</td>
                     <td className="px-4 py-3 text-slate-500 text-xs">{formatData(e.created_at)}</td>
 

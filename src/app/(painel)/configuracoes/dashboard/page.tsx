@@ -9,6 +9,7 @@ import {
   type DashboardConfig,
   writeDashboardConfigLocal,
 } from "@/lib/dashboardConfig";
+import { loadEmpresaModuleAccess } from "@/lib/moduleAccess";
 import { supabase } from "@/lib/supabase/client";
 
 export default function ConfiguracoesDashboardPage() {
@@ -17,6 +18,8 @@ export default function ConfiguracoesDashboardPage() {
   const [msg, setMsg] = useState("");
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [config, setConfig] = useState<DashboardConfig>(DASHBOARD_CONFIG_DEFAULTS);
+  const [canConfigurarWidgetFinanceiro, setCanConfigurarWidgetFinanceiro] = useState(false);
+  const [canConfigurarWidgetManutencao, setCanConfigurarWidgetManutencao] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -47,6 +50,12 @@ export default function ConfiguracoesDashboardPage() {
 
       const localCfg = readDashboardConfigLocal(profile.empresa_id);
       if (localCfg) setConfig(localCfg);
+
+      const access = await loadEmpresaModuleAccess();
+      const financeiroAtivo = access.canUseAllModules || access.allowedModules.includes("financeiro");
+      const manutencaoAtiva = access.canUseAllModules || access.allowedModules.includes("manutencao");
+      setCanConfigurarWidgetFinanceiro(financeiroAtivo);
+      setCanConfigurarWidgetManutencao(manutencaoAtiva);
 
       const { data: empresaData, error: empresaError } = await supabase
         .from("empresas")
@@ -109,13 +118,13 @@ export default function ConfiguracoesDashboardPage() {
     setMsg("Configurações do dashboard salvas com sucesso.");
   }
 
-  if (loading) return <div className="text-slate-400 text-sm">Carregando configurações do dashboard...</div>;
+  if (loading) return <div className="text-slate-500 text-sm">Carregando configurações do dashboard...</div>;
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-4xl">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Configurações do Dashboard</h1>
-        <p className="text-slate-400 text-sm mt-0.5">
+        <h1 className="text-2xl font-semibold text-slate-900">Configurações do Dashboard</h1>
+        <p className="text-slate-600 text-sm mt-0.5">
           Ative ou desative os blocos que devem aparecer no dashboard da empresa.
         </p>
       </div>
@@ -124,22 +133,38 @@ export default function ConfiguracoesDashboardPage() {
         <div
           className={`rounded-lg border px-4 py-3 text-sm ${
             msg.startsWith("Erro")
-              ? "border-red-500/30 bg-red-500/10 text-red-300"
-              : "border-green-500/30 bg-green-500/10 text-green-300"
+              ? "border-rose-200 bg-rose-50 text-rose-700"
+              : "border-emerald-200 bg-emerald-50 text-emerald-700"
           }`}
         >
           {msg}
         </div>
       ) : null}
 
-      <div className="bg-white border border-slate-200 rounded-xl p-6">
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+        {!canConfigurarWidgetFinanceiro ? (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+            O widget financeiro só fica disponível quando o módulo Financeiro estiver ativo para a empresa.
+          </div>
+        ) : null}
+
+        {!canConfigurarWidgetManutencao ? (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+            O widget de manutenção só fica disponível quando o módulo Manutenção estiver ativo para a empresa.
+          </div>
+        ) : null}
+
         <div className="space-y-3">
-          {DASHBOARD_CONFIG_LABELS.map((item) => {
+          {DASHBOARD_CONFIG_LABELS.filter(
+            (item) =>
+              (item.key !== "widget_financeiro_resumo" || canConfigurarWidgetFinanceiro) &&
+              (item.key !== "widget_manutencao_resumo" || canConfigurarWidgetManutencao)
+          ).map((item) => {
             const ativo = config[item.key];
             return (
               <div
                 key={item.key}
-                className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3"
+                className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 bg-slate-50/50"
               >
                 <div>
                   <div className="text-sm font-medium text-slate-900">{item.label}</div>
@@ -180,7 +205,7 @@ export default function ConfiguracoesDashboardPage() {
             type="button"
             onClick={salvar}
             disabled={saving}
-            className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+            className="px-4 py-2 text-sm rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
           >
             {saving ? "Salvando..." : "Salvar"}
           </button>

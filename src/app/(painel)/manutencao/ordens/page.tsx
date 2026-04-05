@@ -1,123 +1,118 @@
 "use client";
 
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { supabase } from "@/lib/supabase/client";
-import { moeda } from "@/lib/manutencao";
-import { StatusBadge } from "@/components/manutencao/StatusBadge";
-
-type Ordem = {
-  id: string;
-  status: "aberta" | "analise" | "aguardando_pecas" | "andamento" | "finalizada";
-  tipo: "corretiva" | "preventiva" | "emergencial";
-  prioridade: "baixa" | "media" | "alta";
-  diagnostico: string | null;
-  km: number | null;
-  custo_total: number;
-  data_abertura: string;
-  data_conclusao: string | null;
-  veiculos: { placa: string | null; modelo: string | null } | null;
-};
+import { fetchOrdens, dataBR } from "@/lib/manutencao";
+import type { ManutencaoOrdem } from "@/types/manutencao.types";
+import { STATUS_COLORS, STATUS_LABELS, PRIORIDADE_COLORS, PRIORIDADE_LABELS } from "@/types/manutencao.types";
 
 export default function OrdensManutencaoPage() {
+  const [ordens, setOrdens] = useState<ManutencaoOrdem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState<string>("todos");
+  const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [filtroTipo, setFiltroTipo] = useState("todos");
   const [busca, setBusca] = useState("");
-  const [ordens, setOrdens] = useState<Ordem[]>([]);
 
-  async function carregar() {
+  const loadData = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("ordens_manutencao")
-      .select("id,status,tipo,prioridade,diagnostico,km,custo_total,data_abertura,data_conclusao,veiculos(placa,modelo)")
-      .order("data_abertura", { ascending: false })
-      .limit(400);
-    setOrdens((data as Ordem[] | null) ?? []);
-    setLoading(false);
-  }
+    try {
+      const data = await fetchOrdens(
+        filtroStatus === "todos" ? undefined : filtroStatus,
+        filtroTipo === "todos" ? undefined : filtroTipo
+      );
+      setOrdens(data);
+    } catch (err) {
+      console.error("Erro:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [filtroStatus, filtroTipo]);
 
-  useEffect(() => {
-    const t = setTimeout(() => void carregar(), 0);
-    return () => clearTimeout(t);
-  }, []);
+  useEffect(() => { loadData(); }, [loadData]);
 
   const filtradas = useMemo(() => {
-    const q = busca.trim().toLowerCase();
-    return ordens
-      .filter((o) => (status === "todos" ? true : o.status === status))
-      .filter((o) => {
-        if (!q) return true;
-        return [o.veiculos?.placa ?? "", o.veiculos?.modelo ?? "", o.tipo, o.prioridade, o.diagnostico ?? ""]
-          .join(" ")
-          .toLowerCase()
-          .includes(q);
-      });
-  }, [ordens, status, busca]);
+    const q = busca.toLowerCase();
+    if (!q) return ordens;
+    return ordens.filter(o =>
+      o.veiculos?.placa?.toLowerCase().includes(q) ||
+      o.veiculos?.modelo?.toLowerCase().includes(q) ||
+      o.diagnostico?.toLowerCase().includes(q) ||
+      o.tipo.toLowerCase().includes(q)
+    );
+  }, [ordens, busca]);
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Manutenção · Ordens"
-        description="Ordens de manutenção com filtros por status e acesso ao detalhe completo."
+        title="Manutenção · Ordens de Serviço"
+        description="Gestão completa de ordens de manutenção"
         actions={
-          <Link href="/manutencao/solicitacoes" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500">
-            Solicitações
+          <Link href="/manutencao/ordens/nova" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500 text-sm">
+            + Nova OS
           </Link>
         }
       />
 
-      <div className="bg-white border border-slate-200 rounded-xl p-5 grid gap-3 md:grid-cols-3">
-        <input className="md:col-span-2 border border-slate-300 rounded-md px-3 py-2" placeholder="Buscar por veículo, tipo, diagnóstico" value={busca} onChange={(e) => setBusca(e.target.value)} />
-        <select className="border border-slate-300 rounded-md px-3 py-2" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="todos">Todos</option>
-          <option value="aberta">aberta</option>
-          <option value="analise">analise</option>
-          <option value="aguardando_pecas">aguardando_pecas</option>
-          <option value="andamento">andamento</option>
-          <option value="finalizada">finalizada</option>
+      {/* Filtros */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 grid md:grid-cols-4 gap-3">
+        <input className="md:col-span-2 border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Buscar por placa, modelo, diagnóstico..." value={busca} onChange={e => setBusca(e.target.value)} />
+        <select className="border border-slate-300 rounded-md px-3 py-2 text-sm" value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}>
+          <option value="todos">Todos os status</option>
+          {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select className="border border-slate-300 rounded-md px-3 py-2 text-sm" value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}>
+          <option value="todos">Todos os tipos</option>
+          <option value="corretiva">Corretiva</option>
+          <option value="preventiva">Preventiva</option>
+          <option value="emergencial">Emergencial</option>
+          <option value="preditiva">Preditiva</option>
         </select>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl p-5 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left border-b">
-              <th className="py-2 pr-4">Veículo</th>
-              <th className="py-2 pr-4">Tipo</th>
-              <th className="py-2 pr-4">Prioridade</th>
-              <th className="py-2 pr-4">Diagnóstico</th>
-              <th className="py-2 pr-4">Abertura</th>
-              <th className="py-2 pr-4">Custo</th>
-              <th className="py-2 pr-4">Status</th>
-              <th className="py-2 text-right">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={8} className="py-3 text-slate-500">Carregando...</td></tr>
-            ) : filtradas.length === 0 ? (
-              <tr><td colSpan={8} className="py-3 text-slate-500">Nenhuma ordem encontrada.</td></tr>
-            ) : (
-              filtradas.map((o) => (
-                <tr key={o.id} className="border-b last:border-0 align-top">
-                  <td className="py-2 pr-4 font-medium">{o.veiculos?.placa ?? "—"}</td>
-                  <td className="py-2 pr-4">{o.tipo}</td>
-                  <td className="py-2 pr-4">{o.prioridade}</td>
-                  <td className="py-2 pr-4 max-w-[280px]">{o.diagnostico ?? "—"}</td>
-                  <td className="py-2 pr-4">{new Date(o.data_abertura).toLocaleDateString("pt-BR")}</td>
-                  <td className="py-2 pr-4">{moeda(o.custo_total)}</td>
-                  <td className="py-2 pr-4"><StatusBadge status={o.status} /></td>
-                  <td className="py-2 text-right">
-                    <Link href={`/manutencao/ordens/${o.id}`} className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-50">
+      {/* Tabela */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+        {loading ? (
+          <div className="p-8 text-center text-slate-500">Carregando...</div>
+        ) : filtradas.length === 0 ? (
+          <div className="p-8 text-center text-slate-500">Nenhuma ordem encontrada.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left border-b border-slate-200 bg-slate-50">
+                <th className="py-3 px-4">Veículo</th>
+                <th className="py-3 px-4">Tipo</th>
+                <th className="py-3 px-4">Prioridade</th>
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4">Abertura</th>
+                <th className="py-3 px-4 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filtradas.map(o => (
+                <tr key={o.id} className="hover:bg-slate-50 transition">
+                  <td className="py-3 px-4">
+                    <span className="font-medium">{o.veiculos?.placa ?? "—"}</span>
+                    {o.veiculos?.modelo && <span className="text-slate-500 text-xs ml-2">{o.veiculos.modelo}</span>}
+                  </td>
+                  <td className="py-3 px-4 capitalize">{o.tipo}</td>
+                  <td className="py-3 px-4">
+                    <span className={`px-2 py-0.5 text-xs rounded-full ${PRIORIDADE_COLORS[o.prioridade]}`}>{PRIORIDADE_LABELS[o.prioridade]}</span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className={`px-2 py-0.5 text-xs rounded-full border ${STATUS_COLORS[o.status]}`}>{STATUS_LABELS[o.status]}</span>
+                  </td>
+                  <td className="py-3 px-4 text-slate-500">{dataBR(o.created_at)}</td>
+                  <td className="py-3 px-4 text-right">
+                    <Link href={`/manutencao/ordens/${o.id}`} className="px-3 py-1.5 text-xs border border-slate-300 rounded-md hover:bg-slate-50">
                       Detalhar
                     </Link>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

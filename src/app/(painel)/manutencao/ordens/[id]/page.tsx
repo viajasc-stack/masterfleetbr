@@ -1,319 +1,360 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { supabase } from "@/lib/supabase/client";
-import { adicionarPecaNaOS, finalizarOrdem, loadOptions, moeda, ordemStatusOptions } from "@/lib/manutencao";
-import { StatusBadge } from "@/components/manutencao/StatusBadge";
+import { fetchOrdemDetalhe, fetchPecasDaOrdem, fetchServicosDaOrdem, adicionarPecaNaOrdem, adicionarServicoNaOrdem, finalizarOrdem, loadVeiculosAtivos, loadMotoristasAtivos, loadFornecedoresAtivos, loadProdutosAtivos, loadLocaisEstoque, loadTiposServico, dataBR } from "@/lib/manutencao";
+import type { ManutencaoOrdem, ManutencaoOrdemPeca, ManutencaoOrdemServico } from "@/types/manutencao.types";
+import { STATUS_COLORS, STATUS_LABELS, PRIORIDADE_COLORS, PRIORIDADE_LABELS } from "@/types/manutencao.types";
 
-type Ordem = {
-  id: string;
-  tipo: string;
-  status: string;
-  prioridade: string;
-  diagnostico: string | null;
-  km: number | null;
-  custo_total: number;
-  data_abertura: string;
-  data_conclusao: string | null;
-  fornecedor_id: string | null;
-  anexos: unknown;
-  veiculos: { placa: string | null; modelo: string | null } | null;
-};
+type Aba = "dados" | "diagnostico" | "pecas" | "servicos" | "checklist";
+type SelectOption = { id: string; nome?: string | null; placa?: string | null; modelo?: string | null };
 
-type Peca = {
-  id: string;
-  quantidade: number;
-  valor_unitario: number;
-  origem: "estoque" | "compra";
-  itens_estoque: { nome: string | null } | null;
-};
-
-type Servico = {
-  id: string;
-  descricao: string | null;
-  valor: number;
-  tipos_servico: { nome: string | null } | null;
-};
-
-const abas = ["dados-gerais", "diagnostico", "pecas", "servicos", "financeiro", "anexos"] as const;
-type Aba = (typeof abas)[number];
-
-export default function OrdemManutencaoDetalhePage() {
+export default function OrdemDetalhePage() {
   const params = useParams<{ id: string }>();
-  const id = params.id;
-
-  const [aba, setAba] = useState<Aba>("dados-gerais");
-  const [ordem, setOrdem] = useState<Ordem | null>(null);
-  const [pecas, setPecas] = useState<Peca[]>([]);
-  const [servicos, setServicos] = useState<Servico[]>([]);
-  const [itensEstoque, setItensEstoque] = useState<Array<{ id: string; nome: string }>>([]);
-  const [locais, setLocais] = useState<Array<{ id: string; nome: string }>>([]);
-  const [tiposServico, setTiposServico] = useState<Array<{ id: string; nome: string }>>([]);
+  useRouter();
+  const [ordem, setOrdem] = useState<ManutencaoOrdem | null>(null);
+  const [pecas, setPecas] = useState<ManutencaoOrdemPeca[]>([]);
+  const [servicos, setServicos] = useState<ManutencaoOrdemServico[]>([]);
+  const [aba, setAba] = useState<Aba>("dados");
   const [loading, setLoading] = useState(true);
 
-  const [novoStatus, setNovoStatus] = useState("aberta");
-  const [novoDiagnostico, setNovoDiagnostico] = useState("");
+  // Form peça
+  const [pecaProduto, setPecaProduto] = useState("");
+  const [pecaLocal, setPecaLocal] = useState("");
+  const [pecaQtd, setPecaQtd] = useState("1");
+  const [pecaOrigem, setPecaOrigem] = useState("estoque");
 
-  const [pecaItemId, setPecaItemId] = useState("");
-  const [pecaLocalId, setPecaLocalId] = useState("");
-  const [pecaQtd, setPecaQtd] = useState("");
-  const [pecaValor, setPecaValor] = useState("");
-  const [pecaOrigem, setPecaOrigem] = useState<"estoque" | "compra">("estoque");
-
-  const [srvTipoId, setSrvTipoId] = useState("");
+  // Form serviço
+  const [srvTipo, setSrvTipo] = useState("");
   const [srvDesc, setSrvDesc] = useState("");
-  const [srvValor, setSrvValor] = useState("");
+  const [srvHoras, setSrvHoras] = useState("1");
 
-  const carregar = useCallback(async () => {
+  // Form diagnóstico
+  const [diagnostico, setDiagnostico] = useState("");
+  const [causaRaiz, setCausaRaiz] = useState("");
+  const [solucao, setSolucao] = useState("");
+
+  // Options
+  const [produtos, setProdutos] = useState<SelectOption[]>([]);
+  const [locais, setLocais] = useState<SelectOption[]>([]);
+  const [tiposServico, setTiposServico] = useState<SelectOption[]>([]);
+  const [veiculos, setVeiculos] = useState<SelectOption[]>([]);
+  const [motoristas, setMotoristas] = useState<SelectOption[]>([]);
+  const [fornecedores, setFornecedores] = useState<SelectOption[]>([]);
+
+  const loadData = useCallback(async () => {
     setLoading(true);
-    const [ordRes, pecRes, srvRes, itensRes, locaisRes, tiposRes] = await Promise.all([
-      supabase
-        .from("ordens_manutencao")
-        .select("id,tipo,status,prioridade,diagnostico,km,custo_total,data_abertura,data_conclusao,fornecedor_id,anexos,veiculos(placa,modelo)")
-        .eq("id", id)
-        .maybeSingle(),
-      supabase.from("manutencao_pecas").select("id,quantidade,valor_unitario,origem,itens_estoque(nome)").eq("ordem_id", id),
-      supabase.from("manutencao_servicos").select("id,descricao,valor,tipos_servico(nome)").eq("ordem_id", id),
-      loadOptions("itens_estoque", "nome", true),
-      loadOptions("locais_estoque", "nome", true),
-      loadOptions("tipos_servico", "nome", true),
-    ]);
+    try {
+      const [ordemData, pecasData, servicosData, produtosData, locaisData, tiposData, veiculosData, motoristasData, fornecedoresData] = await Promise.all([
+        fetchOrdemDetalhe(params.id),
+        fetchPecasDaOrdem(params.id),
+        fetchServicosDaOrdem(params.id),
+        loadProdutosAtivos(),
+        loadLocaisEstoque(),
+        loadTiposServico(),
+        loadVeiculosAtivos(),
+        loadMotoristasAtivos(),
+        loadFornecedoresAtivos(),
+      ]);
+      setOrdem(ordemData);
+      setPecas(pecasData);
+      setServicos(servicosData);
+      setProdutos(produtosData);
+      setLocais(locaisData);
+      setTiposServico(tiposData);
+      setVeiculos(veiculosData);
+      setMotoristas(motoristasData);
+      setFornecedores(fornecedoresData);
+      if (ordemData) {
+        setDiagnostico(ordemData.diagnostico ?? "");
+        setCausaRaiz(ordemData.causa_raiz ?? "");
+        setSolucao(ordemData.solucao_aplicada ?? "");
+      }
+    } catch (err) {
+      console.error("Erro:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [params.id]);
 
-    const ord = (ordRes.data as Ordem | null) ?? null;
-    setOrdem(ord);
-    setPecas((pecRes.data as Peca[] | null) ?? []);
-    setServicos((srvRes.data as Servico[] | null) ?? []);
-    setItensEstoque(itensRes);
-    setLocais(locaisRes);
-    setTiposServico(tiposRes);
+  useEffect(() => { loadData(); }, [loadData]);
 
-    setNovoStatus(ord?.status ?? "aberta");
-    setNovoDiagnostico(ord?.diagnostico ?? "");
-    setLoading(false);
-  }, [id]);
-
-  useEffect(() => {
-    const t = setTimeout(() => void carregar(), 0);
-    return () => clearTimeout(t);
-  }, [carregar]);
-
-  async function salvarDadosGerais() {
-    await supabase.from("ordens_manutencao").update({ status: novoStatus, diagnostico: novoDiagnostico }).eq("id", id);
-    await carregar();
+  async function handleSalvarDiagnostico() {
+    if (!ordem) return;
+    const { supabase } = await import("@/lib/supabase/client");
+    await supabase.from("manutencao_ordens").update({ diagnostico, causa_raiz: causaRaiz, solucao_aplicada: solucao }).eq("id", ordem.id);
+    await loadData();
+    alert("Diagnóstico salvo!");
   }
 
-  async function addPeca() {
-    if (!pecaItemId || !pecaQtd || !pecaValor) return;
-    await adicionarPecaNaOS({
-      ordemId: id,
-      itemId: pecaItemId,
-      localEstoqueId: pecaLocalId,
-      quantidade: Number(pecaQtd),
-      valorUnitario: Number(pecaValor),
-      origem: pecaOrigem,
-    });
-    setPecaItemId("");
-    setPecaLocalId("");
-    setPecaQtd("");
-    setPecaValor("");
-    await carregar();
+  async function handleAddPeca() {
+    if (!ordem || !pecaProduto || !pecaQtd) return;
+    try {
+      await adicionarPecaNaOrdem({
+        ordem_id: ordem.id,
+        produto_id: pecaProduto,
+        local_estoque_id: pecaLocal || null,
+        quantidade: Number(pecaQtd),
+        valor_unitario: 0,
+        origem: pecaOrigem,
+      });
+      setPecaProduto("");
+      setPecaQtd("1");
+      await loadData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao adicionar peça.");
+    }
   }
 
-  async function addServico() {
-    await supabase.from("manutencao_servicos").insert({
-      ordem_id: id,
-      tipo_servico_id: srvTipoId || null,
-      descricao: srvDesc || null,
-      valor: Number(srvValor || 0),
-    });
-    setSrvTipoId("");
-    setSrvDesc("");
-    setSrvValor("");
-    await carregar();
+  async function handleAddServico() {
+    if (!ordem) return;
+    try {
+      await adicionarServicoNaOrdem({
+        ordem_id: ordem.id,
+        tipo_servico_id: srvTipo || null,
+        descricao: srvDesc || null,
+        quantidade_horas: Number(srvHoras),
+        valor_hora: 0,
+      });
+      setSrvTipo("");
+      setSrvDesc("");
+      setSrvHoras("1");
+      await loadData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao adicionar serviço.");
+    }
   }
 
-  async function concluir() {
-    await finalizarOrdem(id);
-    await carregar();
+  async function handleFinalizar() {
+    if (!ordem) return;
+    if (!confirm("Finalizar esta ordem de serviço?")) return;
+    try {
+      await finalizarOrdem({
+        ordem_id: ordem.id,
+        solucao_aplicada: solucao || null,
+        km_saida: ordem.km_saida ?? null,
+      });
+      await loadData();
+      alert("OS finalizada com sucesso!");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Erro ao finalizar ordem.");
+    }
   }
 
-  const totalPecas = useMemo(() => pecas.reduce((acc, p) => acc + Number(p.quantidade) * Number(p.valor_unitario), 0), [pecas]);
-  const totalServicos = useMemo(() => servicos.reduce((acc, s) => acc + Number(s.valor), 0), [servicos]);
+  if (loading) return <div className="p-8 text-center text-slate-500">Carregando...</div>;
+  if (!ordem) return <div className="p-8 text-center text-slate-500">Ordem não encontrada.</div>;
+
+  const abas: { key: Aba; label: string }[] = [
+    { key: "dados", label: "Dados Gerais" },
+    { key: "diagnostico", label: "Diagnóstico" },
+    { key: "pecas", label: "Peças" },
+    { key: "servicos", label: "Serviços" },
+    { key: "checklist", label: "Checklist" },
+  ];
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Manutenção · Detalhe da Ordem"
-        description={ordem ? `Veículo ${ordem.veiculos?.placa ?? "—"} • ${ordem.tipo}` : ""}
+        title={`OS Manutenção #${ordem.id.slice(0, 8)}`}
+        description={`${ordem.veiculos?.placa ?? "—"} • ${ordem.tipo} • ${ordem.categoria ?? "Sem categoria"}`}
         actions={
-          <>
-            <Link href="/manutencao/ordens" className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50">Voltar</Link>
-            <button type="button" onClick={() => void concluir()} className="bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-500">Finalizar OS</button>
-          </>
+          <div className="flex gap-2">
+            <Link href="/manutencao/ordens" className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 text-sm">Voltar</Link>
+            {ordem.status !== "finalizada" && (
+              <button onClick={handleFinalizar} className="bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-500 text-sm">Finalizar OS</button>
+            )}
+          </div>
         }
       />
 
-      <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <div className="flex flex-wrap gap-2">
-          {abas.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setAba(item)}
-              className={`px-3 py-1.5 rounded-md text-sm border ${aba === item ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 hover:bg-slate-50"}`}
-            >
-              {item.replaceAll("-", " ")}
-            </button>
-          ))}
-        </div>
+      {/* Status e Prioridade */}
+      <div className="flex items-center gap-3">
+        <span className={`px-3 py-1 text-sm rounded-full border ${STATUS_COLORS[ordem.status]}`}>{STATUS_LABELS[ordem.status]}</span>
+        <span className={`px-3 py-1 text-sm rounded-full ${PRIORIDADE_COLORS[ordem.prioridade]}`}>{PRIORIDADE_LABELS[ordem.prioridade]}</span>
+        <span className="text-sm text-slate-500">Aberta em {dataBR(ordem.created_at)}</span>
       </div>
 
-      {loading || !ordem ? (
-        <div className="text-sm text-slate-500">Carregando...</div>
-      ) : null}
-
-      {!loading && ordem && aba === "dados-gerais" ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-          <div className="grid gap-3 md:grid-cols-4 text-sm">
-            <div><span className="text-slate-500">Veículo</span><p className="font-medium">{ordem.veiculos?.placa ?? "—"}</p></div>
-            <div><span className="text-slate-500">Tipo</span><p>{ordem.tipo}</p></div>
-            <div><span className="text-slate-500">Prioridade</span><p>{ordem.prioridade}</p></div>
-            <div><span className="text-slate-500">Status</span><p><StatusBadge status={ordem.status} /></p></div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <select className="border border-slate-300 rounded-md px-3 py-2" value={novoStatus} onChange={(e) => setNovoStatus(e.target.value)}>
-              {ordemStatusOptions.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-            <input className="border border-slate-300 rounded-md px-3 py-2" placeholder="Diagnóstico" value={novoDiagnostico} onChange={(e) => setNovoDiagnostico(e.target.value)} />
-          </div>
-
-          <button type="button" onClick={() => void salvarDadosGerais()} className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500">
-            Salvar dados gerais
+      {/* Abas */}
+      <div className="flex gap-1 border-b border-slate-200">
+        {abas.map(a => (
+          <button key={a.key} onClick={() => setAba(a.key)} className={`px-4 py-2 text-sm font-medium border-b-2 transition ${aba === a.key ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
+            {a.label}
           </button>
-        </div>
-      ) : null}
+        ))}
+      </div>
 
-      {!loading && ordem && aba === "diagnostico" ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
-          <textarea className="w-full border border-slate-300 rounded-md px-3 py-2" rows={4} value={novoDiagnostico} onChange={(e) => setNovoDiagnostico(e.target.value)} />
-          <button type="button" onClick={() => void salvarDadosGerais()} className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500">
-            Salvar diagnóstico
-          </button>
-        </div>
-      ) : null}
-
-      {!loading && ordem && aba === "pecas" ? (
+      {/* Dados Gerais */}
+      {aba === "dados" && (
         <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-          <div className="grid gap-3 md:grid-cols-5">
-            <select className="border border-slate-300 rounded-md px-3 py-2" value={pecaItemId} onChange={(e) => setPecaItemId(e.target.value)}>
-              <option value="">Item</option>
-              {itensEstoque.map((i) => <option key={i.id} value={i.id}>{i.nome}</option>)}
+          <div className="grid md:grid-cols-3 gap-4">
+            <div>
+              <label className="text-sm text-slate-500">Veículo</label>
+              <select className="w-full border border-slate-300 rounded-md px-3 py-2 mt-1 text-sm" value={ordem.veiculo_id} onChange={async e => {
+                const { supabase } = await import("@/lib/supabase/client");
+                await supabase.from("manutencao_ordens").update({ veiculo_id: e.target.value }).eq("id", ordem.id);
+                await loadData();
+              }}>
+                {veiculos.map(v => <option key={v.id} value={v.id}>{v.placa}{v.modelo ? ` - ${v.modelo}` : ""}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm text-slate-500">Motorista</label>
+              <select className="w-full border border-slate-300 rounded-md px-3 py-2 mt-1 text-sm" value={ordem.motorista_id ?? ""} onChange={async e => {
+                const { supabase } = await import("@/lib/supabase/client");
+                await supabase.from("manutencao_ordens").update({ motorista_id: e.target.value || null }).eq("id", ordem.id);
+                await loadData();
+              }}>
+                <option value="">Sem motorista</option>
+                {motoristas.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm text-slate-500">Status</label>
+              <select className="w-full border border-slate-300 rounded-md px-3 py-2 mt-1 text-sm" value={ordem.status} onChange={async e => {
+                const { supabase } = await import("@/lib/supabase/client");
+                await supabase.from("manutencao_ordens").update({ status: e.target.value }).eq("id", ordem.id);
+                await loadData();
+              }}>
+                {Object.keys(STATUS_LABELS).map(s => <option key={s} value={s}>{STATUS_LABELS[s as keyof typeof STATUS_LABELS]}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm text-slate-500">KM Entrada</label>
+              <input type="number" className="w-full border border-slate-300 rounded-md px-3 py-2 mt-1 text-sm" value={ordem.km_entrada ?? ""} onChange={async e => {
+                const { supabase } = await import("@/lib/supabase/client");
+                await supabase.from("manutencao_ordens").update({ km_entrada: e.target.value ? Number(e.target.value) : null }).eq("id", ordem.id);
+                await loadData();
+              }} />
+            </div>
+            <div>
+              <label className="text-sm text-slate-500">KM Saída</label>
+              <input type="number" className="w-full border border-slate-300 rounded-md px-3 py-2 mt-1 text-sm" value={ordem.km_saida ?? ""} onChange={async e => {
+                const { supabase } = await import("@/lib/supabase/client");
+                await supabase.from("manutencao_ordens").update({ km_saida: e.target.value ? Number(e.target.value) : null }).eq("id", ordem.id);
+                await loadData();
+              }} />
+            </div>
+            <div>
+              <label className="text-sm text-slate-500">Oficina/Fornecedor</label>
+              <select className="w-full border border-slate-300 rounded-md px-3 py-2 mt-1 text-sm" value={ordem.fornecedor_id ?? ""} onChange={async e => {
+                const { supabase } = await import("@/lib/supabase/client");
+                await supabase.from("manutencao_ordens").update({ fornecedor_id: e.target.value || null }).eq("id", ordem.id);
+                await loadData();
+              }}>
+                <option value="">Oficina interna</option>
+                {fornecedores.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Diagnóstico */}
+      {aba === "diagnostico" && (
+        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+          <div>
+            <label className="text-sm font-medium text-slate-700">Diagnóstico</label>
+            <textarea className="w-full border border-slate-300 rounded-md px-3 py-2 mt-1 text-sm" rows={3} value={diagnostico} onChange={e => setDiagnostico(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-slate-700">Causa Raiz</label>
+            <textarea className="w-full border border-slate-300 rounded-md px-3 py-2 mt-1 text-sm" rows={2} value={causaRaiz} onChange={e => setCausaRaiz(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-slate-700">Solução Aplicada</label>
+            <textarea className="w-full border border-slate-300 rounded-md px-3 py-2 mt-1 text-sm" rows={3} value={solucao} onChange={e => setSolucao(e.target.value)} />
+          </div>
+          <button onClick={handleSalvarDiagnostico} className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500 text-sm">Salvar Diagnóstico</button>
+        </div>
+      )}
+
+      {/* Peças */}
+      {aba === "pecas" && (
+        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+          <div className="grid md:grid-cols-4 gap-3">
+            <select className="border border-slate-300 rounded-md px-3 py-2 text-sm" value={pecaProduto} onChange={e => setPecaProduto(e.target.value)}>
+              <option value="">Produto</option>
+              {produtos.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
             </select>
-            <select className="border border-slate-300 rounded-md px-3 py-2" value={pecaLocalId} onChange={(e) => setPecaLocalId(e.target.value)}>
-              <option value="">Local</option>
-              {locais.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+            <select className="border border-slate-300 rounded-md px-3 py-2 text-sm" value={pecaLocal} onChange={e => setPecaLocal(e.target.value)}>
+              <option value="">Local estoque</option>
+              {locais.map(l => <option key={l.id} value={l.id}>{l.nome}</option>)}
             </select>
-            <input type="number" className="border border-slate-300 rounded-md px-3 py-2" placeholder="Qtd" value={pecaQtd} onChange={(e) => setPecaQtd(e.target.value)} />
-            <input type="number" step="0.01" className="border border-slate-300 rounded-md px-3 py-2" placeholder="Valor unit." value={pecaValor} onChange={(e) => setPecaValor(e.target.value)} />
-            <select className="border border-slate-300 rounded-md px-3 py-2" value={pecaOrigem} onChange={(e) => setPecaOrigem(e.target.value as "estoque" | "compra")}> 
-              <option value="estoque">estoque</option>
-              <option value="compra">compra</option>
+            <input type="number" className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Qtd" value={pecaQtd} onChange={e => setPecaQtd(e.target.value)} min="1" />
+            <select className="border border-slate-300 rounded-md px-3 py-2 text-sm" value={pecaOrigem} onChange={e => setPecaOrigem(e.target.value)}>
+              <option value="estoque">Estoque</option>
+              <option value="compra_direta">Compra direta</option>
             </select>
           </div>
+          <button onClick={handleAddPeca} className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500 text-sm">Adicionar Peça</button>
 
-          <button type="button" onClick={() => void addPeca()} className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500">Adicionar peça</button>
-
-          <div className="overflow-x-auto">
+          {pecas.length > 0 && (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left border-b">
-                  <th className="py-2 pr-4">Item</th>
-                  <th className="py-2 pr-4">Origem</th>
-                  <th className="py-2 pr-4">Qtd</th>
-                  <th className="py-2 pr-4">Valor unit.</th>
-                  <th className="py-2">Subtotal</th>
+                <tr className="text-left border-b border-slate-200 bg-slate-50">
+                  <th className="py-2 px-3">Produto</th>
+                  <th className="py-2 px-3">Qtd</th>
+                  <th className="py-2 px-3">Origem</th>
                 </tr>
               </thead>
               <tbody>
-                {pecas.map((p) => (
-                  <tr key={p.id} className="border-b last:border-0">
-                    <td className="py-2 pr-4">{p.itens_estoque?.nome ?? "—"}</td>
-                    <td className="py-2 pr-4">{p.origem}</td>
-                    <td className="py-2 pr-4">{p.quantidade}</td>
-                    <td className="py-2 pr-4">{moeda(p.valor_unitario)}</td>
-                    <td className="py-2">{moeda(Number(p.quantidade) * Number(p.valor_unitario))}</td>
+                {pecas.map(p => (
+                  <tr key={p.id} className="border-b border-slate-100">
+                    <td className="py-2 px-3">{p.produtos?.nome ?? "—"}</td>
+                    <td className="py-2 px-3">{p.quantidade}</td>
+                    <td className="py-2 px-3">{p.origem}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          )}
         </div>
-      ) : null}
+      )}
 
-      {!loading && ordem && aba === "servicos" ? (
+      {/* Serviços */}
+      {aba === "servicos" && (
         <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-          <div className="grid gap-3 md:grid-cols-3">
-            <select className="border border-slate-300 rounded-md px-3 py-2" value={srvTipoId} onChange={(e) => setSrvTipoId(e.target.value)}>
+          <div className="grid md:grid-cols-3 gap-3">
+            <select className="border border-slate-300 rounded-md px-3 py-2 text-sm" value={srvTipo} onChange={e => setSrvTipo(e.target.value)}>
               <option value="">Tipo de serviço</option>
-              {tiposServico.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
+              {tiposServico.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
             </select>
-            <input className="border border-slate-300 rounded-md px-3 py-2" placeholder="Descrição" value={srvDesc} onChange={(e) => setSrvDesc(e.target.value)} />
-            <input type="number" step="0.01" className="border border-slate-300 rounded-md px-3 py-2" placeholder="Valor" value={srvValor} onChange={(e) => setSrvValor(e.target.value)} />
+            <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Descrição" value={srvDesc} onChange={e => setSrvDesc(e.target.value)} />
+            <input type="number" className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Horas" value={srvHoras} onChange={e => setSrvHoras(e.target.value)} min="0.5" step="0.5" />
           </div>
-          <button type="button" onClick={() => void addServico()} className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500">Adicionar serviço</button>
+          <button onClick={handleAddServico} className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500 text-sm">Adicionar Serviço</button>
 
-          <div className="overflow-x-auto">
+          {servicos.length > 0 && (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left border-b">
-                  <th className="py-2 pr-4">Tipo</th>
-                  <th className="py-2 pr-4">Descrição</th>
-                  <th className="py-2">Valor</th>
+                <tr className="text-left border-b border-slate-200 bg-slate-50">
+                  <th className="py-2 px-3">Tipo</th>
+                  <th className="py-2 px-3">Descrição</th>
+                  <th className="py-2 px-3">Horas</th>
                 </tr>
               </thead>
               <tbody>
-                {servicos.map((s) => (
-                  <tr key={s.id} className="border-b last:border-0">
-                    <td className="py-2 pr-4">{s.tipos_servico?.nome ?? "—"}</td>
-                    <td className="py-2 pr-4">{s.descricao ?? "—"}</td>
-                    <td className="py-2">{moeda(s.valor)}</td>
+                {servicos.map(s => (
+                  <tr key={s.id} className="border-b border-slate-100">
+                    <td className="py-2 px-3">{s.tipos_servico?.nome ?? "—"}</td>
+                    <td className="py-2 px-3">{s.descricao ?? "—"}</td>
+                    <td className="py-2 px-3">{s.quantidade_horas}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          )}
         </div>
-      ) : null}
+      )}
 
-      {!loading && ordem && aba === "financeiro" ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-5 grid gap-3 md:grid-cols-3 text-sm">
-          <div className="rounded-lg border border-slate-200 p-3">
-            <p className="text-slate-500">Total peças</p>
-            <p className="text-lg font-semibold">{moeda(totalPecas)}</p>
-          </div>
-          <div className="rounded-lg border border-slate-200 p-3">
-            <p className="text-slate-500">Total serviços</p>
-            <p className="text-lg font-semibold">{moeda(totalServicos)}</p>
-          </div>
-          <div className="rounded-lg border border-slate-200 p-3">
-            <p className="text-slate-500">Custo total OS</p>
-            <p className="text-lg font-semibold">{moeda(ordem.custo_total)}</p>
-          </div>
+      {/* Checklist */}
+      {aba === "checklist" && (
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <p className="text-sm text-slate-500">Checklist de entrada e saída será implementado aqui.</p>
         </div>
-      ) : null}
-
-      {!loading && ordem && aba === "anexos" ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-5 text-sm">
-          <p className="text-slate-500 mb-2">Anexos (JSON)</p>
-          <pre className="text-xs bg-slate-50 border border-slate-200 rounded-md p-3 overflow-auto">{JSON.stringify(ordem.anexos ?? [], null, 2)}</pre>
-        </div>
-      ) : null}
+      )}
     </div>
   );
 }

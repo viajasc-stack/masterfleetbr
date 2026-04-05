@@ -1,12 +1,14 @@
-name: E2E tests
+name: Billing smoke + E2E tests
 
 on:
   workflow_dispatch: {}
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  e2e:
+  billing-smoke-and-e2e:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,10 +21,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run smoke critical web
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SMOKE_EMPRESA_EMAIL: smoke.web.ci@example.com
+        run: npm run smoke:web
+
       - name: Run E2E script
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
+          E2E_EMPRESA_EMAIL: e2e.billing.ci@example.com
         run: |
           node ./scripts/e2e_test.js

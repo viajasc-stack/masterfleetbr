@@ -1,36 +1,79 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MasterFleet BR — Web + Billing
 
-## Getting Started
+Aplicação web (Next.js) com módulos operacionais e esteira de billing integrada com Supabase.
 
-First, run the development server:
+## Requisitos
+
+- Node.js 20+
+- NPM
+- Variáveis de ambiente em `.env.local` para Supabase (mínimo para smoke/e2e):
+  - `SUPABASE_URL` (ou `NEXT_PUBLIC_SUPABASE_URL`)
+  - `SUPABASE_SERVICE_ROLE_KEY`
+
+## Desenvolvimento local
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Scripts principais
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `npm run lint` — lint geral.
+- `npm run build` — build de produção.
+- `npm run ci:verify` — lint + build (gate base).
+- `npm run smoke:web` — smoke crítico de billing/suporte via service role.
+- `npm run verify:etapa4` — lint crítico + smoke web.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Smoke e E2E de billing
 
-## Learn More
+### Smoke crítico (idempotente)
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run smoke:web
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Variável opcional:
+- `SMOKE_EMPRESA_EMAIL` (default: `smoke.web.critical@example.com`)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### E2E billing
 
-## Deploy on Vercel
+```bash
+node scripts/e2e_test.js
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Variável opcional:
+- `E2E_EMPRESA_EMAIL` (default: `e2e.billing@example.com`)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## CI (GitHub Actions)
+
+Workflow principal de billing:
+- **Nome:** `Billing smoke + E2E tests`
+- **Arquivo:** `.github/workflows/e2e-tests.yml`
+- **Gatilhos:**
+  - `workflow_dispatch`
+  - `push` em `main`
+  - `pull_request` em `main`
+
+Pipeline executado:
+1. `npm run smoke:web`
+2. `node ./scripts/e2e_test.js`
+
+Secrets obrigatórios no repositório:
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `MP_ACCESS_TOKEN`
+
+> Para operação do dia a dia (runbook, troubleshooting, branch protection e lista completa de workflows), consulte `docs/DEPLOY.md`.
+
+## Status da esteira (pronto para produção)
+
+- [x] Smoke crítico com comportamento idempotente.
+- [x] E2E billing com validações de resposta e reuso de dados.
+- [x] Workflow de billing cobrindo `push` e `pull_request` em `main`.
+- [x] Documentação operacional atualizada (`docs/DEPLOY.md` e `docs/ETAPA4_EXECUCAO_INTEGRADA.md`).
+
+## Referências
+
+- Deploy e segredos: `docs/DEPLOY.md`
+- Etapa 4 (execução integrada): `docs/ETAPA4_EXECUCAO_INTEGRADA.md`

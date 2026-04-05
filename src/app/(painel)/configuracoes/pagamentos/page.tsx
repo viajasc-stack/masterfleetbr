@@ -120,20 +120,20 @@ export default function ConfiguracoesPagamentosPage() {
   if (loading) return <div className="text-sm text-slate-500">Carregando configurações...</div>;
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-5xl">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Configurações de Pagamento</h1>
-        <p className="text-slate-400 text-sm mt-0.5">Gerencie Mercado Pago e Asaas da sua empresa.</p>
+        <h1 className="text-2xl font-semibold text-slate-900">Configurações de Pagamento</h1>
+        <p className="text-slate-600 text-sm mt-0.5">Gerencie Mercado Pago e Asaas da sua empresa.</p>
       </div>
 
       {msg ? (
-        <div className={`rounded-lg border px-4 py-3 text-sm ${msg.startsWith("Erro") ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-green-500/30 bg-green-500/10 text-green-300"}`}>
+        <div className={`rounded-lg border px-4 py-3 text-sm ${msg.startsWith("Erro") ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
           {msg}
         </div>
       ) : null}
 
       <form onSubmit={salvar} className="space-y-5">
-        <section className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-5 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-slate-900">Mercado Pago</h2>
             <label className="inline-flex items-center gap-2 text-sm text-slate-700">
@@ -155,7 +155,7 @@ export default function ConfiguracoesPagamentosPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm p-5 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-slate-900">Asaas</h2>
             <label className="inline-flex items-center gap-2 text-sm text-slate-700">
@@ -177,7 +177,7 @@ export default function ConfiguracoesPagamentosPage() {
           </div>
         </section>
 
-        <button type="submit" disabled={saving} className="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 disabled:opacity-60">
+        <button type="submit" disabled={saving} className="bg-indigo-600 text-white px-5 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-60">
           {saving ? "Salvando..." : "Salvar configurações"}
         </button>
       </form>
@@ -190,7 +190,7 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
     <div>
       <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
       <input
-        className="w-full border border-slate-300 rounded-md px-3 py-2"
+        className="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

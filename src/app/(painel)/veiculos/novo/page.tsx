@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
 
 const TIPOS_VEICULO = ["automovel", "van", "microonibus", "onibus"] as const;
@@ -34,6 +35,7 @@ export default function NovoVeiculoPage() {
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>("");
   const [uploadWarning, setUploadWarning] = useState<string>("");
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
 
   const [placa, setPlaca] = useState("");
   const [prefixo, setPrefixo] = useState("");
@@ -324,7 +326,11 @@ export default function NovoVeiculoPage() {
       }
     }
 
-    router.push(`/veiculos/${data.id}`);
+    setSuccessModalOpen(true);
+  }
+
+  function confirmarSucesso() {
+    router.push("/veiculos");
     router.refresh();
   }
 
@@ -746,6 +752,13 @@ export default function NovoVeiculoPage() {
           </Link>
         </div>
       </form>
+
+      <SuccessRedirectModal
+        open={successModalOpen}
+        title="Veículo adicionado com sucesso"
+        description="Cadastro concluído."
+        onConfirm={confirmarSucesso}
+      />
     </div>
   );
 }

@@ -56,7 +56,7 @@ export default function MovimentacoesEstoquePage() {
     <div className="space-y-6">
       <PageHeader
         title="Estoque · Movimentações"
-        description="Auditoria completa de entradas, saídas, ajustes e transferências com saldo anterior/posterior."
+        description="Auditoria completa de entradas, saídas e ajustes com saldo anterior/posterior."
       />
 
       {erro ? <div className="rounded border border-rose-300 bg-rose-50 text-rose-700 text-sm px-3 py-2">{erro}</div> : null}
@@ -69,8 +69,6 @@ export default function MovimentacoesEstoquePage() {
           <option value="saida">Saída</option>
           <option value="ajuste_positivo">Ajuste positivo</option>
           <option value="ajuste_negativo">Ajuste negativo</option>
-          <option value="transferencia_saida">Transferência saída</option>
-          <option value="transferencia_entrada">Transferência entrada</option>
         </select>
       </div>
 

@@ -42,7 +42,11 @@ export default function PainelLayout({ children }: { children: React.ReactNode }
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
-      <Sidebar mobileOpen={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
+      <Sidebar
+        mobileOpen={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        empresaNome={empresaNome}
+      />
       <div className="flex-1 flex flex-col min-w-0">
         <Topbar
           empresaNome={empresaNome}

@@ -187,6 +187,7 @@ CREATE POLICY support_messages_master_insert
   FOR INSERT
   WITH CHECK (public.is_super_admin());
 
+DROP FUNCTION IF EXISTS public.support_create_ticket(text, text, text, text);
 CREATE OR REPLACE FUNCTION public.support_create_ticket(
   p_assunto text,
   p_categoria text DEFAULT 'geral',
@@ -255,6 +256,7 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.support_add_message(uuid, text);
 CREATE OR REPLACE FUNCTION public.support_add_message(
   p_ticket_id uuid,
   p_mensagem text
@@ -305,6 +307,8 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.master_support_list_tickets(text, text, text, integer);
+DROP FUNCTION IF EXISTS public.master_support_list_tickets(text, integer, text, text);
 CREATE OR REPLACE FUNCTION public.master_support_list_tickets(
   p_status text DEFAULT NULL,
   p_prioridade text DEFAULT NULL,
@@ -434,6 +438,7 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.master_support_reply(uuid, text, boolean, text, text);
 CREATE OR REPLACE FUNCTION public.master_support_reply(
   p_ticket_id uuid,
   p_mensagem text,
@@ -505,6 +510,7 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.master_support_set_status(uuid, text, text);
 CREATE OR REPLACE FUNCTION public.master_support_set_status(
   p_ticket_id uuid,
   p_status text,

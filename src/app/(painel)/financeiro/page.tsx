@@ -30,18 +30,10 @@ type SerieMensal = {
   receber: number;
 };
 
-type Billing = {
-  status: string;
-  plano_nome?: string | null;
-  trial_ate?: string | null;
-  proxima_cobranca?: string | null;
-};
-
 export default function FinanceiroPage() {
   const [resumo, setResumo] = useState<Resumo>({ a_pagar: 0, a_receber: 0, vencidas_pagar: 0, vencidas_receber: 0, total_pagar: 0, total_receber: 0 });
   const [contas, setContas] = useState<Conta[]>([]);
   const [loading, setLoading] = useState(true);
-  const [billing, setBilling] = useState<Billing | null>(null);
   const [erro, setErro] = useState("");
 
   useEffect(() => {
@@ -51,18 +43,14 @@ export default function FinanceiroPage() {
       try {
         const hoje = new Date().toISOString().slice(0, 10);
 
-        const [{ data, error: contasErr }, { data: bill, error: billErr }] = await Promise.all([
-          supabase
-            .from("contas_financeiras")
-            .select("id, descricao, tipo, valor, data_vencimento, status, categoria")
-            .in("status", ["pendente", "pago", "recebido"])
-            .order("data_vencimento", { ascending: true })
-            .limit(500),
-          supabase.rpc("get_billing_current"),
-        ]);
+        const { data, error: contasErr } = await supabase
+          .from("contas_financeiras")
+          .select("id, descricao, tipo, valor, data_vencimento, status, categoria")
+          .in("status", ["pendente", "pago", "recebido"])
+          .order("data_vencimento", { ascending: true })
+          .limit(500);
 
         if (contasErr) throw contasErr;
-        if (billErr) throw billErr;
 
         const lista = (data as Conta[]) ?? [];
         setContas(lista);
@@ -79,14 +67,6 @@ export default function FinanceiroPage() {
           total_receber: pendReceber.reduce((s, c) => s + c.valor, 0),
         });
 
-        if (bill) {
-          setBilling({
-            status: bill.status ?? "trial",
-            plano_nome: bill.plano_nome ?? null,
-            trial_ate: bill.trial_ate ?? null,
-            proxima_cobranca: bill.proxima_cobranca ?? null,
-          });
-        }
       } catch (e) {
         setErro(financeiroErrorMessage(e, "Falha ao carregar dashboard financeiro."));
       } finally {
@@ -169,26 +149,6 @@ export default function FinanceiroPage() {
       </div>
 
       {erro ? <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{erro}</div> : null}
-
-      {billing && (
-        <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm flex items-center justify-between">
-          <div className="text-sm">
-            <span className="text-slate-600">Assinatura</span>
-            <span className={`ml-2 text-xs px-2 py-1 rounded border ${
-              billing.status === "ativa" ? "border-emerald-200 text-emerald-700 bg-emerald-50"
-              : billing.status === "trial" ? "border-indigo-200 text-indigo-700 bg-indigo-50"
-              : billing.status === "past_due" ? "border-amber-200 text-amber-700 bg-amber-50"
-              : "border-rose-200 text-rose-700 bg-rose-50"
-            }`}>{billing.status}</span>
-            {billing.plano_nome && <span className="ml-2 text-slate-600">Plano: <span className="text-slate-900 font-medium">{billing.plano_nome}</span></span>}
-            {billing.proxima_cobranca && <span className="ml-2 text-slate-600">Próx.: <span className="text-slate-900">{new Date(billing.proxima_cobranca).toLocaleDateString("pt-BR")}</span></span>}
-            {billing.trial_ate && <span className="ml-2 text-slate-600">Trial: <span className="text-slate-900">{new Date(billing.trial_ate).toLocaleDateString("pt-BR")}</span></span>}
-          </div>
-          {(billing.status === "past_due" || billing.status === "bloqueada") && (
-            <Link href="/bloqueado" className="text-xs text-amber-700 font-medium hover:underline">Regularizar</Link>
-          )}
-        </div>
-      )}
 
       {loading ? (
         <div className="text-slate-500 text-sm">Carregando...</div>

@@ -8,28 +8,37 @@ import { logError, logInfo } from "@/lib/observability";
 
 type Billing = {
   status: string;
+  billing_model?: string | null;
   plano_id?: string | null;
   plano_nome?: string | null;
   trial_ate?: string | null;
   proxima_cobranca?: string | null;
+  valor_total_centavos?: number | null;
+  modulos_ativos?: string[];
   fatura_id?: string | null;
   valor_centavos?: number | null;
   fatura_status?: string | null;
   vencimento?: string | null;
 };
 
-type Plano = {
-  id: string;
+type Modulo = {
+  codigo: string;
   nome: string;
-  valor_centavos: number;
+  descricao?: string | null;
+  categoria?: string | null;
+  preco_centavos: number;
+  ativo_empresa: boolean;
+  ativo_global: boolean;
+  venda_ativa: boolean;
+  base_obrigatoria: boolean;
 };
 
 export default function AssinaturaPage() {
   const [loading, setLoading] = useState(true);
   const [billing, setBilling] = useState<Billing | null>(null);
-  const [planos, setPlanos] = useState<Plano[]>([]);
-  const [savingPlano, setSavingPlano] = useState(false);
-  const [msgPlano, setMsgPlano] = useState<string | null>(null);
+  const [modulos, setModulos] = useState<Modulo[]>([]);
+  const [savingModulo, setSavingModulo] = useState<string | null>(null);
+  const [msgModulo, setMsgModulo] = useState<string | null>(null);
   const [savingFatura, setSavingFatura] = useState(false);
   const [msgFatura, setMsgFatura] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -41,10 +50,15 @@ export default function AssinaturaPage() {
 
     setBilling({
       status: billingAtualizado.status ?? "trial",
+      billing_model: billingAtualizado.billing_model ?? "modular",
       plano_id: billingAtualizado.plano_id ?? null,
       plano_nome: billingAtualizado.plano_nome ?? null,
       trial_ate: billingAtualizado.trial_ate ?? null,
       proxima_cobranca: billingAtualizado.proxima_cobranca ?? null,
+      valor_total_centavos: billingAtualizado.valor_total_centavos ?? null,
+      modulos_ativos: Array.isArray(billingAtualizado.modulos_ativos)
+        ? billingAtualizado.modulos_ativos.map((m: unknown) => String(m))
+        : [],
       fatura_id: billingAtualizado.fatura_id ?? null,
       valor_centavos: billingAtualizado.valor_centavos ?? null,
       fatura_status: billingAtualizado.fatura_status ?? null,
@@ -57,23 +71,28 @@ export default function AssinaturaPage() {
       setLoading(true);
       setErro(null);
       try {
-        const [{ data, error: billingErr }, { data: planosData, error: planosErr }] = await Promise.all([
+        const [{ data, error: billingErr }, { data: modulosData, error: modulosErr }] = await Promise.all([
           supabase.rpc("get_billing_current"),
-          supabase.from("planos").select("id, nome, valor_centavos").eq("ativo", true).order("ordem", { ascending: true }),
+          supabase.rpc("get_my_module_catalog"),
         ]);
 
         if (billingErr) throw billingErr;
-        if (planosErr) throw planosErr;
+        if (modulosErr) throw modulosErr;
 
-        setPlanos((planosData as Plano[]) ?? []);
+        setModulos((modulosData as Modulo[]) ?? []);
 
         if (data) {
           setBilling({
             status: data.status ?? "trial",
+            billing_model: data.billing_model ?? "modular",
             plano_id: data.plano_id ?? null,
             plano_nome: data.plano_nome ?? null,
             trial_ate: data.trial_ate ?? null,
             proxima_cobranca: data.proxima_cobranca ?? null,
+            valor_total_centavos: data.valor_total_centavos ?? null,
+            modulos_ativos: Array.isArray(data.modulos_ativos)
+              ? data.modulos_ativos.map((m: unknown) => String(m))
+              : [],
             fatura_id: data.fatura_id ?? null,
             valor_centavos: data.valor_centavos ?? null,
             fatura_status: data.fatura_status ?? null,
@@ -99,30 +118,38 @@ export default function AssinaturaPage() {
 
   const fmt = (v?: number | null) => ((v ?? 0) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  async function alterarPlano(planoId: string) {
-    setSavingPlano(true);
-    setMsgPlano(null);
+  const hasOperationalModule = modulos.some((m) => m.codigo === "operacional" && m.ativo_empresa);
+
+  async function toggleModulo(modulo: Modulo) {
+    setSavingModulo(modulo.codigo);
+    setMsgModulo(null);
     setErro(null);
 
-    const { data, error } = await supabase.rpc("change_my_plan", { p_plano_id: planoId });
+    const { data, error } = await supabase.rpc("toggle_my_module_subscription", {
+      p_modulo_codigo: modulo.codigo,
+      p_ativo: !modulo.ativo_empresa,
+    });
 
     if (error || !data) {
-      logError("financeiro.assinatura", "Erro ao alterar plano", error, { plano_id: planoId });
-      setMsgPlano(financeiroErrorMessage(error, "Erro ao alterar plano."));
-      setSavingPlano(false);
+      logError("financeiro.assinatura", "Erro ao alterar módulo", error, { modulo_codigo: modulo.codigo });
+      setMsgModulo(financeiroErrorMessage(error, "Erro ao alterar módulo."));
+      setSavingModulo(null);
       return;
     }
 
     try {
       await carregarBilling();
+      const { data: modulosAtualizados, error: modulosErr } = await supabase.rpc("get_my_module_catalog");
+      if (modulosErr) throw modulosErr;
+      setModulos((modulosAtualizados as Modulo[]) ?? []);
     } catch (e) {
-      logError("financeiro.assinatura", "Plano alterado, mas falhou ao recarregar billing", e, { plano_id: planoId });
-      setErro(financeiroErrorMessage(e, "Plano alterado, mas falhou ao recarregar resumo."));
+      logError("financeiro.assinatura", "Módulo alterado, mas falhou ao recarregar billing", e, { modulo_codigo: modulo.codigo });
+      setErro(financeiroErrorMessage(e, "Módulo alterado, mas falhou ao recarregar resumo."));
     }
 
-    logInfo("financeiro.assinatura", "Plano alterado com sucesso", { plano_id: planoId });
-    setMsgPlano("Plano alterado com sucesso.");
-    setSavingPlano(false);
+    logInfo("financeiro.assinatura", "Módulo alterado com sucesso", { modulo_codigo: modulo.codigo, ativo: !modulo.ativo_empresa });
+    setMsgModulo(`Módulo ${modulo.nome} ${modulo.ativo_empresa ? "desativado" : "ativado"} com sucesso.`);
+    setSavingModulo(null);
   }
 
   async function gerarFaturaManual() {
@@ -154,8 +181,8 @@ export default function AssinaturaPage() {
     <div className="space-y-6 max-w-3xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Assinatura</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Acompanhe o plano e situação da cobrança da sua empresa.</p>
+            <h1 className="text-2xl font-semibold text-slate-900">Assinatura modular</h1>
+            <p className="text-sm text-slate-500 mt-0.5">Gerencie os módulos contratados e a cobrança mensal da sua empresa.</p>
         </div>
         <Link href="/financeiro/faturas" className="text-sm text-indigo-600 hover:underline">
           Ver faturas
@@ -180,14 +207,12 @@ export default function AssinaturaPage() {
 
             <div className="grid md:grid-cols-3 gap-4 mt-4 text-sm">
               <div>
-                <div className="text-slate-500">Plano atual</div>
-                <div className="font-semibold text-slate-900 mt-1">{billing.plano_nome ?? "—"}</div>
+                <div className="text-slate-500">Modelo</div>
+                <div className="font-semibold text-slate-900 mt-1 capitalize">{billing.billing_model ?? "modular"}</div>
               </div>
               <div>
-                <div className="text-slate-500">Trial até</div>
-                <div className="font-semibold text-slate-900 mt-1">
-                  {billing.trial_ate ? new Date(billing.trial_ate).toLocaleDateString("pt-BR") : "—"}
-                </div>
+                <div className="text-slate-500">Valor mensal atual</div>
+                <div className="font-semibold text-slate-900 mt-1">{fmt(billing.valor_total_centavos)}</div>
               </div>
               <div>
                 <div className="text-slate-500">Próxima cobrança</div>
@@ -197,34 +222,74 @@ export default function AssinaturaPage() {
               </div>
             </div>
 
+            <div className="grid md:grid-cols-2 gap-4 mt-4 text-sm">
+              <div>
+                <div className="text-slate-500">Status</div>
+                <div className="font-semibold text-slate-900 mt-1 capitalize">{billing.status}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Trial até</div>
+                <div className="font-semibold text-slate-900 mt-1">
+                  {billing.trial_ate ? new Date(billing.trial_ate).toLocaleDateString("pt-BR") : "—"}
+                </div>
+              </div>
+            </div>
+
             <div className="mt-5 border-t border-slate-100 pt-4">
-              <div className="text-sm font-medium text-slate-800 mb-2">Alterar plano</div>
-              {planos.length === 0 ? (
-                <p className="text-sm text-slate-500">Nenhum plano ativo disponível no momento.</p>
+              <div className="text-sm font-medium text-slate-800 mb-2">Módulos contratáveis</div>
+              {hasOperationalModule ? (
+                <div className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
+                  <strong>Operacional</strong> é o módulo padrão da plataforma e já contempla dashboard, OS, veículos, motoristas, fretamentos, contratos, passageiros e clientes.
+                </div>
+              ) : null}
+              {modulos.length === 0 ? (
+                <p className="text-sm text-slate-500">Nenhum módulo disponível no momento.</p>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  {planos.map((p) => {
-                    const selecionado = billing.plano_id === p.id;
+                <div className="grid md:grid-cols-2 gap-3">
+                  {modulos.map((m) => {
                     return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => alterarPlano(p.id)}
-                        disabled={savingPlano || selecionado}
-                        className={`px-3 py-2 rounded-md text-sm border transition ${
-                          selecionado
-                            ? "border-slate-300 text-slate-400 bg-slate-50 cursor-default"
-                            : "border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                        }`}
-                      >
-                        {p.nome} ({fmt(p.valor_centavos)}/mês)
-                      </button>
+                      <div key={m.codigo} className="rounded-lg border border-slate-200 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="font-medium text-slate-900">{m.nome}</div>
+                            <div className="text-xs text-slate-500 mt-1">{m.descricao ?? m.codigo}</div>
+                            <div className="text-xs text-slate-500 mt-1">{m.categoria ?? "geral"} • {fmt(m.preco_centavos)}/mês</div>
+                          </div>
+                          <span className={`text-[11px] px-2 py-1 rounded border ${m.ativo_empresa ? "border-emerald-200 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-500 bg-slate-50"}`}>
+                            {m.ativo_empresa ? "Ativo" : "Inativo"}
+                          </span>
+                        </div>
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => toggleModulo(m)}
+                            disabled={savingModulo === m.codigo || m.base_obrigatoria || !m.ativo_global || !m.venda_ativa}
+                            className={`px-3 py-2 rounded-md text-sm border transition ${
+                              m.base_obrigatoria
+                                ? "border-slate-200 text-slate-400 bg-slate-50 cursor-default"
+                                : m.ativo_empresa
+                                  ? "border-rose-200 text-rose-700 hover:bg-rose-50"
+                                  : "border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                            } disabled:opacity-60`}
+                          >
+                            {savingModulo === m.codigo
+                              ? "Salvando..."
+                              : m.base_obrigatoria
+                                ? m.codigo === "operacional"
+                                  ? "Módulo padrão"
+                                  : "Módulo base"
+                                : m.ativo_empresa
+                                  ? "Desativar módulo"
+                                  : "Ativar módulo"}
+                          </button>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
               )}
 
-              {msgPlano && <p className="text-xs text-slate-600 mt-2">{msgPlano}</p>}
+              {msgModulo && <p className="text-xs text-slate-600 mt-2">{msgModulo}</p>}
             </div>
           </div>
 

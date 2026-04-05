@@ -226,8 +226,8 @@ export default function BloqueadoPage() {
           <h1 className="text-2xl font-bold text-white">Acesso bloqueado</h1>
           {motivo === "modulo" ? (
             <p className="text-slate-400 mt-2 text-sm">
-              Este módulo não está disponível no seu plano atual.
-              Escolha um plano com este recurso para continuar.
+              Este módulo não faz parte da sua assinatura modular atual.
+              Ative o módulo desejado para continuar.
             </p>
           ) : (
             <p className="text-slate-400 mt-2 text-sm">
@@ -358,6 +358,11 @@ export default function BloqueadoPage() {
         <button onClick={sair} className="text-sm text-slate-500 hover:text-slate-300 transition">
           Sair do sistema
         </button>
+        {motivo === "modulo" ? (
+          <button onClick={() => router.push("/financeiro/assinatura")} className="block mx-auto text-sm text-indigo-300 hover:text-indigo-200 transition">
+            Gerenciar módulos contratados
+          </button>
+        ) : null}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
 
 function sanitizeFileName(name: string) {
@@ -26,6 +27,7 @@ export default function NovoMotoristaPage() {
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>("");
   const [uploadWarning, setUploadWarning] = useState<string>("");
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
 
   // Identificação
   const [nome, setNome] = useState("");
@@ -58,6 +60,7 @@ export default function NovoMotoristaPage() {
   const [status, setStatus] = useState<"ativo" | "ferias" | "afastado" | "inativo">(
     "ativo"
   );
+  const [podeAbastecer, setPodeAbastecer] = useState(false);
   const [dataAdmissao, setDataAdmissao] = useState("");
   const [dataDemissao, setDataDemissao] = useState("");
 
@@ -126,6 +129,11 @@ export default function NovoMotoristaPage() {
 
     return () => clearTimeout(id);
   }, []);
+
+  function confirmarSucesso() {
+    router.push("/motoristas");
+    router.refresh();
+  }
 
   function dateOrNull(v: string) {
     if (!v) return null;
@@ -230,6 +238,7 @@ export default function NovoMotoristaPage() {
         cursos_urls: cursosUrlsFinal,
 
         status,
+        pode_abastecer: podeAbastecer,
         data_admissao: dateOrNull(dataAdmissao),
         data_demissao: dateOrNull(dataDemissao),
 
@@ -284,9 +293,7 @@ export default function NovoMotoristaPage() {
         return;
       }
 
-      alert("Motorista criado com sucesso. Login: CPF. Senha inicial: 6 primeiros dígitos do CPF. No primeiro acesso será obrigatório alterar a senha.");
-      router.push(`/motoristas/${result.motorista.id}`);
-      router.refresh();
+      setSuccessModalOpen(true);
     } catch (err) {
       alert(`Falha de conexão ao criar motorista: ${err instanceof Error ? err.message : "erro desconhecido"}`);
     } finally {
@@ -577,6 +584,18 @@ export default function NovoMotoristaPage() {
               </select>
             </div>
 
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Permissão de abastecimento</label>
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={podeAbastecer}
+                  onChange={(e) => setPodeAbastecer(e.target.checked)}
+                />
+                Motorista pode registrar abastecimento
+              </label>
+            </div>
+
             <div>
               <label className="block text-sm font-medium mb-1">
                 Data admissão
@@ -815,6 +834,21 @@ export default function NovoMotoristaPage() {
           </Link>
         </div>
       </form>
+
+      <SuccessRedirectModal
+        open={successModalOpen}
+        title="Motorista adicionado com sucesso"
+        description="Cadastro concluído."
+        onConfirm={confirmarSucesso}
+        detailsTitle="Dados para primeiro acesso"
+        details={
+          <>
+            <p><strong>Login:</strong> CPF do motorista</p>
+            <p><strong>Senha inicial:</strong> 6 primeiros dígitos do CPF</p>
+            <p>No primeiro acesso, será obrigatória a alteração de senha.</p>
+          </>
+        }
+      />
     </div>
   );
 }

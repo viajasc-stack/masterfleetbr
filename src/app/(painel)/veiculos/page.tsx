@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { ActionIconButton } from "@/components/ui/ActionIcon";
 import { supabase } from "@/lib/supabase/client";
 
 type Veiculo = {
@@ -380,22 +381,21 @@ export default function VeiculosPage() {
                     </td>
                     <td className="py-2 pr-0 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button
+                        <ActionIconButton
                           type="button"
-                          onClick={() => compartilhar(v)}
-                          className="px-2 py-1 text-xs border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50"
                           title="Compartilhar veículo"
+                          onClick={() => compartilhar(v)}
                         >
                           🔗
-                        </button>
-                        <button
+                        </ActionIconButton>
+                        <ActionIconButton
                           type="button"
-                          onClick={() => setDeleteTarget(v)}
-                          className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
                           title="Excluir veículo"
+                          variant="danger"
+                          onClick={() => setDeleteTarget(v)}
                         >
-                          🗑
-                        </button>
+                          🗑️
+                        </ActionIconButton>
                       </div>
                     </td>
                   </tr>

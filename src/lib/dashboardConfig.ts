@@ -1,5 +1,7 @@
 export type DashboardConfig = {
   marcador_combustivel_topo: boolean;
+  widget_financeiro_resumo: boolean;
+  widget_manutencao_resumo: boolean;
   alertas_topo: boolean;
   kpis_gerais: boolean;
   grafico_distribuicao_operacional: boolean;
@@ -21,6 +23,8 @@ function isBrowser() {
 
 export const DASHBOARD_CONFIG_DEFAULTS: DashboardConfig = {
   marcador_combustivel_topo: true,
+  widget_financeiro_resumo: false,
+  widget_manutencao_resumo: false,
   alertas_topo: true,
   kpis_gerais: true,
   grafico_distribuicao_operacional: true,
@@ -41,6 +45,16 @@ export const DASHBOARD_CONFIG_LABELS: Array<{ key: keyof DashboardConfig; label:
     key: "marcador_combustivel_topo",
     label: "Marcador de combustível no topo",
     description: "Mostra os tanques de combustível no início do dashboard.",
+  },
+  {
+    key: "widget_financeiro_resumo",
+    label: "Widget financeiro (contas do dia)",
+    description: "Exibe contas a pagar e a receber com vencimento na data atual.",
+  },
+  {
+    key: "widget_manutencao_resumo",
+    label: "Widget manutenção (triagem e preventivas)",
+    description: "Exibe novas solicitações e veículos próximos/em atraso em planos preventivos.",
   },
   {
     key: "alertas_topo",

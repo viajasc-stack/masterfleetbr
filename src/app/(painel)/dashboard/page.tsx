@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase/client";
+import { loadEmpresaModuleAccess } from "@/lib/moduleAccess";
 import {
   DASHBOARD_CONFIG_DEFAULTS,
   mergeDashboardConfig,
@@ -115,6 +115,19 @@ type PessoaAniversariante = {
   data_nascimento: string;
 };
 
+type FinanceiroResumoHoje = {
+  qtd_pagar: number;
+  qtd_receber: number;
+  total_pagar: number;
+  total_receber: number;
+};
+
+type ManutencaoResumoDashboard = {
+  solicitacoes_novas: number;
+  veiculos_vencendo: number;
+  veiculos_vencidos: number;
+};
+
 function KPICard({ label, value, link }: { label: string; value: number | string; link: string }) {
   return (
     <Link href={link} className="rounded-xl border border-slate-200 bg-white p-5 flex flex-col gap-1 hover:bg-slate-50 transition">
@@ -199,7 +212,6 @@ export default function DashboardPage() {
   const [osRecentes, setOsRecentes] = useState<OSRecente[]>([]);
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [loading, setLoading] = useState(true);
-  const [nomeUsuario, setNomeUsuario] = useState<string | null>(null);
   const [tanquesCombustivel, setTanquesCombustivel] = useState<CombustivelTank[]>([]);
   const [operacaoPorMotorista, setOperacaoPorMotorista] = useState<MotoristaOperacao[]>([]);
   const [timeline, setTimeline] = useState<OSEventoTimeline[]>([]);
@@ -215,6 +227,19 @@ export default function DashboardPage() {
   const [posicoesMapa, setPosicoesMapa] = useState<MotoristaGeoUlt[]>([]);
   const [desviosRecentes, setDesviosRecentes] = useState<OSDesvioEvento[]>([]);
   const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig>(DASHBOARD_CONFIG_DEFAULTS);
+  const [financeiroModuloAtivo, setFinanceiroModuloAtivo] = useState(false);
+  const [manutencaoModuloAtivo, setManutencaoModuloAtivo] = useState(false);
+  const [financeiroResumoHoje, setFinanceiroResumoHoje] = useState<FinanceiroResumoHoje>({
+    qtd_pagar: 0,
+    qtd_receber: 0,
+    total_pagar: 0,
+    total_receber: 0,
+  });
+  const [manutencaoResumo, setManutencaoResumo] = useState<ManutencaoResumoDashboard>({
+    solicitacoes_novas: 0,
+    veiculos_vencendo: 0,
+    veiculos_vencidos: 0,
+  });
 
   const osDistribuicao = useMemo(
     () => [
@@ -269,11 +294,78 @@ export default function DashboardPage() {
         .select("nome, empresa_id")
         .eq("user_id", session.user.id)
         .maybeSingle();
-      setNomeUsuario(profile?.nome ?? null);
 
       if (profile?.empresa_id) {
         const localCfg = readDashboardConfigLocal(profile.empresa_id);
         if (localCfg) setDashboardConfig(localCfg);
+
+        const access = await loadEmpresaModuleAccess();
+        const financeiroAtivo = access.canUseAllModules || access.allowedModules.includes("financeiro");
+        const manutencaoAtiva = access.canUseAllModules || access.allowedModules.includes("manutencao");
+        setFinanceiroModuloAtivo(financeiroAtivo);
+        setManutencaoModuloAtivo(manutencaoAtiva);
+
+        if (financeiroAtivo) {
+          const hojeYmd = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "America/Sao_Paulo",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(new Date());
+
+          const { data: contasHoje } = await supabase
+            .from("contas_financeiras")
+            .select("id, tipo, valor")
+            .eq("status", "pendente")
+            .eq("data_vencimento", hojeYmd)
+            .in("tipo", ["pagar", "receber"]);
+
+          const listaHoje = (contasHoje ?? []) as Array<{ id: string; tipo: "pagar" | "receber"; valor: number | null }>;
+          const pagar = listaHoje.filter((c) => c.tipo === "pagar");
+          const receber = listaHoje.filter((c) => c.tipo === "receber");
+
+          setFinanceiroResumoHoje({
+            qtd_pagar: pagar.length,
+            qtd_receber: receber.length,
+            total_pagar: pagar.reduce((acc, c) => acc + Number(c.valor ?? 0), 0),
+            total_receber: receber.reduce((acc, c) => acc + Number(c.valor ?? 0), 0),
+          });
+        } else {
+          setFinanceiroResumoHoje({ qtd_pagar: 0, qtd_receber: 0, total_pagar: 0, total_receber: 0 });
+        }
+
+        if (manutencaoAtiva) {
+          const [
+            { count: solicitacoesNovasCount },
+            { data: vencendoData },
+            { data: vencidasData },
+          ] = await Promise.all([
+            supabase
+              .from("manutencao_solicitacoes")
+              .select("id", { count: "exact", head: true })
+              .eq("status", "nova"),
+            supabase
+              .from("manutencao_veiculo_planos")
+              .select("veiculo_id")
+              .eq("status", "vencendo_proximo"),
+            supabase
+              .from("manutencao_veiculo_planos")
+              .select("veiculo_id")
+              .eq("status", "vencida"),
+          ]);
+
+          setManutencaoResumo({
+            solicitacoes_novas: solicitacoesNovasCount ?? 0,
+            veiculos_vencendo: new Set((vencendoData ?? []).map((item) => item.veiculo_id)).size,
+            veiculos_vencidos: new Set((vencidasData ?? []).map((item) => item.veiculo_id)).size,
+          });
+        } else {
+          setManutencaoResumo({
+            solicitacoes_novas: 0,
+            veiculos_vencendo: 0,
+            veiculos_vencidos: 0,
+          });
+        }
 
         const { data: empresaCfg, error: empresaCfgError } = await supabase
           .from("empresas")
@@ -659,23 +751,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl bg-gradient-to-r from-violet-700 to-indigo-700 p-4 sm:p-6 text-white shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold">
-              {nomeUsuario ? `Olá, ${nomeUsuario.split(" ")[0]}` : "Bem-vindo"}
-            </h1>
-            <p className="text-white/80 mt-0.5 text-sm">
-              {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button href="/ordens-servico/nova">+ Nova OS</Button>
-            <Button href="/clientes/novo" variant="secondary">+ Cliente</Button>
-          </div>
-        </div>
-      </div>
-
       {dashboardConfig.marcador_combustivel_topo && tanquesCombustivel.length > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="px-5 py-4 border-b border-slate-200">
@@ -758,6 +833,75 @@ export default function DashboardPage() {
               {a.link && <Link href={a.link} className="underline text-xs opacity-75 hover:opacity-100">Ver</Link>}
             </div>
           ))}
+        </div>
+      )}
+
+      {dashboardConfig.widget_financeiro_resumo && financeiroModuloAtivo && (
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+            <span className="text-sm font-semibold text-slate-900">Financeiro · Vencimentos de hoje</span>
+            <Link href="/financeiro" className="text-xs text-indigo-600 hover:underline">Abrir módulo</Link>
+          </div>
+          <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Link
+              href="/financeiro/contas?tipo=pagar"
+              className="rounded-lg border border-rose-200 bg-rose-50/40 p-4 hover:bg-rose-50 transition"
+            >
+              <div className="text-xs uppercase tracking-wide text-rose-700">Contas a pagar (hoje)</div>
+              <div className="mt-2 text-2xl font-bold text-rose-900">{financeiroResumoHoje.qtd_pagar}</div>
+              <div className="text-xs text-rose-700 mt-1">
+                Total: {financeiroResumoHoje.total_pagar.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </div>
+            </Link>
+
+            <Link
+              href="/financeiro/contas?tipo=receber"
+              className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 hover:bg-emerald-50 transition"
+            >
+              <div className="text-xs uppercase tracking-wide text-emerald-700">Contas a receber (hoje)</div>
+              <div className="mt-2 text-2xl font-bold text-emerald-900">{financeiroResumoHoje.qtd_receber}</div>
+              <div className="text-xs text-emerald-700 mt-1">
+                Total: {financeiroResumoHoje.total_receber.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </div>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {dashboardConfig.widget_manutencao_resumo && manutencaoModuloAtivo && (
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+            <span className="text-sm font-semibold text-slate-900">Manutenção · Triagem e planos</span>
+            <Link href="/manutencao" className="text-xs text-indigo-600 hover:underline">Abrir módulo</Link>
+          </div>
+          <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Link
+              href="/manutencao/solicitacoes"
+              className="rounded-lg border border-blue-200 bg-blue-50/40 p-4 hover:bg-blue-50 transition"
+            >
+              <div className="text-xs uppercase tracking-wide text-blue-700">Novas solicitações</div>
+              <div className="mt-2 text-2xl font-bold text-blue-900">{manutencaoResumo.solicitacoes_novas}</div>
+              <div className="text-xs text-blue-700 mt-1">Entradas aguardando triagem</div>
+            </Link>
+
+            <Link
+              href="/manutencao/preventivas"
+              className="rounded-lg border border-amber-200 bg-amber-50/40 p-4 hover:bg-amber-50 transition"
+            >
+              <div className="text-xs uppercase tracking-wide text-amber-700">Veículos próximos</div>
+              <div className="mt-2 text-2xl font-bold text-amber-900">{manutencaoResumo.veiculos_vencendo}</div>
+              <div className="text-xs text-amber-700 mt-1">Com plano de manutenção vencendo</div>
+            </Link>
+
+            <Link
+              href="/manutencao/preventivas"
+              className="rounded-lg border border-rose-200 bg-rose-50/40 p-4 hover:bg-rose-50 transition"
+            >
+              <div className="text-xs uppercase tracking-wide text-rose-700">Veículos em atraso</div>
+              <div className="mt-2 text-2xl font-bold text-rose-900">{manutencaoResumo.veiculos_vencidos}</div>
+              <div className="text-xs text-rose-700 mt-1">Com plano preventivo vencido</div>
+            </Link>
+          </div>
         </div>
       )}
 

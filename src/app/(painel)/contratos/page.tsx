@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { ActionIconButton, ActionIconLink } from "@/components/ui/ActionIcon";
 import { supabase } from "@/lib/supabase/client";
 
 type Contrato = {
@@ -145,16 +146,12 @@ export default function ContratosPage() {
                     </td>
                     <td className="py-2 pr-0 text-right">
                       <div className="inline-flex items-center gap-2">
-                        <Link href={`/contratos/${c.id}`} className="px-2 py-1 text-xs border border-slate-300 rounded-md hover:bg-slate-50">
-                          Editar
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={() => setDeleteTarget(c)}
-                          className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
-                        >
-                          Excluir
-                        </button>
+                        <ActionIconLink href={`/contratos/${c.id}`} title="Editar contrato" variant="primary">
+                          ✏️
+                        </ActionIconLink>
+                        <ActionIconButton title="Excluir contrato" variant="danger" onClick={() => setDeleteTarget(c)}>
+                          🗑️
+                        </ActionIconButton>
                       </div>
                     </td>
                   </tr>

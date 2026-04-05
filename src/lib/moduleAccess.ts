@@ -1,42 +1,39 @@
 import { supabase } from "@/lib/supabase/client";
 
-type AssinaturaComPlano = {
+type BillingAccessPayload = {
   status: string | null;
-  planos:
-    | {
-        modulos?: unknown;
-      }
-    | Array<{ modulos?: unknown }>
-    | null;
+  billing_model?: string | null;
+  modulos_ativos?: unknown;
 };
 
-const BASE_MODULES = ["dashboard", "configuracoes", "usuarios", "suporte"];
+const BASE_MODULES = ["operacional", "configuracoes", "usuarios", "suporte"];
 
 const ROUTE_MODULE_MAP: Array<{ prefix: string; modulo: string }> = [
-  { prefix: "/ordens-servico", modulo: "ordens_servico" },
-  { prefix: "/orcamentos", modulo: "ordens_servico" },
-  { prefix: "/contratos", modulo: "ordens_servico" },
-  { prefix: "/clientes", modulo: "clientes" },
-  { prefix: "/veiculos", modulo: "veiculos" },
-  { prefix: "/abastecimentos", modulo: "ordens_servico" },
-  { prefix: "/motoristas", modulo: "motoristas" },
+  { prefix: "/ordens-servico", modulo: "operacional" },
+  { prefix: "/orcamentos", modulo: "operacional" },
+  { prefix: "/contratos", modulo: "operacional" },
+  { prefix: "/clientes", modulo: "operacional" },
+  { prefix: "/veiculos", modulo: "operacional" },
+  { prefix: "/abastecimentos", modulo: "operacional" },
+  { prefix: "/motoristas", modulo: "operacional" },
   { prefix: "/usuarios", modulo: "usuarios" },
   { prefix: "/inventario", modulo: "inventario" },
   { prefix: "/financeiro", modulo: "financeiro" },
   { prefix: "/manutencao", modulo: "manutencao" },
+  { prefix: "/oficina", modulo: "oficina" },
   { prefix: "/relatorios", modulo: "relatorios" },
   { prefix: "/bi", modulo: "relatorios" },
   { prefix: "/telemetria", modulo: "relatorios" },
   { prefix: "/observabilidade", modulo: "relatorios" },
   { prefix: "/portal-cliente", modulo: "configuracoes" },
-  { prefix: "/compliance", modulo: "configuracoes" },
   { prefix: "/escalas", modulo: "configuracoes" },
   { prefix: "/agenda", modulo: "agenda" },
   { prefix: "/viagens", modulo: "viagens" },
+  { prefix: "/central-negocios", modulo: "operacional" },
   { prefix: "/aniversariantes", modulo: "relatorios" },
   { prefix: "/suporte", modulo: "suporte" },
   { prefix: "/configuracoes", modulo: "configuracoes" },
-  { prefix: "/dashboard", modulo: "dashboard" },
+  { prefix: "/dashboard", modulo: "operacional" },
 ];
 
 function parseModulos(raw: unknown): string[] {
@@ -91,20 +88,12 @@ export async function loadEmpresaModuleAccess() {
     };
   }
 
-  const { data: assinaturaData } = await supabase
-    .from("assinaturas")
-    .select("status, planos(modulos)")
-    .eq("empresa_id", empresaId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: billingData } = await supabase.rpc("get_billing_current");
+  const billing = (billingData ?? null) as BillingAccessPayload | null;
+  const status = billing?.status ?? null;
+  const modulosEmpresa = parseModulos(billing?.modulos_ativos);
 
-  const assinatura = (assinaturaData ?? null) as AssinaturaComPlano | null;
-  const status = assinatura?.status ?? null;
-  const plano = Array.isArray(assinatura?.planos) ? assinatura?.planos[0] : assinatura?.planos;
-  const modulosPlano = parseModulos(plano?.modulos);
-
-  const allowedModules = applyGlobalFilter(Array.from(new Set([...BASE_MODULES, ...modulosPlano])));
+  const allowedModules = applyGlobalFilter(Array.from(new Set([...BASE_MODULES, ...modulosEmpresa])));
 
   return {
     assinaturaStatus: status,

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
 
 function onlyDigits(value: string) {
@@ -51,6 +52,7 @@ export default function NovoClientePage() {
   const [loading, setLoading] = useState(false);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
 
   const [tipo, setTipo] = useState<"empresa" | "pessoa">("empresa");
   const [nome, setNome] = useState("");
@@ -230,7 +232,7 @@ export default function NovoClientePage() {
       uf: uf.trim() ? uf.trim() : null,
     };
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("clientes")
       .insert(payload)
       .select("id")
@@ -243,8 +245,11 @@ export default function NovoClientePage() {
       return;
     }
 
-    // Vai para edição do cliente recém criado (padrão ERP)
-    router.push(`/clientes/${data.id}`);
+    setSuccessModalOpen(true);
+  }
+
+  function confirmarSucesso() {
+    router.push("/clientes");
     router.refresh();
   }
 
@@ -456,6 +461,13 @@ export default function NovoClientePage() {
           </Link>
         </div>
       </form>
+
+      <SuccessRedirectModal
+        open={successModalOpen}
+        title="Cliente adicionado com sucesso"
+        description="Cadastro concluído."
+        onConfirm={confirmarSucesso}
+      />
     </div>
   );
 }

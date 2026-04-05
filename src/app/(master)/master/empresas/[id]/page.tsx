@@ -17,9 +17,16 @@ type AssinaturaPayload = {
   trial_ate?: string | null;
   proxima_cobranca?: string | null;
   plano_id?: string | null;
+  billing_model?: string | null;
 };
 
-type Plano = { id: string; nome: string; valor_centavos: number };
+type ModuloCatalogo = {
+  codigo: string;
+  nome: string;
+  descricao?: string | null;
+  categoria?: string | null;
+  preco_centavos: number;
+};
 
 type Relatorio = {
   clientes: number;
@@ -43,6 +50,26 @@ type Relatorio = {
   contas_pagar_pendentes: number;
   contas_receber_pendentes: number;
 };
+
+const MODULE_LABELS: Record<string, string> = {
+  operacional: "Operacional",
+  configuracoes: "Configurações",
+  usuarios: "Usuários",
+  suporte: "Suporte",
+  inventario: "Estoque",
+  financeiro: "Financeiro",
+  manutencao: "Manutenção",
+  oficina: "Oficina",
+  agenda: "Agenda",
+  viagens: "Viagens",
+  relatorios: "Relatórios",
+};
+
+const HIDDEN_MODULE_CODES = new Set(["api_integracoes", "automacoes"]);
+
+function formatModuloLabel(codigo: string) {
+  return MODULE_LABELS[codigo] ?? codigo;
+}
 
 function fmtMoney(v: number) {
   return (v / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -70,12 +97,14 @@ export default function MasterEmpresaDetalhePage() {
 
   const [empresa, setEmpresa] = useState<EmpresaPayload | null>(null);
   const [assinatura, setAssinatura] = useState<AssinaturaPayload | null>(null);
-  const [planos, setPlanos] = useState<Plano[]>([]);
+  const [catalogo, setCatalogo] = useState<ModuloCatalogo[]>([]);
+  const [empresaModulos, setEmpresaModulos] = useState<string[]>([]);
   const [relatorio, setRelatorio] = useState<Relatorio | null>(null);
 
-  const planoAtual = assinatura?.plano_id
-    ? (planos.find((p) => p.id === assinatura.plano_id) ?? null)
-    : null;
+  const modulosAtivos = catalogo.filter(
+    (m) => empresaModulos.includes(m.codigo) && !HIDDEN_MODULE_CODES.has(m.codigo),
+  );
+  const valorMensal = modulosAtivos.reduce((total, modulo) => total + (modulo.preco_centavos ?? 0), 0);
 
   useEffect(() => {
     async function load() {
@@ -102,12 +131,14 @@ export default function MasterEmpresaDetalhePage() {
       const payload = editorRes.data as {
         empresa: EmpresaPayload;
         assinatura: AssinaturaPayload;
-        planos: Plano[];
+        modulos_catalogo: ModuloCatalogo[];
+        empresa_modulos: string[];
       };
 
       setEmpresa(payload.empresa ?? null);
       setAssinatura(payload.assinatura ?? null);
-      setPlanos(payload.planos ?? []);
+      setCatalogo(payload.modulos_catalogo ?? []);
+      setEmpresaModulos(payload.empresa_modulos ?? []);
       setRelatorio(relatorioRes.data as Relatorio);
       setLoading(false);
     }
@@ -157,17 +188,45 @@ export default function MasterEmpresaDetalhePage() {
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="text-xs text-slate-500">Plano</div>
-          <div className="mt-2 text-sm font-semibold text-slate-900">{planoAtual?.nome ?? "—"}</div>
+          <div className="mt-2 text-sm font-semibold text-slate-900 capitalize">{assinatura?.billing_model ?? "modular"}</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-xs text-slate-500">Próximo vencimento</div>
-          <div className="mt-2 text-sm font-semibold text-slate-900">{fmtDate(assinatura?.proxima_cobranca)}</div>
+          <div className="text-xs text-slate-500">Módulos ativos</div>
+          <div className="mt-2 text-sm font-semibold text-slate-900">{modulosAtivos.length}</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-xs text-slate-500">Trial até</div>
-          <div className="mt-2 text-sm font-semibold text-slate-900">{fmtDate(assinatura?.trial_ate)}</div>
+          <div className="text-xs text-slate-500">Valor mensal</div>
+          <div className="mt-2 text-sm font-semibold text-slate-900">{fmtMoney(valorMensal)}</div>
         </div>
       </div>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <div>
+            <h2 className="font-semibold text-slate-900">Módulos contratados</h2>
+            <p className="text-sm text-slate-500">Composição comercial atual da empresa.</p>
+          </div>
+          <div className="text-sm text-slate-600">Próximo vencimento: <span className="font-medium text-slate-900">{fmtDate(assinatura?.proxima_cobranca)}</span></div>
+        </div>
+        {modulosAtivos.length === 0 ? (
+          <div className="text-sm text-slate-500">Nenhum módulo ativo.</div>
+        ) : (
+          <div className="space-y-3">
+            {empresaModulos.includes("operacional") ? (
+              <div className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
+                <strong>Operacional</strong> cobre dashboard, OS, veículos, motoristas, fretamentos, contratos, passageiros e clientes.
+              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+            {modulosAtivos.map((modulo) => (
+              <span key={modulo.codigo} className="text-xs px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 text-slate-700">
+                {formatModuloLabel(modulo.codigo)} • {fmtMoney(modulo.preco_centavos ?? 0)}
+              </span>
+            ))}
+            </div>
+          </div>
+        )}
+      </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="font-semibold text-slate-900 mb-4">Relatório operacional completo</h2>

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 
 type ViagemStatus =
   | "rascunho"
@@ -30,6 +31,7 @@ export default function NovaViagemPage() {
   const [loading, setLoading] = useState(false);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [erroSessao, setErroSessao] = useState("");
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
 
   const [titulo, setTitulo] = useState("");
   const [codigo, setCodigo] = useState("");
@@ -153,6 +155,10 @@ export default function NovaViagemPage() {
       return;
     }
 
+    setSuccessModalOpen(true);
+  }
+
+  function confirmarSucesso() {
     router.push("/viagens");
     router.refresh();
   }
@@ -305,6 +311,13 @@ export default function NovaViagemPage() {
           </Link>
         </div>
       </form>
+
+      <SuccessRedirectModal
+        open={successModalOpen}
+        title="Viagem adicionada com sucesso"
+        description="Cadastro concluído."
+        onConfirm={confirmarSucesso}
+      />
     </div>
   );
 }

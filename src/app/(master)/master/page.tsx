@@ -15,11 +15,6 @@ type Stats = {
   conversao_pct: number;
 };
 
-type AssinaturaRaw = {
-  status: string;
-  planos: { valor_centavos: number }[] | { valor_centavos: number } | null;
-};
-
 export default function MasterPage() {
   const [stats, setStats] = useState<Stats>({
     total_empresas: 0,
@@ -35,32 +30,19 @@ export default function MasterPage() {
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase.from("assinaturas").select("status, plano_id, planos(valor_centavos)");
-      const raw = (data ?? []) as AssinaturaRaw[];
-      const list = raw.map((a: AssinaturaRaw) => {
-        const p = a.planos;
-        const v = Array.isArray(p) ? (p[0]?.valor_centavos ?? 0) : (p?.valor_centavos ?? 0);
-        return { status: String(a.status), valor_centavos: Number(v) };
-      });
-      const ativas = list.filter((a) => a.status === "ativa");
-      const trial = list.filter((a) => a.status === "trial");
-      const bloqueadas = list.filter((a) => a.status === "bloqueada");
-      const past_due = list.filter((a) => a.status === "past_due");
-      const mrr_centavos = ativas.reduce((sum, a) => sum + a.valor_centavos, 0);
-      const total = list.length;
-      const inadimplencia_pct = total > 0 ? Math.round(((past_due.length + bloqueadas.length) / total) * 100) : 0;
-      const baseConv = ativas.length + trial.length;
-      const conversao_pct = baseConv > 0 ? Math.round((ativas.length / baseConv) * 100) : 0;
-      setStats({
-        total_empresas: total,
-        ativas: ativas.length,
-        trial: trial.length,
-        bloqueadas: bloqueadas.length,
-        past_due: past_due.length,
-        mrr_centavos,
-        inadimplencia_pct,
-        conversao_pct,
-      });
+      const { data, error } = await supabase.rpc("master_billing_overview");
+      if (!error && data) {
+        setStats({
+          total_empresas: Number(data.total_empresas ?? 0),
+          ativas: Number(data.ativas ?? 0),
+          trial: Number(data.trial ?? 0),
+          bloqueadas: Number(data.bloqueadas ?? 0),
+          past_due: Number(data.past_due ?? 0),
+          mrr_centavos: Number(data.mrr_centavos ?? 0),
+          inadimplencia_pct: Number(data.inadimplencia_pct ?? 0),
+          conversao_pct: Number(data.conversao_pct ?? 0),
+        });
+      }
       setLoading(false);
     }
     load();
@@ -108,20 +90,15 @@ export default function MasterPage() {
           </div>
 
           <div className="flex gap-4">
-            <Link href="/master/governanca"
-              className="rounded-xl border border-slate-200 bg-white p-5 hover:bg-slate-50 transition">
-              <div className="text-sm font-semibold text-slate-900">Governança</div>
-              <div className="text-xs text-slate-500 mt-0.5">Risco, saúde, auditoria e operação executiva</div>
-            </Link>
             <Link href="/master/empresas"
               className="rounded-xl border border-slate-200 bg-white p-5 hover:bg-slate-50 transition">
               <div className="text-sm font-semibold text-slate-900">Gerenciar Empresas</div>
-              <div className="text-xs text-slate-500 mt-0.5">Ações, status, planos</div>
+              <div className="text-xs text-slate-500 mt-0.5">Ações, status e módulos</div>
             </Link>
             <Link href="/master/planos"
               className="rounded-xl border border-slate-200 bg-white p-5 hover:bg-slate-50 transition">
-              <div className="text-sm font-semibold text-slate-900">Planos</div>
-              <div className="text-xs text-slate-500 mt-0.5">CRUD de planos</div>
+              <div className="text-sm font-semibold text-slate-900">Catálogo modular</div>
+              <div className="text-xs text-slate-500 mt-0.5">Preços e disponibilidade dos módulos</div>
             </Link>
           </div>
         </>

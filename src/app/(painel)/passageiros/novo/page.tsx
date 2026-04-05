@@ -4,11 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
 
 export default function NovoPassageiroPage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
 
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
@@ -63,6 +65,10 @@ export default function NovoPassageiroPage() {
       return;
     }
 
+    setSuccessModalOpen(true);
+  }
+
+  function confirmarSucesso() {
     router.push("/passageiros");
     router.refresh();
   }
@@ -226,6 +232,13 @@ export default function NovoPassageiroPage() {
           />
         </div>
       </div>
+
+      <SuccessRedirectModal
+        open={successModalOpen}
+        title="Passageiro adicionado com sucesso"
+        description="Cadastro concluído."
+        onConfirm={confirmarSucesso}
+      />
     </div>
   );
 }

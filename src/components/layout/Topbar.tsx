@@ -25,7 +25,7 @@ export default function Topbar({ empresaNome, usuarioNome, isSuperAdmin = false,
         <button
           type="button"
           onClick={onMenuToggle}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/30 text-white"
+          className="inline-flex xl:hidden h-9 w-9 items-center justify-center rounded-md border border-white/30 text-white"
           aria-label="Abrir menu"
         >
           ☰
@@ -33,12 +33,6 @@ export default function Topbar({ empresaNome, usuarioNome, isSuperAdmin = false,
         <span className="text-sm text-white/90">{empresaNome ?? "Empresa"}</span>
         <span className="text-white/60 hidden sm:inline">•</span>
         <span className="text-sm text-white hidden sm:inline">{usuarioNome ?? "Admin"}</span>
-      </div>
-      <div className="flex-1 items-center hidden md:flex">
-        <input
-          className="w-full max-w-xl bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white placeholder-white/60 outline-none focus:border-white/40"
-          placeholder="Buscar em clientes, veículos, OS..."
-        />
       </div>
       <div className="flex items-center gap-2 sm:gap-4">
         {isSuperAdmin ? (

@@ -46,6 +46,7 @@ type MotoristaDb = {
   cnh_observacoes: string | null;
 
   status: "ativo" | "ferias" | "afastado" | "inativo";
+  pode_abastecer: boolean;
   data_admissao: string | null;
   data_demissao: string | null;
 
@@ -117,6 +118,7 @@ export default function EditarMotoristaPage() {
   const [status, setStatus] = useState<"ativo" | "ferias" | "afastado" | "inativo">(
     "ativo"
   );
+  const [podeAbastecer, setPodeAbastecer] = useState(false);
   const [dataAdmissao, setDataAdmissao] = useState("");
   const [dataDemissao, setDataDemissao] = useState("");
 
@@ -187,7 +189,7 @@ export default function EditarMotoristaPage() {
     const { data, error } = await supabase
       .from("motoristas")
       .select(
-        "id, empresa_id, nome, apelido, cpf, rg, data_nascimento, email, telefone, whatsapp, cep, logradouro, numero, complemento, bairro, cidade, uf, cnh_numero, cnh_categoria, cnh_validade, cnh_observacoes, status, data_admissao, data_demissao, chave_pix, banco, agencia, conta, vinculo_trabalho, tipo_remuneracao, salario_base, valor_hora_extra, banco_horas_saldo, valor_por_os, valor_diaria, observacoes_remuneracao, foto_perfil_url, cnh_arquivo_url, cursos_urls, observacoes, created_at, updated_at"
+        "id, empresa_id, nome, apelido, cpf, rg, data_nascimento, email, telefone, whatsapp, cep, logradouro, numero, complemento, bairro, cidade, uf, cnh_numero, cnh_categoria, cnh_validade, cnh_observacoes, status, pode_abastecer, data_admissao, data_demissao, chave_pix, banco, agencia, conta, vinculo_trabalho, tipo_remuneracao, salario_base, valor_hora_extra, banco_horas_saldo, valor_por_os, valor_diaria, observacoes_remuneracao, foto_perfil_url, cnh_arquivo_url, cursos_urls, observacoes, created_at, updated_at"
       )
       .eq("id", id)
       .eq("empresa_id", empresaId)
@@ -234,6 +236,7 @@ export default function EditarMotoristaPage() {
     setCnhObs(m.cnh_observacoes ?? "");
 
     setStatus(m.status ?? "ativo");
+    setPodeAbastecer(Boolean(m.pode_abastecer));
     setDataAdmissao(m.data_admissao ?? "");
     setDataDemissao(m.data_demissao ?? "");
 
@@ -352,6 +355,7 @@ export default function EditarMotoristaPage() {
       cnh_observacoes: cnhObs.trim() || null,
 
       status,
+      pode_abastecer: podeAbastecer,
       data_admissao: dateOrNull(dataAdmissao),
       data_demissao: dateOrNull(dataDemissao),
 
@@ -740,6 +744,18 @@ export default function EditarMotoristaPage() {
                 <option value="afastado">Afastado</option>
                 <option value="inativo">Inativo</option>
               </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Permissão de abastecimento</label>
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={podeAbastecer}
+                  onChange={(e) => setPodeAbastecer(e.target.checked)}
+                />
+                Motorista pode registrar abastecimento
+              </label>
             </div>
 
             <div>

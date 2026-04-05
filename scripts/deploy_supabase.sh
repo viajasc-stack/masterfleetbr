@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Deploy automático: Edge Functions + (opcional) migrations via psql"
+echo "Deploy automático: Edge Functions + migrations Supabase"
 
 if ! command -v npx >/dev/null 2>&1; then
   echo "npx não encontrado. Instale Node/npm ou use outra máquina."
@@ -19,20 +19,17 @@ for fn in supabase/functions/*; do
   fi
 done
 
-echo "2) (Opcional) Aplicar migrations SQL localmente via PSQL"
-if [ -z "${SUPABASE_DB_URL:-}" ]; then
-  echo "   SUPABASE_DB_URL não definida — pulando migrations."
-  echo "   Para aplicar migrations: export SUPABASE_DB_URL=\"postgres://...\" e execute este script novamente."
+echo "2) Aplicar migrations automaticamente"
+if [ -n "${SUPABASE_DB_URL:-}" ]; then
+  echo "   Usando SUPABASE_DB_URL informado."
+  npx supabase db push --db-url "$SUPABASE_DB_URL" --include-all --yes
 else
-  if ! command -v psql >/dev/null 2>&1; then
-    echo "   psql não encontrado. Instale psql para aplicar migrations automaticamente." 
-  else
-    echo "   Aplicando arquivos em supabase/migrations/*.sql"
-    for f in supabase/migrations/*.sql; do
-      echo "     -> aplicando: $f"
-      psql "$SUPABASE_DB_URL" -f "$f"
-    done
-  fi
+  echo "   Tentando projeto vinculado via Supabase CLI."
+  npx supabase db push --include-all --yes || {
+    echo "   Falha ao aplicar migrations automaticamente."
+    echo "   Vincule o projeto (supabase link) ou defina SUPABASE_DB_URL para execução sem interação."
+    exit 1
+  }
 fi
 
 echo "Deploy concluído. Lembre-se de configurar os secrets no Supabase Dashboard:"

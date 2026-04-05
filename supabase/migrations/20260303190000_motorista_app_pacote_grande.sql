@@ -33,12 +33,15 @@ CREATE TABLE IF NOT EXISTS public.abastecimentos (
 
 ALTER TABLE public.abastecimentos ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "abastecimentos_empresa" ON public.abastecimentos;
 CREATE POLICY "abastecimentos_empresa" ON public.abastecimentos
   USING (empresa_id = public.minha_empresa_id());
 
+DROP POLICY IF EXISTS "abastecimentos_insert" ON public.abastecimentos;
 CREATE POLICY "abastecimentos_insert" ON public.abastecimentos
   FOR INSERT WITH CHECK (empresa_id = public.minha_empresa_id());
 
+DROP POLICY IF EXISTS "abastecimentos_update" ON public.abastecimentos;
 CREATE POLICY "abastecimentos_update" ON public.abastecimentos
   FOR UPDATE USING (empresa_id = public.minha_empresa_id());
 
@@ -74,12 +77,15 @@ CREATE TABLE IF NOT EXISTS public.motorista_notificacao_preferencias (
 
 ALTER TABLE public.motorista_notificacao_preferencias ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "pref_notif_motorista_empresa" ON public.motorista_notificacao_preferencias;
 CREATE POLICY "pref_notif_motorista_empresa" ON public.motorista_notificacao_preferencias
   USING (empresa_id = public.minha_empresa_id());
 
+DROP POLICY IF EXISTS "pref_notif_motorista_insert" ON public.motorista_notificacao_preferencias;
 CREATE POLICY "pref_notif_motorista_insert" ON public.motorista_notificacao_preferencias
   FOR INSERT WITH CHECK (empresa_id = public.minha_empresa_id());
 
+DROP POLICY IF EXISTS "pref_notif_motorista_update" ON public.motorista_notificacao_preferencias;
 CREATE POLICY "pref_notif_motorista_update" ON public.motorista_notificacao_preferencias
   FOR UPDATE USING (empresa_id = public.minha_empresa_id());
 
@@ -113,12 +119,15 @@ CREATE TABLE IF NOT EXISTS public.motorista_extras (
 
 ALTER TABLE public.motorista_extras ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "motorista_extras_empresa" ON public.motorista_extras;
 CREATE POLICY "motorista_extras_empresa" ON public.motorista_extras
   USING (empresa_id = public.minha_empresa_id());
 
+DROP POLICY IF EXISTS "motorista_extras_insert" ON public.motorista_extras;
 CREATE POLICY "motorista_extras_insert" ON public.motorista_extras
   FOR INSERT WITH CHECK (empresa_id = public.minha_empresa_id());
 
+DROP POLICY IF EXISTS "motorista_extras_update" ON public.motorista_extras;
 CREATE POLICY "motorista_extras_update" ON public.motorista_extras
   FOR UPDATE USING (empresa_id = public.minha_empresa_id());
 

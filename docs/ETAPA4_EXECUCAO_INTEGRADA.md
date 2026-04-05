@@ -54,6 +54,15 @@ Consolidar uma etapa única para fechar lacunas finais antes de escala, cobrindo
 
 > `smoke:web` depende de `SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`.
 
+### Observações do smoke crítico (atualizado)
+- O script `scripts/smoke_web_critical.js` agora é **idempotente**:
+  - reutiliza empresa/assinatura/fatura quando já existem;
+  - evita falhas por conflito em reexecuções.
+- Variável opcional suportada:
+  - `SMOKE_EMPRESA_EMAIL` (default: `smoke.web.critical@example.com`).
+- No cenário PIX sem credenciais/gateway completos, o script aceita apenas erros esperados
+  (ex.: `internal_error`, `unauthorized`, `gateway`, `fatura não encontrada`) e falha para erros inesperados.
+
 ---
 
 ## D) Testes automatizados e validação rápida
@@ -68,6 +77,18 @@ Consolidar uma etapa única para fechar lacunas finais antes de escala, cobrindo
 2. Antes do deploy: `npm run smoke:web`
 3. Pós deploy: validar roteiro manual de Etapa 2 + logs da Etapa 3.
 
+### Exemplos de execução local
+```bash
+# smoke crítico com e-mail padrão idempotente
+npm run smoke:web
+
+# smoke crítico com e-mail isolado por ambiente
+SMOKE_EMPRESA_EMAIL="smoke.web.hml@example.com" npm run smoke:web
+
+# e2e billing com e-mail estável (idempotente)
+E2E_EMPRESA_EMAIL="e2e.billing.hml@example.com" node scripts/e2e_test.js
+```
+
 ---
 
 ## Fechamento da Etapa 4
@@ -75,3 +96,18 @@ Consolidar uma etapa única para fechar lacunas finais antes de escala, cobrindo
 - Performance: otimização aplicada no fluxo crítico de listagem OS.
 - Go-live: comando e protocolo objetivo definidos.
 - Testes: trilha automatizada mínima encadeada (`verify:etapa4`).
+
+## Decisões adotadas (registro rápido)
+
+1. **Idempotência como padrão para validações operacionais**
+   - `scripts/smoke_web_critical.js` e `scripts/e2e_test.js` foram ajustados para reuso de dados em reexecuções.
+   - Objetivo: reduzir ruído de teste e evitar falhas por conflito de inserção.
+
+2. **Gates mínimos de qualidade em PR para `main`**
+   - `CI Quality Gates` + `Billing smoke + E2E tests` como checks mínimos recomendados.
+   - Objetivo: bloquear regressão funcional de billing antes do merge.
+
+3. **Critério de aceite operacional explícito**
+   - smoke sem erro inesperado;
+   - e2e com assinatura final `ativa` e `billing_model: modular`.
+   - Objetivo: padronizar decisão de aprovação técnica.

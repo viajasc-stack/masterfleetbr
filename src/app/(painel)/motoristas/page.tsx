@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { ActionIconButton } from "@/components/ui/ActionIcon";
 import { supabase } from "@/lib/supabase/client";
 
 type Motorista = {
@@ -370,14 +371,14 @@ export default function MotoristasPage() {
                       {new Date(m.created_at).toLocaleString("pt-BR")}
                     </td>
                     <td className="py-2 pr-0 text-right">
-                      <button
+                      <ActionIconButton
                         type="button"
-                        onClick={() => setDeleteTarget(m)}
-                        className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
                         title="Excluir motorista"
+                        variant="danger"
+                        onClick={() => setDeleteTarget(m)}
                       >
-                        🗑
-                      </button>
+                        🗑️
+                      </ActionIconButton>
                     </td>
                   </tr>
                 ))}

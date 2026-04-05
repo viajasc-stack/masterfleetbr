@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ActionIconButton, ActionIconLink } from "@/components/ui/ActionIcon";
 import { supabase } from "@/lib/supabase/client";
 
 type ViagemStatus =
@@ -230,33 +231,28 @@ export default function ViagensPage() {
                     </td>
                     <td className="py-2 pr-0 text-right">
                       <div className="inline-flex gap-2">
-                        <Link
-                          href={`/viagens/${v.id}`}
-                          className="px-2.5 py-1 text-xs border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50"
-                        >
-                          Detalhes
-                        </Link>
-                        <Link
-                          href={`/viagens/${v.id}/pedidos`}
-                          className="px-2.5 py-1 text-xs border border-indigo-200 text-indigo-700 rounded-md hover:bg-indigo-50"
-                        >
-                          Pedidos
-                        </Link>
-                        <button
+                        <ActionIconLink href={`/viagens/${v.id}`} title="Ver detalhes da viagem">
+                          👁️
+                        </ActionIconLink>
+                        <ActionIconLink href={`/viagens/${v.id}/pedidos`} title="Ver pedidos da viagem" variant="primary">
+                          🧾
+                        </ActionIconLink>
+                        <ActionIconButton
                           type="button"
+                          title={processingId === v.id ? "Publicando viagem" : v.publicada_em ? "Republicar viagem" : "Publicar viagem"}
+                          variant="success"
                           onClick={() => publicar(v)}
                           disabled={processingId === v.id}
-                          className="px-2.5 py-1 text-xs border border-blue-200 text-blue-700 rounded-md hover:bg-blue-50 disabled:opacity-50"
                         >
-                          {processingId === v.id ? "Publicando..." : v.publicada_em ? "Republicar" : "Publicar"}
-                        </button>
-                        <button
+                          {processingId === v.id ? "⏳" : "📣"}
+                        </ActionIconButton>
+                        <ActionIconButton
                           type="button"
+                          title="Copiar link público"
                           onClick={() => copiarLinkPublico(v)}
-                          className="px-2.5 py-1 text-xs border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50"
                         >
-                          Copiar link
-                        </button>
+                          🔗
+                        </ActionIconButton>
                       </div>
                     </td>
                   </tr>

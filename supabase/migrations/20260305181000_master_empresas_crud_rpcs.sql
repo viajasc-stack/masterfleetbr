@@ -1,5 +1,7 @@
 -- RPCs do painel master para listar/criar/editar/excluir empresas
 
+DROP FUNCTION IF EXISTS public.master_list_empresas();
+
 CREATE OR REPLACE FUNCTION public.master_list_empresas()
 RETURNS TABLE (
   id uuid,

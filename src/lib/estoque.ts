@@ -92,11 +92,6 @@ export async function registrarSaida(saidaId: string) {
   return data;
 }
 
-export async function transferirEstoque(transferenciaId: string) {
-  const { error } = await supabase.rpc("estoque_transferir", { p_transferencia_id: transferenciaId });
-  if (error) throw error;
-}
-
 export async function aplicarAjuste(ajusteId: string) {
   const { data, error } = await supabase.rpc("estoque_aplicar_ajuste", { p_ajuste_id: ajusteId });
   if (error) throw error;

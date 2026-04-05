@@ -5,7 +5,15 @@ import { supabase } from "@/lib/supabase/client";
 
 type Empresa = { id: string; nome: string; cnpj: string | null; telefone: string | null; email: string | null; endereco: string | null; cidade: string | null; estado: string | null };
 type Profile = { user_id: string; nome: string | null; role: string; empresa_id: string | null };
-type Assinatura = { status: string; trial_ate: string | null; proxima_cobranca: string | null; planos: { nome: string } | null };
+type Assinatura = {
+  status: string;
+  trial_ate: string | null;
+  proxima_cobranca: string | null;
+  billing_model?: string | null;
+  valor_total_centavos?: number | null;
+  modulos_ativos?: string[];
+  planos: { nome: string } | null;
+};
 type CustomDomainInfo = {
   allowed: boolean;
   allowed_subdomain?: boolean;
@@ -20,6 +28,26 @@ type CustomDomainInfo = {
   plano_codigo: string | null;
   plano_nome: string | null;
 };
+
+const MODULE_LABELS: Record<string, string> = {
+  operacional: "Operacional",
+  configuracoes: "Configurações",
+  usuarios: "Usuários",
+  suporte: "Suporte",
+  inventario: "Estoque",
+  financeiro: "Financeiro",
+  manutencao: "Manutenção",
+  oficina: "Oficina",
+  agenda: "Agenda",
+  viagens: "Viagens",
+  relatorios: "Relatórios",
+};
+
+const HIDDEN_MODULE_CODES = new Set(["api_integracoes", "automacoes"]);
+
+function formatModuloLabel(codigo: string) {
+  return MODULE_LABELS[codigo] ?? codigo;
+}
 
 export default function ConfiguracoesPage() {
   const [empresa, setEmpresa] = useState<Empresa | null>(null);
@@ -42,9 +70,9 @@ export default function ConfiguracoesPage() {
 
   function mapDomainError(errorMessage: string) {
     const msg = (errorMessage || "").toLowerCase();
-    if (msg.includes("plano_not_allowed")) return "Recurso disponível apenas para planos elegíveis.";
-    if (msg.includes("plano_subdomain_not_allowed")) return "Seu plano não permite subdomínio da plataforma.";
-    if (msg.includes("plano_domain_not_allowed")) return "Domínio próprio disponível apenas no plano Supremo.";
+    if (msg.includes("plano_not_allowed")) return "Recurso disponível apenas para assinaturas elegíveis.";
+    if (msg.includes("plano_subdomain_not_allowed")) return "Sua assinatura atual não permite subdomínio da plataforma.";
+    if (msg.includes("plano_domain_not_allowed")) return "Domínio próprio disponível apenas para contratos elegíveis.";
     if (msg.includes("subdomain_reserved")) return "Esse subdomínio é reservado pelo sistema.";
     if (msg.includes("subdomain_invalid")) return "Subdomínio inválido. Use apenas letras minúsculas, números e hífen.";
     if (msg.includes("subdomain_unavailable")) return "Subdomínio indisponível. Escolha outro.";
@@ -108,6 +136,9 @@ export default function ConfiguracoesPage() {
             status: billing.status ?? "trial",
             trial_ate: billing.trial_ate ?? null,
             proxima_cobranca: billing.proxima_cobranca ?? null,
+            billing_model: billing.billing_model ?? "modular",
+            valor_total_centavos: billing.valor_total_centavos ?? null,
+            modulos_ativos: Array.isArray(billing.modulos_ativos) ? billing.modulos_ativos.map((m: unknown) => String(m)) : [],
             planos: billing.plano_nome ? { nome: billing.plano_nome } : null,
           });
         } else {
@@ -213,38 +244,39 @@ export default function ConfiguracoesPage() {
     await carregarDominio();
   }
 
-  if (loading) return <div className="text-slate-400 text-sm">Carregando...</div>;
+  if (loading) return <div className="text-slate-500 text-sm">Carregando...</div>;
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-5xl">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Configurações</h1>
-        <p className="text-slate-400 text-sm mt-0.5">Dados da empresa e conta do usuário</p>
+        <h1 className="text-2xl font-semibold text-slate-900">Configurações</h1>
+        <p className="text-slate-600 text-sm mt-0.5">Dados da empresa, conta do usuário e identidade da plataforma</p>
       </div>
 
       {msg && (
-        <div className={`rounded-lg border px-4 py-3 text-sm ${msg.startsWith("Erro") ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-green-500/30 bg-green-500/10 text-green-300"}`}>
+          <div className={`rounded-lg border px-4 py-3 text-sm ${msg.startsWith("Erro") ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
           {msg}
         </div>
       )}
 
       {assinatura && (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-5 py-4 flex items-center justify-between text-sm">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm px-5 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm">
           <div>
-            <span className="text-slate-400">Plano: </span>
-            <span className="text-white font-medium">{assinatura.planos?.nome ?? "—"}</span>
+            <span className="text-slate-500">Assinatura: </span>
+            <span className="text-slate-900 font-medium capitalize">{assinatura.billing_model ?? "modular"}</span>
+            {assinatura.valor_total_centavos != null ? <span className="text-slate-500 ml-3">Valor: <span className="text-slate-900 font-medium">{(assinatura.valor_total_centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span></span> : null}
           </div>
           <div className="flex items-center gap-3">
-            <span className={`text-xs px-2 py-1 rounded border ${assinatura.status === "ativa" ? "border-green-500/40 text-green-300" : assinatura.status === "trial" ? "border-blue-500/40 text-blue-300" : "border-amber-500/40 text-amber-300"}`}>{assinatura.status}</span>
+            <span className={`text-xs px-2 py-1 rounded border font-medium ${assinatura.status === "ativa" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : assinatura.status === "trial" ? "border-blue-300 text-blue-700 bg-blue-50" : "border-amber-300 text-amber-700 bg-amber-50"}`}>{assinatura.status}</span>
             {assinatura.status === "trial" && assinatura.trial_ate && <span className="text-slate-500">Trial até {new Date(assinatura.trial_ate).toLocaleDateString("pt-BR")}</span>}
           </div>
         </div>
       )}
 
-      <div className="flex gap-1 bg-slate-900/40 border border-slate-800 rounded-lg p-1 w-fit">
+      <div className="flex gap-1 bg-white border border-slate-200 shadow-sm rounded-lg p-1 w-fit">
         {(["empresa", "conta"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-1.5 rounded text-sm transition ${tab === t ? "bg-slate-700 text-white" : "text-slate-400 hover:text-white"}`}>
+            className={`px-4 py-1.5 rounded text-sm transition ${tab === t ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"}`}>
             {t === "empresa" ? "Empresa" : "Minha Conta"}
           </button>
         ))}
@@ -252,47 +284,47 @@ export default function ConfiguracoesPage() {
 
       {tab === "empresa" && empresa && (
         <div className="space-y-5">
-          <form onSubmit={salvarEmpresa} className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 text-sm">
-            <h2 className="font-semibold">Dados da Empresa</h2>
+          <form onSubmit={salvarEmpresa} className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4 text-sm">
+            <h2 className="font-semibold text-slate-900">Dados da Empresa</h2>
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
-                <label className="block font-medium mb-1">Nome *</label>
-                <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.nome} onChange={(e) => setFormEmpresa((p) => ({ ...p, nome: e.target.value }))} required />
+                <label className="block font-medium mb-1 text-slate-700">Nome *</label>
+                <input className="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400" value={formEmpresa.nome} onChange={(e) => setFormEmpresa((p) => ({ ...p, nome: e.target.value }))} required />
               </div>
               <div>
-                <label className="block font-medium mb-1">CNPJ</label>
-                <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.cnpj} onChange={(e) => setFormEmpresa((p) => ({ ...p, cnpj: e.target.value }))} placeholder="00.000.000/0000-00" />
+                <label className="block font-medium mb-1 text-slate-700">CNPJ</label>
+                <input className="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400" value={formEmpresa.cnpj} onChange={(e) => setFormEmpresa((p) => ({ ...p, cnpj: e.target.value }))} placeholder="00.000.000/0000-00" />
               </div>
               <div>
-                <label className="block font-medium mb-1">Telefone</label>
-                <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.telefone} onChange={(e) => setFormEmpresa((p) => ({ ...p, telefone: e.target.value }))} />
+                <label className="block font-medium mb-1 text-slate-700">Telefone</label>
+                <input className="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400" value={formEmpresa.telefone} onChange={(e) => setFormEmpresa((p) => ({ ...p, telefone: e.target.value }))} />
               </div>
               <div className="col-span-2">
-                <label className="block font-medium mb-1">E-mail</label>
-                <input type="email" className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.email} onChange={(e) => setFormEmpresa((p) => ({ ...p, email: e.target.value }))} />
+                <label className="block font-medium mb-1 text-slate-700">E-mail</label>
+                <input type="email" className="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400" value={formEmpresa.email} onChange={(e) => setFormEmpresa((p) => ({ ...p, email: e.target.value }))} />
               </div>
               <div className="col-span-2">
-                <label className="block font-medium mb-1">Endereço</label>
-                <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.endereco} onChange={(e) => setFormEmpresa((p) => ({ ...p, endereco: e.target.value }))} />
+                <label className="block font-medium mb-1 text-slate-700">Endereço</label>
+                <input className="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400" value={formEmpresa.endereco} onChange={(e) => setFormEmpresa((p) => ({ ...p, endereco: e.target.value }))} />
               </div>
               <div>
-                <label className="block font-medium mb-1">Cidade</label>
-                <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formEmpresa.cidade} onChange={(e) => setFormEmpresa((p) => ({ ...p, cidade: e.target.value }))} />
+                <label className="block font-medium mb-1 text-slate-700">Cidade</label>
+                <input className="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400" value={formEmpresa.cidade} onChange={(e) => setFormEmpresa((p) => ({ ...p, cidade: e.target.value }))} />
               </div>
               <div>
-                <label className="block font-medium mb-1">UF</label>
-                <input className="w-full border border-slate-300 rounded-md px-3 py-2 uppercase" maxLength={2} value={formEmpresa.estado} onChange={(e) => setFormEmpresa((p) => ({ ...p, estado: e.target.value.toUpperCase() }))} placeholder="SP" />
+                <label className="block font-medium mb-1 text-slate-700">UF</label>
+                <input className="w-full border border-slate-300 rounded-md px-3 py-2 uppercase focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400" maxLength={2} value={formEmpresa.estado} onChange={(e) => setFormEmpresa((p) => ({ ...p, estado: e.target.value.toUpperCase() }))} placeholder="SP" />
               </div>
             </div>
-            <button type="submit" disabled={saving} className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-60 transition">
+            <button type="submit" disabled={saving} className="bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-60 transition">
               {saving ? "Salvando..." : "Salvar dados da empresa"}
             </button>
           </form>
 
-          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 text-sm">
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4 text-sm">
             <div>
-              <h2 className="font-semibold">URL personalizada</h2>
-              <p className="text-slate-500 mt-1">No plano Enterprise/Top: subdomínio da plataforma. No plano Supremo: domínio próprio do cliente.</p>
+              <h2 className="font-semibold text-slate-900">URL personalizada</h2>
+              <p className="text-slate-500 mt-1">Subdomínio e domínio próprio dependem dos módulos/condições comerciais habilitados para a empresa.</p>
             </div>
 
             {domainMsg && (
@@ -303,17 +335,31 @@ export default function ConfiguracoesPage() {
 
             <div className="grid md:grid-cols-2 gap-4 text-xs">
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                <div className="text-slate-500">Plano atual</div>
-                <div className="text-slate-900 font-medium mt-1">{domainInfo?.plano_nome ?? assinatura?.planos?.nome ?? "—"}</div>
+                <div className="text-slate-500">Modelo atual</div>
+                <div className="text-slate-900 font-medium mt-1 capitalize">{assinatura?.billing_model ?? "modular"}</div>
               </div>
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                <div className="text-slate-500">Status do domínio</div>
+                <div className="text-slate-500">Módulos ativos</div>
                 <div className="text-slate-900 font-medium mt-1">
-                  {domainInfo?.dominio_status ?? "desativado"} / SSL: {domainInfo?.dominio_ssl_status ?? "pendente"}
+                  {assinatura?.modulos_ativos && assinatura.modulos_ativos.length > 0
+                    ? assinatura.modulos_ativos
+                      .filter((codigo) => !HIDDEN_MODULE_CODES.has(codigo))
+                      .map(formatModuloLabel)
+                      .join(", ")
+                    : domainInfo?.allowed_custom_domain
+                      ? "Domínio próprio + subdomínio"
+                      : domainInfo?.allowed_subdomain
+                        ? "Subdomínio da plataforma"
+                        : "Recurso não liberado"}
                 </div>
               </div>
+              {assinatura?.modulos_ativos?.includes("operacional") ? (
+                <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 md:col-span-2 text-sm text-indigo-800">
+                  <strong>Operacional</strong> é o pacote principal da plataforma e reúne dashboard, OS, veículos, motoristas, fretamentos, contratos, passageiros e clientes.
+                </div>
+              ) : null}
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3 md:col-span-2">
-                <div className="text-slate-500">Recursos liberados no plano</div>
+                Recurso disponível apenas para empresas com habilitação comercial compatível e assinatura ativa/trial.
                 <div className="text-slate-900 font-medium mt-1">
                   {(domainInfo?.allowed_subdomain ? "Subdomínio" : "")}
                   {domainInfo?.allowed_subdomain && domainInfo?.allowed_custom_domain ? " + " : ""}
@@ -340,14 +386,14 @@ export default function ConfiguracoesPage() {
                     <button
                       type="button"
                       onClick={() => setDomainMode("subdomain")}
-                      className={`px-3 py-1.5 rounded-md border ${domainMode === "subdomain" ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}
+                      className={`px-3 py-1.5 rounded-md border ${domainMode === "subdomain" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600"}`}
                     >
                       Subdomínio da plataforma
                     </button>
                     <button
                       type="button"
                       onClick={() => setDomainMode("domain")}
-                      className={`px-3 py-1.5 rounded-md border ${domainMode === "domain" ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}
+                      className={`px-3 py-1.5 rounded-md border ${domainMode === "domain" ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600"}`}
                     >
                       Domínio próprio
                     </button>
@@ -366,7 +412,7 @@ export default function ConfiguracoesPage() {
                       />
                       <span className="text-slate-500">.{domainInfo?.base_domain ?? "masterfleetbr.com.br"}</span>
                     </div>
-                    <button type="submit" disabled={domainSaving} className="bg-slate-800 text-white px-4 py-2 rounded-md hover:bg-slate-700 disabled:opacity-60">
+                    <button type="submit" disabled={domainSaving} className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-60">
                       {domainSaving ? "Salvando..." : "Salvar subdomínio"}
                     </button>
                   </form>
@@ -379,7 +425,7 @@ export default function ConfiguracoesPage() {
                       onChange={(e) => setDomainInput(e.target.value.toLowerCase())}
                       placeholder="app.suaempresa.com.br"
                     />
-                    <button type="submit" disabled={domainSaving} className="bg-slate-800 text-white px-4 py-2 rounded-md hover:bg-slate-700 disabled:opacity-60">
+                    <button type="submit" disabled={domainSaving} className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-60">
                       {domainSaving ? "Salvando..." : "Salvar domínio"}
                     </button>
                   </form>
@@ -400,32 +446,32 @@ export default function ConfiguracoesPage() {
 
       {tab === "conta" && (
         <div className="space-y-5">
-          <form onSubmit={salvarPerfil} className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 text-sm">
-            <h2 className="font-semibold">Meu Perfil</h2>
+          <form onSubmit={salvarPerfil} className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4 text-sm">
+            <h2 className="font-semibold text-slate-900">Meu Perfil</h2>
             <div>
-              <label className="block font-medium mb-1">Nome</label>
-              <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={formPerfil.nome} onChange={(e) => setFormPerfil({ nome: e.target.value })} />
+              <label className="block font-medium mb-1 text-slate-700">Nome</label>
+              <input className="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400" value={formPerfil.nome} onChange={(e) => setFormPerfil({ nome: e.target.value })} />
             </div>
             <div>
-              <label className="block font-medium mb-1">Papel</label>
+              <label className="block font-medium mb-1 text-slate-700">Papel</label>
               <div className="text-slate-600 border border-slate-200 rounded-md px-3 py-2 bg-slate-50">{profile?.role ?? "—"}</div>
             </div>
-            <button type="submit" disabled={saving} className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-60 transition">
+            <button type="submit" disabled={saving} className="bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-60 transition">
               {saving ? "Salvando..." : "Salvar perfil"}
             </button>
           </form>
 
-          <form onSubmit={alterarSenha} className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 text-sm">
-            <h2 className="font-semibold">Alterar Senha</h2>
+          <form onSubmit={alterarSenha} className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4 text-sm">
+            <h2 className="font-semibold text-slate-900">Alterar Senha</h2>
             <div>
-              <label className="block font-medium mb-1">Nova senha *</label>
-              <input type="password" className="w-full border border-slate-300 rounded-md px-3 py-2" value={senhaNova} onChange={(e) => setSenhaNova(e.target.value)} required minLength={6} />
+              <label className="block font-medium mb-1 text-slate-700">Nova senha *</label>
+              <input type="password" className="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400" value={senhaNova} onChange={(e) => setSenhaNova(e.target.value)} required minLength={6} />
             </div>
             <div>
-              <label className="block font-medium mb-1">Confirmar *</label>
-              <input type="password" className="w-full border border-slate-300 rounded-md px-3 py-2" value={senhaConf} onChange={(e) => setSenhaConf(e.target.value)} required />
+              <label className="block font-medium mb-1 text-slate-700">Confirmar *</label>
+              <input type="password" className="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400" value={senhaConf} onChange={(e) => setSenhaConf(e.target.value)} required />
             </div>
-            <button type="submit" disabled={saving} className="bg-slate-800 text-white px-6 py-2 rounded-md hover:bg-slate-700 disabled:opacity-60 transition">
+            <button type="submit" disabled={saving} className="bg-slate-900 text-white px-6 py-2 rounded-md hover:bg-slate-800 disabled:opacity-60 transition">
               {saving ? "Alterando..." : "Alterar senha"}
             </button>
           </form>

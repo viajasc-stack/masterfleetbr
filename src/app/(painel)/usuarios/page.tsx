@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { ActionIconButton, ActionIconLink } from "@/components/ui/ActionIcon";
 import { supabase } from "@/lib/supabase/client";
 
 type Usuario = {
@@ -326,22 +327,20 @@ export default function UsuariosPage() {
                       </span>
                     </td>
                     <td className="py-2 pr-0">{new Date(u.created_at).toLocaleString("pt-BR")}</td>
-                    <td className="py-2 pr-0 text-right space-x-2">
-                      <Link
-                        href={`/usuarios/${u.id}`}
-                        className="inline-block px-2 py-1 text-xs border border-blue-200 text-blue-700 rounded-md hover:bg-blue-50"
-                        title="Editar usuário"
-                      >
-                        ✏️
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget(u)}
-                        className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50"
-                        title="Excluir usuário"
-                      >
-                        🗑
-                      </button>
+                    <td className="py-2 pr-0 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <ActionIconLink href={`/usuarios/${u.id}`} title="Editar usuário" variant="primary">
+                          ✏️
+                        </ActionIconLink>
+                        <ActionIconButton
+                          type="button"
+                          title="Excluir usuário"
+                          variant="danger"
+                          onClick={() => setDeleteTarget(u)}
+                        >
+                          🗑️
+                        </ActionIconButton>
+                      </div>
                     </td>
                   </tr>
                 ))}

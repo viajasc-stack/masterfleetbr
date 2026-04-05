@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase/client";
 type SidebarProps = {
   mobileOpen?: boolean;
   onClose?: () => void;
+  empresaNome?: string | null;
 };
 
 type NavItem = {
@@ -31,11 +32,8 @@ const INVENTARIO_SUBLINKS = [
   { href: "/inventario/compras", label: "Compras" },
   { href: "/inventario/fornecedores", label: "Fornecedores" },
   { href: "/inventario/locais-estoque", label: "Locais de Estoque" },
-  { href: "/inventario/transferencias", label: "Transferências" },
   { href: "/inventario/ajustes-estoque", label: "Ajustes de Estoque" },
-  { href: "/inventario/inventario-fisico", label: "Inventário Físico" },
   { href: "/inventario/alertas-reposicao", label: "Alertas e Reposição" },
-  { href: "/inventario/relatorios", label: "Relatórios" },
   { href: "/inventario/configuracoes", label: "Configurações" },
 ];
 
@@ -44,20 +42,22 @@ const FINANCEIRO_SUBLINKS = [
   { href: "/financeiro/contas", label: "Todas as contas" },
   { href: "/financeiro/contas?tipo=pagar", label: "Contas a pagar" },
   { href: "/financeiro/contas?tipo=receber", label: "Contas a receber" },
-  { href: "/financeiro/assinatura", label: "Assinatura" },
-  { href: "/financeiro/faturas", label: "Faturas" },
 ];
 
 const MANUTENCAO_SUBLINKS = [
   { href: "/manutencao", label: "Dashboard" },
   { href: "/manutencao/solicitacoes", label: "Solicitações" },
-  { href: "/manutencao/ordens", label: "Ordens de manutenção" },
-  { href: "/manutencao/preventiva", label: "Preventiva" },
-  { href: "/manutencao/planos", label: "Planos de manutenção" },
-  { href: "/manutencao/fornecedores", label: "Fornecedores" },
-  { href: "/manutencao/tipos-servico", label: "Tipos de serviço" },
-  { href: "/manutencao/historico", label: "Histórico" },
-  { href: "/manutencao/relatorios", label: "Relatórios" },
+  { href: "/manutencao/preventivas", label: "Preventivas" },
+  { href: "/manutencao/planos", label: "Planos" },
+  { href: "/manutencao/indicadores", label: "Indicadores" },
+];
+
+const OFICINA_SUBLINKS = [
+  { href: "/oficina", label: "Dashboard" },
+  { href: "/oficina/ordens", label: "Ordens de Trabalho" },
+  { href: "/oficina/mecanicos", label: "Mecânicos" },
+  { href: "/oficina/orcamentos", label: "Orçamentos" },
+  { href: "/oficina/kpis", label: "Indicadores" },
 ];
 
 const FRETAMENTOS_SUBLINKS = [
@@ -67,46 +67,42 @@ const FRETAMENTOS_SUBLINKS = [
 
 const CONFIGURACOES_SUBLINKS = [
   { href: "/configuracoes", label: "Geral" },
+  { href: "/configuracoes/meu-plano", label: "Meu plano" },
   { href: "/configuracoes/dashboard", label: "Dashboard" },
-  { href: "/configuracoes/checklist", label: "Checklist" },
   { href: "/configuracoes/fretamento-recorrente", label: "Fretamento recorrente" },
-  { href: "/configuracoes/google-agenda", label: "Google Agenda" },
-  { href: "/configuracoes/pagamentos", label: "Pagamentos" },
 ];
 
 const LINKS: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: "◼", group: "Operacional", modulo: "dashboard" },
-  { href: "/ordens-servico", label: "Ordens de Serviço", icon: "◼", group: "Operacional", modulo: "ordens_servico" },
-  { href: "/veiculos", label: "Veículos", icon: "◼", group: "Operacional", modulo: "veiculos" },
-  { href: "/motoristas", label: "Motoristas", icon: "◼", group: "Operacional", modulo: "motoristas" },
-  { href: "/fretamentos", label: "Fretamentos", icon: "◼", group: "Operacional", modulo: "ordens_servico" },
-  { href: "/contratos", label: "Contratos", icon: "◼", group: "Operacional", modulo: "ordens_servico" },
-  { href: "/passageiros", label: "Passageiros", icon: "◼", group: "Operacional", modulo: "ordens_servico" },
-  { href: "/clientes", label: "Clientes", icon: "◼", group: "Operacional", modulo: "clientes" },
+  { href: "/dashboard", label: "Dashboard", icon: "◼", group: "Operacional", modulo: "operacional" },
+  { href: "/ordens-servico", label: "Ordens de Serviço", icon: "◼", group: "Operacional", modulo: "operacional" },
+  { href: "/veiculos", label: "Veículos", icon: "◼", group: "Operacional", modulo: "operacional" },
+  { href: "/motoristas", label: "Motoristas", icon: "◼", group: "Operacional", modulo: "operacional" },
+  { href: "/fretamentos", label: "Fretamentos", icon: "◼", group: "Operacional", modulo: "operacional" },
+  { href: "/contratos", label: "Contratos", icon: "◼", group: "Operacional", modulo: "operacional" },
+  { href: "/passageiros", label: "Passageiros", icon: "◼", group: "Operacional", modulo: "operacional" },
+  { href: "/clientes", label: "Clientes", icon: "◼", group: "Operacional", modulo: "operacional" },
   { href: "/inventario", label: "Estoque", icon: "◼", group: "Gestão", modulo: "inventario" },
   { href: "/financeiro", label: "Financeiro", icon: "◼", group: "Gestão", modulo: "financeiro" },
   { href: "/manutencao", label: "Manutenção", icon: "◼", group: "Gestão", modulo: "manutencao" },
-  { href: "/abastecimentos", label: "Abastecimentos", icon: "◼", group: "Gestão", modulo: "ordens_servico" },
-  { href: "/orcamentos", label: "Orçamentos", icon: "◼", group: "Gestão", modulo: "ordens_servico" },
+  { href: "/oficina", label: "Oficina", icon: "◼", group: "Gestão", modulo: "oficina" },
+  { href: "/abastecimentos", label: "Abastecimentos", icon: "◼", group: "Gestão", modulo: "operacional" },
+  { href: "/orcamentos", label: "Orçamentos", icon: "◼", group: "Gestão", modulo: "operacional" },
   { href: "/agenda", label: "Agenda", icon: "◼", group: "Gestão", modulo: "agenda" },
   { href: "/viagens", label: "Viagens", icon: "◼", group: "Gestão", modulo: "viagens" },
+  { href: "/central-negocios", label: "Central de Negócios", icon: "◼", group: "Gestão", modulo: "operacional" },
   { href: "/relatorios", label: "Relatórios", icon: "◼", group: "Gestão", modulo: "relatorios" },
   { href: "/bi/rentabilidade", label: "BI Rentabilidade", icon: "◼", group: "Gestão", modulo: "relatorios" },
-  { href: "/telemetria", label: "Telemetria", icon: "◼", group: "Gestão", modulo: "relatorios" },
-  { href: "/observabilidade", label: "Observabilidade", icon: "◼", group: "Administrativo", modulo: "relatorios" },
-  { href: "/portal-cliente", label: "Portal do Cliente", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
-  { href: "/compliance", label: "Compliance", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
-  { href: "/escalas", label: "Escalas", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
   { href: "/suporte", label: "Suporte", icon: "◼", group: "Administrativo", modulo: "suporte" },
   { href: "/configuracoes", label: "Configurações", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
 ];
 
-export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
+export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [inventarioOpenManual, setInventarioOpenManual] = useState<boolean | null>(null);
   const [financeiroOpenManual, setFinanceiroOpenManual] = useState<boolean | null>(null);
   const [manutencaoOpenManual, setManutencaoOpenManual] = useState<boolean | null>(null);
+  const [oficinaOpenManual, setOficinaOpenManual] = useState<boolean | null>(null);
   const [fretamentosOpenManual, setFretamentosOpenManual] = useState<boolean | null>(null);
   const [configuracoesOpenManual, setConfiguracoesOpenManual] = useState<boolean | null>(null);
   const [canUseAllModules, setCanUseAllModules] = useState(false);
@@ -114,6 +110,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   const [globalActiveModules, setGlobalActiveModules] = useState<string[]>([]);
   const [supportUnread, setSupportUnread] = useState(0);
   const [canShowReferralMenu, setCanShowReferralMenu] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadModules() {
@@ -147,9 +144,23 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
     return () => clearTimeout(t);
   }, [pathname]);
 
+  useEffect(() => {
+    async function loadBrandingLogo() {
+      const { data } = await supabase.rpc("get_public_branding");
+      const branding = (data ?? null) as { logo_url?: string | null } | null;
+      setLogoUrl(branding?.logo_url ?? null);
+    }
+
+    const t = setTimeout(() => {
+      void loadBrandingLogo();
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
   const inventarioOpen = inventarioOpenManual ?? Boolean(pathname?.startsWith("/inventario"));
   const financeiroOpen = financeiroOpenManual ?? Boolean(pathname?.startsWith("/financeiro"));
   const manutencaoOpen = manutencaoOpenManual ?? Boolean(pathname?.startsWith("/manutencao"));
+  const oficinaOpen = oficinaOpenManual ?? Boolean(pathname?.startsWith("/oficina"));
   const fretamentosOpen = fretamentosOpenManual ?? Boolean(pathname?.startsWith("/fretamentos"));
   const configuracoesOpen = configuracoesOpenManual ?? Boolean(pathname?.startsWith("/configuracoes"));
 
@@ -164,6 +175,22 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
     return allowedModules.includes(modulo);
   }
 
+  function parentItemClass(ativo: boolean) {
+    return `flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm border transition-all ${
+      ativo
+        ? "bg-gradient-to-r from-indigo-500/20 to-cyan-500/10 text-white border-indigo-400/30 shadow-sm shadow-indigo-900/20"
+        : "text-slate-300 border-transparent hover:bg-slate-800/70 hover:text-white hover:border-slate-700"
+    }`;
+  }
+
+  function subItemClass(ativo: boolean) {
+    return `block px-3 py-1.5 rounded-lg text-sm border transition-all ${
+      ativo
+        ? "bg-slate-800 text-white border-slate-700"
+        : "text-slate-400 border-transparent hover:bg-slate-800/60 hover:text-slate-100"
+    }`;
+  }
+
   return (
     <>
       {mobileOpen ? (
@@ -176,20 +203,38 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
       ) : null}
 
       <aside
-        className={`fixed xl:static inset-y-0 left-0 z-40 w-72 xl:w-60 border-r border-slate-800 bg-slate-900 flex flex-col shrink-0 transform transition-transform duration-200 ${
+        className={`fixed xl:static inset-y-0 left-0 z-40 w-72 xl:w-64 border-r border-slate-800/80 bg-slate-950/95 backdrop-blur-xl flex flex-col shrink-0 transform transition-transform duration-200 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full xl:translate-x-0"
         }`}
       >
-      <div className="p-4 border-b border-slate-800">
+      <div className="p-4 border-b border-slate-800/80 bg-gradient-to-b from-slate-900 to-slate-950">
         <div className="flex items-center justify-between gap-2">
-          <div>
-            <div className="text-base font-bold text-white tracking-tight">MasterFleetBR</div>
-            <div className="text-xs text-slate-400 mt-0.5">Painel da Empresa</div>
+          <div className="flex items-center gap-3">
+            <div
+              className={`h-12 w-12 rounded-xl text-white text-xs font-bold flex items-center justify-center overflow-hidden ${
+                logoUrl
+                  ? "bg-white border border-slate-200"
+                  : "bg-gradient-to-br from-indigo-500 to-cyan-400 shadow-md shadow-indigo-900/30"
+              }`}
+            >
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoUrl} alt="Logo MasterFleetBR" className="h-full w-full object-contain" />
+              ) : (
+                <span>MF</span>
+              )}
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-white tracking-tight truncate max-w-[170px]" title={empresaNome ?? "Empresa"}>
+                {empresaNome?.trim() || "Empresa"}
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">MasterFleetBR</div>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="xl:hidden inline-flex h-8 w-8 items-center justify-center rounded border border-slate-700 text-slate-300"
+            className="xl:hidden inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
             aria-label="Fechar menu"
           >
             ✕
@@ -206,7 +251,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
           if (items.length === 0) return null;
           return (
             <div key={group} className="mb-1">
-              <div className="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+              <div className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 {group}
               </div>
               {items.map((link) => {
@@ -216,11 +261,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                   return (
                     <div key={link.href} className="mx-2">
                       <div
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                          ativo
-                            ? "bg-slate-800 text-white"
-                            : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                        }`}
+                        className={parentItemClass(ativo)}
                       >
                         <Link href={link.href} className="flex-1" onClick={onClose}>
                           {link.label}
@@ -236,7 +277,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                       </div>
 
                       {inventarioOpen ? (
-                        <div className="mt-1 mb-1 ml-2 border-l border-slate-800 pl-2">
+                        <div className="mt-1 mb-2 ml-3 border-l border-slate-700/80 pl-2 space-y-0.5">
                           {INVENTARIO_SUBLINKS.filter(() => hasModulo("inventario")).map((sub) => {
                             const subAtivo = isAtivo(sub.href);
                             return (
@@ -244,11 +285,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                                 key={sub.href}
                                 href={sub.href}
                                 onClick={onClose}
-                                className={`block px-3 py-1.5 rounded-md text-sm transition-colors ${
-                                  subAtivo
-                                    ? "bg-slate-800 text-white"
-                                    : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                                }`}
+                                className={subItemClass(subAtivo)}
                               >
                                 {sub.label}
                               </Link>
@@ -264,11 +301,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                   return (
                     <div key={link.href} className="mx-2">
                       <div
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                          ativo
-                            ? "bg-slate-800 text-white"
-                            : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                        }`}
+                        className={parentItemClass(ativo)}
                       >
                         <Link href={link.href} className="flex-1" onClick={onClose}>
                           {link.label}
@@ -284,7 +317,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                       </div>
 
                       {financeiroOpen ? (
-                        <div className="mt-1 mb-1 ml-2 border-l border-slate-800 pl-2">
+                        <div className="mt-1 mb-2 ml-3 border-l border-slate-700/80 pl-2 space-y-0.5">
                           {FINANCEIRO_SUBLINKS.filter(() => hasModulo("financeiro")).map((sub) => {
                             const subAtivo = sub.href.includes("?tipo=")
                               ? pathname === "/financeiro/contas" && searchParams?.get("tipo") === sub.href.split("tipo=")[1]
@@ -295,11 +328,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                                 key={sub.href}
                                 href={sub.href}
                                 onClick={onClose}
-                                className={`block px-3 py-1.5 rounded-md text-sm transition-colors ${
-                                  subAtivo
-                                    ? "bg-slate-800 text-white"
-                                    : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                                }`}
+                                className={subItemClass(subAtivo)}
                               >
                                 {sub.label}
                               </Link>
@@ -315,11 +344,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                   return (
                     <div key={link.href} className="mx-2">
                       <div
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                          ativo
-                            ? "bg-slate-800 text-white"
-                            : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                        }`}
+                        className={parentItemClass(ativo)}
                       >
                         <Link href={link.href} className="flex-1" onClick={onClose}>
                           {link.label}
@@ -335,7 +360,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                       </div>
 
                       {manutencaoOpen ? (
-                        <div className="mt-1 mb-1 ml-2 border-l border-slate-800 pl-2">
+                        <div className="mt-1 mb-2 ml-3 border-l border-slate-700/80 pl-2 space-y-0.5">
                           {MANUTENCAO_SUBLINKS.filter(() => hasModulo("manutencao")).map((sub) => {
                             const subAtivo = isAtivo(sub.href);
                             return (
@@ -343,11 +368,47 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                                 key={sub.href}
                                 href={sub.href}
                                 onClick={onClose}
-                                className={`block px-3 py-1.5 rounded-md text-sm transition-colors ${
-                                  subAtivo
-                                    ? "bg-slate-800 text-white"
-                                    : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                                }`}
+                                className={subItemClass(subAtivo)}
+                              >
+                                {sub.label}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }
+
+                if (link.href === "/oficina") {
+                  return (
+                    <div key={link.href} className="mx-2">
+                      <div
+                        className={parentItemClass(ativo)}
+                      >
+                        <Link href={link.href} className="flex-1" onClick={onClose}>
+                          {link.label}
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => setOficinaOpenManual((v) => !(v ?? Boolean(pathname?.startsWith("/oficina"))))}
+                          className="text-xs text-slate-400 hover:text-slate-200"
+                          aria-label={oficinaOpen ? "Recolher submenu de oficina" : "Expandir submenu de oficina"}
+                        >
+                          {oficinaOpen ? "▾" : "▸"}
+                        </button>
+                      </div>
+
+                      {oficinaOpen ? (
+                        <div className="mt-1 mb-2 ml-3 border-l border-slate-700/80 pl-2 space-y-0.5">
+                          {OFICINA_SUBLINKS.filter(() => hasModulo("oficina")).map((sub) => {
+                            const subAtivo = isAtivo(sub.href);
+                            return (
+                              <Link
+                                key={sub.href}
+                                href={sub.href}
+                                onClick={onClose}
+                                className={subItemClass(subAtivo)}
                               >
                                 {sub.label}
                               </Link>
@@ -363,11 +424,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                   return (
                     <div key={link.href} className="mx-2">
                       <div
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                          ativo
-                            ? "bg-slate-800 text-white"
-                            : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                        }`}
+                        className={parentItemClass(ativo)}
                       >
                         <Link href="/fretamentos/eventual" className="flex-1" onClick={onClose}>
                           {link.label}
@@ -383,19 +440,15 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                       </div>
 
                       {fretamentosOpen ? (
-                        <div className="mt-1 mb-1 ml-2 border-l border-slate-800 pl-2">
-                          {FRETAMENTOS_SUBLINKS.filter(() => hasModulo("ordens_servico")).map((sub) => {
+                        <div className="mt-1 mb-2 ml-3 border-l border-slate-700/80 pl-2 space-y-0.5">
+                          {FRETAMENTOS_SUBLINKS.filter(() => hasModulo("operacional")).map((sub) => {
                             const subAtivo = isAtivo(sub.href);
                             return (
                               <Link
                                 key={sub.href}
                                 href={sub.href}
                                 onClick={onClose}
-                                className={`block px-3 py-1.5 rounded-md text-sm transition-colors ${
-                                  subAtivo
-                                    ? "bg-slate-800 text-white"
-                                    : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                                }`}
+                                className={subItemClass(subAtivo)}
                               >
                                 {sub.label}
                               </Link>
@@ -411,11 +464,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                   return (
                     <div key={link.href} className="mx-2">
                       <div
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                          ativo
-                            ? "bg-slate-800 text-white"
-                            : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                        }`}
+                        className={parentItemClass(ativo)}
                       >
                         <Link href={link.href} className="flex-1" onClick={onClose}>
                           {link.label}
@@ -431,7 +480,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                       </div>
 
                       {configuracoesOpen ? (
-                        <div className="mt-1 mb-1 ml-2 border-l border-slate-800 pl-2">
+                        <div className="mt-1 mb-2 ml-3 border-l border-slate-700/80 pl-2 space-y-0.5">
                           {CONFIGURACOES_SUBLINKS.filter(() => hasModulo("configuracoes")).map((sub) => {
                             const subAtivo = isAtivo(sub.href);
                             return (
@@ -439,11 +488,7 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                                 key={sub.href}
                                 href={sub.href}
                                 onClick={onClose}
-                                className={`block px-3 py-1.5 rounded-md text-sm transition-colors ${
-                                  subAtivo
-                                    ? "bg-slate-800 text-white"
-                                    : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                                }`}
+                                className={subItemClass(subAtivo)}
                               >
                                 {sub.label}
                               </Link>
@@ -460,13 +505,10 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                     key={link.href}
                     href={link.href}
                     onClick={onClose}
-                    className={`flex items-center gap-2 mx-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                      ativo
-                        ? "bg-slate-800 text-white"
-                        : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                    }`}
+                    className={`mx-2 ${parentItemClass(ativo)}`}
                   >
                     <span className="flex items-center gap-2">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-500" />
                       <span>{link.label}</span>
                       {link.href === "/suporte" && supportUnread > 0 ? (
                         <span className="inline-block h-2.5 w-2.5 rounded-full bg-rose-500" aria-label="Há mensagens novas no suporte" />
