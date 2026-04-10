@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { supabase } from "@/lib/supabase/client";
+import { loadEmpresaModuleAccess } from "@/lib/moduleAccess";
 
 const TIPOS_VEICULO = ["automovel", "van", "microonibus", "onibus"] as const;
 const COMBUSTIVEIS = [
@@ -58,6 +59,12 @@ type VeiculoDb = {
   validade_seguro: string | null;
 
   observacoes: string | null;
+  descricao_compartilhamento: string | null;
+
+  financiado: boolean | null;
+  parcelas_financiamento_restantes: number | null;
+  valor_parcela_financiamento: number | null;
+  dia_vencimento_financiamento: number | null;
 
   created_at: string;
   updated_at: string;
@@ -83,6 +90,7 @@ export default function EditarVeiculoPage() {
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string>("");
   const [uploadWarning, setUploadWarning] = useState<string>("");
+  const [canShowFinanciamento, setCanShowFinanciamento] = useState(false);
 
   const [veiculo, setVeiculo] = useState<VeiculoDb | null>(null);
 
@@ -105,6 +113,8 @@ export default function EditarVeiculoPage() {
   const [apoliceSeguroFile, setApoliceSeguroFile] = useState<File | null>(null);
   const [vistoriaFile, setVistoriaFile] = useState<File | null>(null);
   const [galeriaFiles, setGaleriaFiles] = useState<File[]>([]);
+  const [imagemDestaquePreview, setImagemDestaquePreview] = useState<string | null>(null);
+  const [galeriaPreviewUrls, setGaleriaPreviewUrls] = useState<string[]>([]);
 
   const [anoFabricacao, setAnoFabricacao] = useState("");
   const [anoModelo, setAnoModelo] = useState("");
@@ -121,6 +131,27 @@ export default function EditarVeiculoPage() {
   const [validadeSeguro, setValidadeSeguro] = useState("");
 
   const [observacoes, setObservacoes] = useState("");
+  const [descricaoCompartilhamento, setDescricaoCompartilhamento] = useState("");
+
+  // Financiamento
+  const [financiado, setFinanciado] = useState(false);
+  const [parcelasRestantes, setParcelasRestantes] = useState("");
+  const [valorParcelaFinanciamento, setValorParcelaFinanciamento] = useState("");
+  const [diaVencimentoFinanciamento, setDiaVencimentoFinanciamento] = useState("");
+
+  useEffect(() => {
+    return () => {
+      if (imagemDestaquePreview) {
+        URL.revokeObjectURL(imagemDestaquePreview);
+      }
+    };
+  }, [imagemDestaquePreview]);
+
+  useEffect(() => {
+    return () => {
+      galeriaPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [galeriaPreviewUrls]);
 
   function toIntOrNull(v: string) {
     const n = Number(v);
@@ -156,7 +187,7 @@ export default function EditarVeiculoPage() {
     const { data, error } = await supabase
       .from("veiculos")
       .select(
-        "id, empresa_id, placa, prefixo, renavam, chassi, tipo, marca, modelo, imagem_url, documento_veiculo_url, apolice_seguro_url, vistoria_url, galeria_urls, ano_fabricacao, ano_modelo, cor, capacidade_passageiros, combustivel, arla32, km_atual, status, validade_documento, validade_seguro, observacoes, created_at, updated_at"
+        "id, empresa_id, placa, prefixo, renavam, chassi, tipo, marca, modelo, imagem_url, documento_veiculo_url, apolice_seguro_url, vistoria_url, galeria_urls, ano_fabricacao, ano_modelo, cor, capacidade_passageiros, combustivel, arla32, km_atual, status, validade_documento, validade_seguro, observacoes, descricao_compartilhamento, financiado, parcelas_financiamento_restantes, valor_parcela_financiamento, dia_vencimento_financiamento, created_at, updated_at"
       )
       .eq("id", id)
       .maybeSingle();
@@ -213,6 +244,23 @@ export default function EditarVeiculoPage() {
     setValidadeSeguro(isoToInputDate(v.validade_seguro));
 
     setObservacoes(v.observacoes ?? "");
+    setDescricaoCompartilhamento(v.descricao_compartilhamento ?? "");
+    setFinanciado(!!v.financiado);
+    setParcelasRestantes(
+      typeof v.parcelas_financiamento_restantes === "number"
+        ? String(v.parcelas_financiamento_restantes)
+        : ""
+    );
+    setValorParcelaFinanciamento(
+      typeof v.valor_parcela_financiamento === "number"
+        ? String(v.valor_parcela_financiamento)
+        : ""
+    );
+    setDiaVencimentoFinanciamento(
+      typeof v.dia_vencimento_financiamento === "number"
+        ? String(v.dia_vencimento_financiamento)
+        : ""
+    );
 
     setStatusMsg("");
     setLoading(false);
@@ -222,6 +270,19 @@ export default function EditarVeiculoPage() {
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    const tid = setTimeout(() => {
+      void (async () => {
+        const access = await loadEmpresaModuleAccess();
+        setCanShowFinanciamento(
+          access.canUseAllModules || access.allowedModules.includes("financeiro")
+        );
+      })();
+    }, 0);
+
+    return () => clearTimeout(tid);
+  }, []);
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
@@ -233,6 +294,25 @@ export default function EditarVeiculoPage() {
     if (placaFinal.length < 7) {
       alert("Informe a placa (mínimo 7 caracteres).");
       return;
+    }
+
+    if (canShowFinanciamento && financiado) {
+      const qtd = Number(parcelasRestantes);
+      const valorParcela = toNumOrNull(valorParcelaFinanciamento);
+      const dia = Number(diaVencimentoFinanciamento);
+
+      if (!Number.isInteger(qtd) || qtd <= 0) {
+        alert("Informe a quantidade de parcelas restantes (maior que 0).");
+        return;
+      }
+      if (!valorParcela || valorParcela <= 0) {
+        alert("Informe o valor da parcela do financiamento.");
+        return;
+      }
+      if (!Number.isInteger(dia) || dia < 1 || dia > 31) {
+        alert("Informe um dia de vencimento válido (1 a 31).");
+        return;
+      }
     }
 
     setSaving(true);
@@ -308,6 +388,14 @@ export default function EditarVeiculoPage() {
       validade_seguro: inputDateToIso(validadeSeguro),
 
       observacoes: observacoes.trim() || null,
+      descricao_compartilhamento: descricaoCompartilhamento.trim() || null,
+      financiado: canShowFinanciamento ? financiado : false,
+      parcelas_financiamento_restantes:
+        canShowFinanciamento && financiado ? toIntOrNull(parcelasRestantes) : null,
+      valor_parcela_financiamento:
+        canShowFinanciamento && financiado ? toNumOrNull(valorParcelaFinanciamento) : null,
+      dia_vencimento_financiamento:
+        canShowFinanciamento && financiado ? toIntOrNull(diaVencimentoFinanciamento) : null,
     };
 
     const { error } = await supabase.from("veiculos").update(payload).eq("id", id);
@@ -486,13 +574,44 @@ export default function EditarVeiculoPage() {
                 type="file"
                 accept="image/*"
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
-                onChange={(e) => setImagemDestaqueFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setImagemDestaqueFile(file);
+                  setImagemDestaquePreview((prev) => {
+                    if (prev) URL.revokeObjectURL(prev);
+                    return file ? URL.createObjectURL(file) : null;
+                  });
+                }}
               />
               {imagemUrl ? (
                 <a className="text-xs text-blue-700 mt-2 inline-block" href={imagemUrl} target="_blank" rel="noreferrer">
                   Ver imagem atual
                 </a>
               ) : null}
+              <div className="mt-3 overflow-x-auto">
+                <div className="flex gap-3">
+                  {imagemUrl ? (
+                    <div className="shrink-0 w-36">
+                      <div className="text-[11px] text-slate-500 mb-1">Destaque atual</div>
+                      <img
+                        src={imagemUrl}
+                        alt="Imagem de destaque atual"
+                        className="h-24 w-36 rounded-md border border-slate-300 object-cover"
+                      />
+                    </div>
+                  ) : null}
+                  {imagemDestaquePreview ? (
+                    <div className="shrink-0 w-36">
+                      <div className="text-[11px] text-slate-500 mb-1">Novo destaque</div>
+                      <img
+                        src={imagemDestaquePreview}
+                        alt="Prévia da nova imagem de destaque"
+                        className="h-24 w-36 rounded-md border border-blue-300 object-cover"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </div>
             </div>
 
             <div>
@@ -666,16 +785,128 @@ export default function EditarVeiculoPage() {
                 accept="image/*"
                 multiple
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
-                onChange={(e) => setGaleriaFiles(Array.from(e.target.files ?? []))}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  setGaleriaFiles(files);
+                  setGaleriaPreviewUrls((prev) => {
+                    prev.forEach((url) => URL.revokeObjectURL(url));
+                    return files.map((file) => URL.createObjectURL(file));
+                  });
+                }}
               />
               {galeriaUrls.length > 0 ? (
                 <p className="text-xs text-slate-600 mt-2">{galeriaUrls.length} imagem(ns) já cadastrada(s).</p>
+              ) : null}
+              {galeriaUrls.length > 0 ? (
+                <div className="mt-3 overflow-x-auto">
+                  <div className="flex gap-3">
+                    {galeriaUrls.map((url, idx) => (
+                      <div key={`salva-${url}-${idx}`} className="shrink-0 w-36">
+                        <div className="text-[11px] text-slate-500 mb-1">Salva {idx + 1}</div>
+                        <img
+                          src={url}
+                          alt={`Imagem salva ${idx + 1}`}
+                          className="h-24 w-36 rounded-md border border-slate-300 object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {galeriaPreviewUrls.length > 0 ? (
+                <div className="mt-3 overflow-x-auto">
+                  <div className="flex gap-3">
+                    {galeriaPreviewUrls.map((url, idx) => (
+                      <div key={`nova-${url}-${idx}`} className="shrink-0 w-36">
+                        <div className="text-[11px] text-slate-500 mb-1">Novo upload {idx + 1}</div>
+                        <img
+                          src={url}
+                          alt={`Nova imagem ${idx + 1}`}
+                          className="h-24 w-36 rounded-md border border-blue-300 object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ) : null}
             </div>
           </div>
         </div>
 
         {/* Observações */}
+        {canShowFinanciamento ? (
+          <div className="border-t pt-6">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">Financiamento</h2>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Veículo financiado?</label>
+                <select
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={financiado ? "sim" : "nao"}
+                  onChange={(e) => setFinanciado(e.target.value === "sim")}
+                >
+                  <option value="nao">Não</option>
+                  <option value="sim">Sim</option>
+                </select>
+              </div>
+
+              {financiado ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Parcelas restantes</label>
+                    <input
+                      type="number"
+                      min={1}
+                      className="w-full border border-slate-300 rounded-md px-3 py-2"
+                      value={parcelasRestantes}
+                      onChange={(e) => setParcelasRestantes(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Valor da parcela (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      className="w-full border border-slate-300 rounded-md px-3 py-2"
+                      value={valorParcelaFinanciamento}
+                      onChange={(e) => setValorParcelaFinanciamento(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Dia do vencimento</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      className="w-full border border-slate-300 rounded-md px-3 py-2"
+                      value={diaVencimentoFinanciamento}
+                      onChange={(e) => setDiaVencimentoFinanciamento(e.target.value)}
+                    />
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="border-t pt-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">
+            Descrição para compartilhamento com cliente
+          </h2>
+
+          <textarea
+            className="w-full border border-slate-300 rounded-md px-3 py-2 min-h-[110px]"
+            value={descricaoCompartilhamento}
+            onChange={(e) => setDescricaoCompartilhamento(e.target.value)}
+            placeholder="Ex.: Veículo equipado com ar-condicionado, banheiro, geladeira, poltronas reclináveis, Wi-Fi..."
+          />
+          <p className="text-xs text-slate-500 mt-2">
+            Este texto será exibido no link público de compartilhamento do veículo.
+          </p>
+        </div>
+
         <div className="border-t pt-6">
           <h2 className="text-sm font-semibold text-slate-800 mb-4">
             Observações

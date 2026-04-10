@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
+import { loadEmpresaModuleAccess } from "@/lib/moduleAccess";
 
 const TIPOS_VEICULO = ["automovel", "van", "microonibus", "onibus"] as const;
 const COMBUSTIVEIS = [
@@ -36,6 +37,7 @@ export default function NovoVeiculoPage() {
   const [statusMsg, setStatusMsg] = useState<string>("");
   const [uploadWarning, setUploadWarning] = useState<string>("");
   const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [canShowFinanciamento, setCanShowFinanciamento] = useState(false);
 
   const [placa, setPlaca] = useState("");
   const [prefixo, setPrefixo] = useState("");
@@ -56,6 +58,7 @@ export default function NovoVeiculoPage() {
   const [validadeDocumento, setValidadeDocumento] = useState("");
   const [validadeSeguro, setValidadeSeguro] = useState("");
   const [observacoes, setObservacoes] = useState("");
+  const [descricaoCompartilhamento, setDescricaoCompartilhamento] = useState("");
 
   // Financiamento
   const [financiado, setFinanciado] = useState(false);
@@ -68,6 +71,22 @@ export default function NovoVeiculoPage() {
   const [apoliceSeguroFile, setApoliceSeguroFile] = useState<File | null>(null);
   const [vistoriaFile, setVistoriaFile] = useState<File | null>(null);
   const [galeriaFiles, setGaleriaFiles] = useState<File[]>([]);
+  const [imagemDestaquePreview, setImagemDestaquePreview] = useState<string | null>(null);
+  const [galeriaPreviewUrls, setGaleriaPreviewUrls] = useState<string[]>([]);
+
+  useEffect(() => {
+    return () => {
+      if (imagemDestaquePreview) {
+        URL.revokeObjectURL(imagemDestaquePreview);
+      }
+    };
+  }, [imagemDestaquePreview]);
+
+  useEffect(() => {
+    return () => {
+      galeriaPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [galeriaPreviewUrls]);
 
   async function carregarEmpresaId() {
     setStatusMsg("Carregando sessão...");
@@ -105,6 +124,19 @@ export default function NovoVeiculoPage() {
   useEffect(() => {
     const id = setTimeout(() => {
       void carregarEmpresaId();
+    }, 0);
+
+    return () => clearTimeout(id);
+  }, []);
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      void (async () => {
+        const access = await loadEmpresaModuleAccess();
+        setCanShowFinanciamento(
+          access.canUseAllModules || access.allowedModules.includes("financeiro")
+        );
+      })();
     }, 0);
 
     return () => clearTimeout(id);
@@ -166,7 +198,7 @@ export default function NovoVeiculoPage() {
       return;
     }
 
-    if (financiado) {
+    if (canShowFinanciamento && financiado) {
       const qtd = Number(parcelasRestantes);
       const valorParcela = toNumOrNull(valorParcelaFinanciamento);
       const dia = Number(diaVencimentoFinanciamento);
@@ -260,11 +292,15 @@ export default function NovoVeiculoPage() {
       galeria_urls: galeriaUrls,
 
       observacoes: observacoes.trim() || null,
+      descricao_compartilhamento: descricaoCompartilhamento.trim() || null,
 
-      financiado,
-      parcelas_financiamento_restantes: financiado ? toIntOrNull(parcelasRestantes) : null,
-      valor_parcela_financiamento: financiado ? toNumOrNull(valorParcelaFinanciamento) : null,
-      dia_vencimento_financiamento: financiado ? toIntOrNull(diaVencimentoFinanciamento) : null,
+      financiado: canShowFinanciamento ? financiado : false,
+      parcelas_financiamento_restantes:
+        canShowFinanciamento && financiado ? toIntOrNull(parcelasRestantes) : null,
+      valor_parcela_financiamento:
+        canShowFinanciamento && financiado ? toNumOrNull(valorParcelaFinanciamento) : null,
+      dia_vencimento_financiamento:
+        canShowFinanciamento && financiado ? toIntOrNull(diaVencimentoFinanciamento) : null,
     };
 
     const { data, error } = await supabase
@@ -280,7 +316,7 @@ export default function NovoVeiculoPage() {
       return;
     }
 
-    if (financiado) {
+    if (canShowFinanciamento && financiado) {
       const qtd = Number(parcelasRestantes);
       const valorParcela = toNumOrNull(valorParcelaFinanciamento) ?? 0;
       const dia = Number(diaVencimentoFinanciamento);
@@ -474,8 +510,29 @@ export default function NovoVeiculoPage() {
                 type="file"
                 accept="image/*"
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
-                onChange={(e) => setImagemDestaqueFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setImagemDestaqueFile(file);
+                  setImagemDestaquePreview((prev) => {
+                    if (prev) URL.revokeObjectURL(prev);
+                    return file ? URL.createObjectURL(file) : null;
+                  });
+                }}
               />
+              {imagemDestaquePreview ? (
+                <div className="mt-3 overflow-x-auto">
+                  <div className="flex gap-3">
+                    <div className="shrink-0 w-36">
+                      <div className="text-[11px] text-slate-500 mb-1">Destaque</div>
+                      <img
+                        src={imagemDestaquePreview}
+                        alt="Prévia da imagem de destaque"
+                        className="h-24 w-36 rounded-md border border-slate-300 object-cover"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div>
@@ -642,85 +699,125 @@ export default function NovoVeiculoPage() {
                 accept="image/*"
                 multiple
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
-                onChange={(e) => setGaleriaFiles(Array.from(e.target.files ?? []))}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  setGaleriaFiles(files);
+                  setGaleriaPreviewUrls((prev) => {
+                    prev.forEach((url) => URL.revokeObjectURL(url));
+                    return files.map((file) => URL.createObjectURL(file));
+                  });
+                }}
               />
               {galeriaFiles.length > 0 ? (
                 <p className="text-xs text-slate-600 mt-2">
                   {galeriaFiles.length} arquivo(s) selecionado(s).
                 </p>
               ) : null}
+              {galeriaPreviewUrls.length > 0 ? (
+                <div className="mt-3 overflow-x-auto">
+                  <div className="flex gap-3">
+                    {galeriaPreviewUrls.map((url, idx) => (
+                      <div key={`${url}-${idx}`} className="shrink-0 w-36">
+                        <div className="text-[11px] text-slate-500 mb-1">Upload {idx + 1}</div>
+                        <img
+                          src={url}
+                          alt={`Prévia ${idx + 1}`}
+                          className="h-24 w-36 rounded-md border border-slate-300 object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
 
-        {/* Financiamento */}
-        <div className="border-t pt-6">
-          <h2 className="text-sm font-semibold text-slate-800 mb-4">
-            Financiamento
-          </h2>
+        {canShowFinanciamento ? (
+          <div className="border-t pt-6">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">
+              Financiamento
+            </h2>
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <div>
-              <label className="block text-sm font-medium mb-1">Veículo financiado?</label>
-              <select
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={financiado ? "sim" : "nao"}
-                onChange={(e) => setFinanciado(e.target.value === "sim")}
-              >
-                <option value="nao">Não</option>
-                <option value="sim">Sim</option>
-              </select>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Veículo financiado?</label>
+                <select
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={financiado ? "sim" : "nao"}
+                  onChange={(e) => setFinanciado(e.target.value === "sim")}
+                >
+                  <option value="nao">Não</option>
+                  <option value="sim">Sim</option>
+                </select>
+              </div>
+
+              {financiado && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Parcelas restantes</label>
+                    <input
+                      type="number"
+                      min={1}
+                      className="w-full border border-slate-300 rounded-md px-3 py-2"
+                      value={parcelasRestantes}
+                      onChange={(e) => setParcelasRestantes(e.target.value)}
+                      placeholder="Ex: 24"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Valor da parcela (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      className="w-full border border-slate-300 rounded-md px-3 py-2"
+                      value={valorParcelaFinanciamento}
+                      onChange={(e) => setValorParcelaFinanciamento(e.target.value)}
+                      placeholder="Ex: 1850.50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Dia do vencimento</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      className="w-full border border-slate-300 rounded-md px-3 py-2"
+                      value={diaVencimentoFinanciamento}
+                      onChange={(e) => setDiaVencimentoFinanciamento(e.target.value)}
+                      placeholder="Ex: 10"
+                    />
+                  </div>
+
+                  <div className="md:col-span-3 text-xs text-slate-500">
+                    Ao salvar o veículo, as parcelas serão lançadas automaticamente no financeiro em contas a pagar.
+                  </div>
+                </>
+              )}
             </div>
-
-            {financiado && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Parcelas restantes</label>
-                  <input
-                    type="number"
-                    min={1}
-                    className="w-full border border-slate-300 rounded-md px-3 py-2"
-                    value={parcelasRestantes}
-                    onChange={(e) => setParcelasRestantes(e.target.value)}
-                    placeholder="Ex: 24"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">Valor da parcela (R$)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    className="w-full border border-slate-300 rounded-md px-3 py-2"
-                    value={valorParcelaFinanciamento}
-                    onChange={(e) => setValorParcelaFinanciamento(e.target.value)}
-                    placeholder="Ex: 1850.50"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">Dia do vencimento</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    className="w-full border border-slate-300 rounded-md px-3 py-2"
-                    value={diaVencimentoFinanciamento}
-                    onChange={(e) => setDiaVencimentoFinanciamento(e.target.value)}
-                    placeholder="Ex: 10"
-                  />
-                </div>
-
-                <div className="md:col-span-3 text-xs text-slate-500">
-                  Ao salvar o veículo, as parcelas serão lançadas automaticamente no financeiro em contas a pagar.
-                </div>
-              </>
-            )}
           </div>
-        </div>
+        ) : null}
 
         {/* Observações */}
+        <div className="border-t pt-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">
+            Descrição para compartilhamento com cliente
+          </h2>
+
+          <textarea
+            className="w-full border border-slate-300 rounded-md px-3 py-2 min-h-[110px]"
+            value={descricaoCompartilhamento}
+            onChange={(e) => setDescricaoCompartilhamento(e.target.value)}
+            placeholder="Ex.: Veículo equipado com ar-condicionado, banheiro, geladeira, poltronas reclináveis, Wi-Fi..."
+          />
+          <p className="text-xs text-slate-500 mt-2">
+            Este texto será exibido no link público de compartilhamento do veículo.
+          </p>
+        </div>
+
         <div className="border-t pt-6">
           <h2 className="text-sm font-semibold text-slate-800 mb-4">
             Observações
