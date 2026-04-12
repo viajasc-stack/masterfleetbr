@@ -355,7 +355,7 @@ export default function ConfiguracoesPage() {
               </div>
               {assinatura?.modulos_ativos?.includes("operacional") ? (
                 <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 md:col-span-2 text-sm text-indigo-800">
-                  <strong>Operacional</strong> é o pacote principal da plataforma e reúne dashboard, OS, veículos, motoristas, fretamentos, contratos, passageiros e clientes.
+                  <strong>Operacional</strong> é o pacote principal da plataforma e reúne dashboard, OS, veículos, motoristas, fretamentos, contratos e clientes.
                 </div>
               ) : null}
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3 md:col-span-2">

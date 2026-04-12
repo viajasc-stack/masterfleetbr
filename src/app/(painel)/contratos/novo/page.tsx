@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
+import { loadEmpresaModuleAccess } from "@/lib/moduleAccess";
 
 type Cliente = { id: string; nome: string };
 
@@ -44,7 +46,9 @@ export default function NovoContratoPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [canShowFinanceiro, setCanShowFinanceiro] = useState(false);
   const [uploadWarning, setUploadWarning] = useState("");
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
 
   const [clienteId, setClienteId] = useState("");
   const [nome, setNome] = useState("");
@@ -59,6 +63,48 @@ export default function NovoContratoPage() {
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
   const [contratoFisicoFile, setContratoFisicoFile] = useState<File | null>(null);
+  const [contratoFisicoPreviewUrl, setContratoFisicoPreviewUrl] = useState<string | null>(null);
+  const [licencaIntermunicipalFile, setLicencaIntermunicipalFile] = useState<File | null>(null);
+  const [licencaIntermunicipalPreviewUrl, setLicencaIntermunicipalPreviewUrl] = useState<string | null>(null);
+  const [licencaInterestadualFile, setLicencaInterestadualFile] = useState<File | null>(null);
+  const [licencaInterestadualPreviewUrl, setLicencaInterestadualPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (contratoFisicoPreviewUrl) URL.revokeObjectURL(contratoFisicoPreviewUrl);
+      if (licencaIntermunicipalPreviewUrl) URL.revokeObjectURL(licencaIntermunicipalPreviewUrl);
+      if (licencaInterestadualPreviewUrl) URL.revokeObjectURL(licencaInterestadualPreviewUrl);
+    };
+  }, [contratoFisicoPreviewUrl, licencaIntermunicipalPreviewUrl, licencaInterestadualPreviewUrl]);
+
+  function onChangeContratoFisico(file: File | null) {
+    setContratoFisicoFile(file);
+    setContratoFisicoPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file ? URL.createObjectURL(file) : null;
+    });
+  }
+
+  function onChangeLicencaIntermunicipal(file: File | null) {
+    setLicencaIntermunicipalFile(file);
+    setLicencaIntermunicipalPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file ? URL.createObjectURL(file) : null;
+    });
+  }
+
+  function onChangeLicencaInterestadual(file: File | null) {
+    setLicencaInterestadualFile(file);
+    setLicencaInterestadualPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file ? URL.createObjectURL(file) : null;
+    });
+  }
+
+  function confirmarSucesso() {
+    router.push("/contratos");
+    router.refresh();
+  }
 
   function sanitizeFileName(name: string) {
     return name
@@ -70,6 +116,15 @@ export default function NovoContratoPage() {
   function isBucketNotFoundError(error: unknown) {
     if (!(error instanceof Error)) return false;
     return error.message.toLowerCase().includes("bucket not found");
+  }
+
+  function hasMissingContratoFileColumns(message?: string) {
+    const msg = String(message ?? "").toLowerCase();
+    return (
+      msg.includes("contrato_fisico_url") ||
+      msg.includes("licenca_intermunicipal_url") ||
+      msg.includes("licenca_interestadual_url")
+    );
   }
 
   async function uploadContratoFisico(empresa: string, file: File) {
@@ -101,6 +156,17 @@ export default function NovoContratoPage() {
     return () => clearTimeout(id);
   }, []);
 
+  useEffect(() => {
+    const id = setTimeout(() => {
+      void (async () => {
+        const access = await loadEmpresaModuleAccess();
+        setCanShowFinanceiro(access.canUseAllModules || access.allowedModules.includes("financeiro"));
+      })();
+    }, 0);
+
+    return () => clearTimeout(id);
+  }, []);
+
   function toggleDia(v: number) {
     setDiasSemana((prev) => {
       const has = prev.includes(v);
@@ -114,13 +180,15 @@ export default function NovoContratoPage() {
     if (!nome.trim()) return alert("Informe o nome do contrato.");
     if (diasSemana.length === 0) return alert("Selecione pelo menos 1 dia da semana.");
     const valorCobr = parseMoney(valorCobranca, NaN);
-    if (!Number.isFinite(valorCobr) || valorCobr < 0) return alert("Informe um valor de cobrança válido.");
-
     const dFech = Number(diaFechamento || 0);
     const dVenc = Number(diaVencimento || 0);
-    if (formaCobranca === "mensal") {
-      if (!Number.isInteger(dFech) || dFech < 1 || dFech > 31) return alert("Dia de fechamento inválido (1 a 31).");
-      if (!Number.isInteger(dVenc) || dVenc < 1 || dVenc > 31) return alert("Dia de vencimento inválido (1 a 31).");
+
+    if (canShowFinanceiro) {
+      if (!Number.isFinite(valorCobr) || valorCobr < 0) return alert("Informe um valor de cobrança válido.");
+      if (formaCobranca === "mensal") {
+        if (!Number.isInteger(dFech) || dFech < 1 || dFech > 31) return alert("Dia de fechamento inválido (1 a 31).");
+        if (!Number.isInteger(dVenc) || dVenc < 1 || dVenc > 31) return alert("Dia de vencimento inválido (1 a 31).");
+      }
     }
 
     setSaving(true);
@@ -148,6 +216,8 @@ export default function NovoContratoPage() {
     }
 
     let contratoFisicoUrl: string | null = null;
+    let licencaIntermunicipalUrl: string | null = null;
+    let licencaInterestadualUrl: string | null = null;
     if (contratoFisicoFile) {
       try {
         contratoFisicoUrl = await uploadContratoFisico(prof.empresa_id, contratoFisicoFile);
@@ -161,13 +231,39 @@ export default function NovoContratoPage() {
       }
     }
 
+    if (licencaIntermunicipalFile) {
+      try {
+        licencaIntermunicipalUrl = await uploadContratoFisico(prof.empresa_id, licencaIntermunicipalFile);
+      } catch (uploadError) {
+        if (isBucketNotFoundError(uploadError)) {
+          setUploadWarning("Upload ignorado porque o bucket 'contratos' ainda não existe. O contrato será salvo sem arquivo.");
+        } else {
+          setSaving(false);
+          return alert(`Erro no upload da licença intermunicipal: ${uploadError instanceof Error ? uploadError.message : "erro desconhecido"}`);
+        }
+      }
+    }
+
+    if (licencaInterestadualFile) {
+      try {
+        licencaInterestadualUrl = await uploadContratoFisico(prof.empresa_id, licencaInterestadualFile);
+      } catch (uploadError) {
+        if (isBucketNotFoundError(uploadError)) {
+          setUploadWarning("Upload ignorado porque o bucket 'contratos' ainda não existe. O contrato será salvo sem arquivo.");
+        } else {
+          setSaving(false);
+          return alert(`Erro no upload da licença interestadual: ${uploadError instanceof Error ? uploadError.message : "erro desconhecido"}`);
+        }
+      }
+    }
+
     const payloadBase = {
       empresa_id: prof.empresa_id,
       cliente_id: clienteId,
       nome: nome.trim(),
       descricao: descricao.trim() || null,
       forma_cobranca: formaCobranca,
-      valor_cobranca: valorCobr,
+      valor_cobranca: Number.isFinite(valorCobr) ? valorCobr : 0,
       dia_fechamento: Number.isInteger(dFech) && dFech >= 1 && dFech <= 31 ? dFech : null,
       dia_vencimento: Number.isInteger(dVenc) && dVenc >= 1 && dVenc <= 31 ? dVenc : null,
       dias_semana: diasSemana,
@@ -181,11 +277,16 @@ export default function NovoContratoPage() {
 
     const tentativaComArquivo = await supabase
       .from("contratos")
-      .insert({ ...payloadBase, contrato_fisico_url: contratoFisicoUrl })
+      .insert({
+        ...payloadBase,
+        contrato_fisico_url: contratoFisicoUrl,
+        licenca_intermunicipal_url: licencaIntermunicipalUrl,
+        licenca_interestadual_url: licencaInterestadualUrl,
+      })
       .select("id")
       .single();
 
-    if (tentativaComArquivo.error?.message?.toLowerCase().includes("contrato_fisico_url")) {
+    if (hasMissingContratoFileColumns(tentativaComArquivo.error?.message)) {
       const fallbackSemArquivo = await supabase
         .from("contratos")
         .insert(payloadBase)
@@ -195,8 +296,8 @@ export default function NovoContratoPage() {
       contrato = (fallbackSemArquivo.data as { id: string } | null) ?? null;
       errContrato = (fallbackSemArquivo.error as { message?: string } | null) ?? null;
 
-      if (contratoFisicoUrl) {
-        setUploadWarning("Contrato salvo, mas o banco ainda não tem a coluna do arquivo físico. Aplique a migration para habilitar esse recurso.");
+      if (contratoFisicoUrl || licencaIntermunicipalUrl || licencaInterestadualUrl) {
+        setUploadWarning("Contrato salvo, mas o banco ainda não possui todas as colunas de arquivo do contrato/licenças. Aplique a migration para habilitar esse recurso.");
       }
     } else {
       contrato = (tentativaComArquivo.data as { id: string } | null) ?? null;
@@ -210,7 +311,7 @@ export default function NovoContratoPage() {
     }
 
     setSaving(false);
-    router.push(`/contratos/${contrato.id}`);
+    setSuccessModalOpen(true);
   }
 
   return (
@@ -337,66 +438,195 @@ export default function NovoContratoPage() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Forma de cobrança</label>
-              <select
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={formaCobranca}
-                onChange={(e) => setFormaCobranca(e.target.value as "km" | "dia" | "mensal")}
-              >
-                <option value="km">Por KM</option>
-                <option value="dia">Por dia</option>
-                <option value="mensal">Mensal</option>
-              </select>
-            </div>
+            {canShowFinanceiro ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Forma de cobrança</label>
+                  <select
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                    value={formaCobranca}
+                    onChange={(e) => setFormaCobranca(e.target.value as "km" | "dia" | "mensal")}
+                  >
+                    <option value="km">Por KM</option>
+                    <option value="dia">Por dia</option>
+                    <option value="mensal">Mensal</option>
+                  </select>
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                {formaCobranca === "km" ? "Valor por KM" : formaCobranca === "dia" ? "Valor por dia" : "Valor mensal"}
-              </label>
-              <input
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={valorCobranca}
-                onChange={(e) => setValorCobranca(e.target.value)}
-                placeholder="0,00"
-              />
-            </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    {formaCobranca === "km" ? "Valor por KM" : formaCobranca === "dia" ? "Valor por dia" : "Valor mensal"}
+                  </label>
+                  <input
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                    value={valorCobranca}
+                    onChange={(e) => setValorCobranca(e.target.value)}
+                    placeholder="0,00"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Dia padrão fechamento</label>
-              <input
-                type="number"
-                min={1}
-                max={31}
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={diaFechamento}
-                onChange={(e) => setDiaFechamento(e.target.value)}
-              />
-            </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Dia padrão fechamento</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                    value={diaFechamento}
+                    onChange={(e) => setDiaFechamento(e.target.value)}
+                  />
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Dia padrão vencimento</label>
-              <input
-                type="number"
-                min={1}
-                max={31}
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={diaVencimento}
-                onChange={(e) => setDiaVencimento(e.target.value)}
-              />
-            </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Dia padrão vencimento</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                    value={diaVencimento}
+                    onChange={(e) => setDiaVencimento(e.target.value)}
+                  />
+                </div>
+              </>
+            ) : null}
 
             <div className="md:col-span-2">
               <label className="block text-sm font-medium mb-1">Contrato físico (PDF/arquivo)</label>
               <input
                 type="file"
                 className="w-full border border-slate-300 rounded-md px-3 py-2"
-                onChange={(e) => setContratoFisicoFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => onChangeContratoFisico(e.target.files?.[0] ?? null)}
               />
+
+              {contratoFisicoPreviewUrl ? (
+                <a
+                  href={contratoFisicoPreviewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-block"
+                >
+                  <div className="rounded-lg border border-slate-300 p-2 w-[180px] bg-slate-50 hover:bg-slate-100 transition">
+                    {contratoFisicoFile?.type.startsWith("image/") ? (
+                      <img
+                        src={contratoFisicoPreviewUrl}
+                        alt="Prévia do contrato"
+                        className="h-24 w-full rounded object-cover border border-slate-200 bg-white"
+                      />
+                    ) : contratoFisicoFile?.type === "application/pdf" ? (
+                      <iframe
+                        src={contratoFisicoPreviewUrl}
+                        title="Prévia do contrato em PDF"
+                        className="h-24 w-full rounded border border-slate-200 bg-white"
+                      />
+                    ) : (
+                      <div className="h-24 w-full rounded border border-slate-200 bg-white flex items-center justify-center text-xs text-slate-600 text-center px-2">
+                        Prévia indisponível para este tipo de arquivo
+                      </div>
+                    )}
+                    <p className="text-[11px] text-slate-600 mt-2 truncate" title={contratoFisicoFile?.name}>
+                      {contratoFisicoFile?.name}
+                    </p>
+                    <p className="text-[11px] text-blue-700">Clique para abrir</p>
+                  </div>
+                </a>
+              ) : null}
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Licença de fretamento intermunicipal (PDF/arquivo)</label>
+              <input
+                type="file"
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => onChangeLicencaIntermunicipal(e.target.files?.[0] ?? null)}
+              />
+
+              {licencaIntermunicipalPreviewUrl ? (
+                <a
+                  href={licencaIntermunicipalPreviewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-block"
+                >
+                  <div className="rounded-lg border border-slate-300 p-2 w-[180px] bg-slate-50 hover:bg-slate-100 transition">
+                    {licencaIntermunicipalFile?.type.startsWith("image/") ? (
+                      <img
+                        src={licencaIntermunicipalPreviewUrl}
+                        alt="Prévia da licença intermunicipal"
+                        className="h-24 w-full rounded object-cover border border-slate-200 bg-white"
+                      />
+                    ) : licencaIntermunicipalFile?.type === "application/pdf" ? (
+                      <iframe
+                        src={licencaIntermunicipalPreviewUrl}
+                        title="Prévia da licença intermunicipal em PDF"
+                        className="h-24 w-full rounded border border-slate-200 bg-white"
+                      />
+                    ) : (
+                      <div className="h-24 w-full rounded border border-slate-200 bg-white flex items-center justify-center text-xs text-slate-600 text-center px-2">
+                        Prévia indisponível para este tipo de arquivo
+                      </div>
+                    )}
+                    <p className="text-[11px] text-slate-600 mt-2 truncate" title={licencaIntermunicipalFile?.name}>
+                      {licencaIntermunicipalFile?.name}
+                    </p>
+                    <p className="text-[11px] text-blue-700">Clique para abrir</p>
+                  </div>
+                </a>
+              ) : null}
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Licença de fretamento interestadual (PDF/arquivo)</label>
+              <input
+                type="file"
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => onChangeLicencaInterestadual(e.target.files?.[0] ?? null)}
+              />
+
+              {licencaInterestadualPreviewUrl ? (
+                <a
+                  href={licencaInterestadualPreviewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-block"
+                >
+                  <div className="rounded-lg border border-slate-300 p-2 w-[180px] bg-slate-50 hover:bg-slate-100 transition">
+                    {licencaInterestadualFile?.type.startsWith("image/") ? (
+                      <img
+                        src={licencaInterestadualPreviewUrl}
+                        alt="Prévia da licença interestadual"
+                        className="h-24 w-full rounded object-cover border border-slate-200 bg-white"
+                      />
+                    ) : licencaInterestadualFile?.type === "application/pdf" ? (
+                      <iframe
+                        src={licencaInterestadualPreviewUrl}
+                        title="Prévia da licença interestadual em PDF"
+                        className="h-24 w-full rounded border border-slate-200 bg-white"
+                      />
+                    ) : (
+                      <div className="h-24 w-full rounded border border-slate-200 bg-white flex items-center justify-center text-xs text-slate-600 text-center px-2">
+                        Prévia indisponível para este tipo de arquivo
+                      </div>
+                    )}
+                    <p className="text-[11px] text-slate-600 mt-2 truncate" title={licencaInterestadualFile?.name}>
+                      {licencaInterestadualFile?.name}
+                    </p>
+                    <p className="text-[11px] text-blue-700">Clique para abrir</p>
+                  </div>
+                </a>
+              ) : null}
             </div>
           </div>
         )}
       </div>
+
+      <SuccessRedirectModal
+        open={successModalOpen}
+        title="Contrato criado com sucesso"
+        description="Cadastro concluído."
+        seconds={5}
+        onConfirm={confirmarSucesso}
+      />
     </div>
   );
 }

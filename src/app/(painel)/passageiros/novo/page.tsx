@@ -32,10 +32,7 @@ export default function NovoPassageiroPage() {
   const [status, setStatus] = useState("ativo");
 
   async function salvar() {
-    if (!nome.trim()) {
-      alert("Informe o nome do passageiro.");
-      return;
-    }
+    if (!nome.trim()) return alert("Informe o nome do passageiro.");
 
     setSaving(true);
     const { error } = await supabase.from("passageiros").insert({
@@ -60,11 +57,7 @@ export default function NovoPassageiroPage() {
     });
     setSaving(false);
 
-    if (error) {
-      alert(`Erro ao salvar passageiro: ${error.message}`);
-      return;
-    }
-
+    if (error) return alert(`Erro ao salvar passageiro: ${error.message}`);
     setSuccessModalOpen(true);
   }
 
@@ -77,7 +70,7 @@ export default function NovoPassageiroPage() {
     <div className="space-y-6">
       <PageHeader
         title="Novo Passageiro"
-        description="Cadastre todos os dados necessários do passageiro."
+        description="Cadastre os dados do passageiro. O vínculo de contrato/rota/horário é feito na tela do passageiro após o cadastro."
         actions={
           <>
             <Link href="/passageiros" className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 transition text-sm">
@@ -97,65 +90,29 @@ export default function NovoPassageiroPage() {
       <div className="bg-white border border-slate-200 rounded-xl p-6 grid gap-4 md:grid-cols-2">
         <div className="md:col-span-2">
           <label className="block text-sm font-medium mb-1">Nome *</label>
-          <input
-            className="w-full border border-slate-300 rounded-md px-3 py-2"
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            placeholder="Nome completo"
-          />
+          <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={nome} onChange={(e) => setNome(e.target.value)} />
         </div>
 
         <div>
           <label className="block text-sm font-medium mb-1">CPF</label>
-          <input
-            className="w-full border border-slate-300 rounded-md px-3 py-2"
-            value={cpf}
-            onChange={(e) => setCpf(e.target.value)}
-            placeholder="000.000.000-00"
-          />
+          <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={cpf} onChange={(e) => setCpf(e.target.value)} />
         </div>
-
         <div>
           <label className="block text-sm font-medium mb-1">E-mail</label>
-          <input
-            className="w-full border border-slate-300 rounded-md px-3 py-2"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="email@exemplo.com"
-          />
+          <input className="w-full border border-slate-300 rounded-md px-3 py-2" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
-
         <div>
           <label className="block text-sm font-medium mb-1">RG</label>
-          <input
-            className="w-full border border-slate-300 rounded-md px-3 py-2"
-            value={rg}
-            onChange={(e) => setRg(e.target.value)}
-            placeholder="RG"
-          />
+          <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={rg} onChange={(e) => setRg(e.target.value)} />
         </div>
-
         <div>
           <label className="block text-sm font-medium mb-1">Data de nascimento</label>
-          <input
-            className="w-full border border-slate-300 rounded-md px-3 py-2"
-            type="date"
-            value={dataNascimento}
-            onChange={(e) => setDataNascimento(e.target.value)}
-          />
+          <input className="w-full border border-slate-300 rounded-md px-3 py-2" type="date" value={dataNascimento} onChange={(e) => setDataNascimento(e.target.value)} />
         </div>
-
         <div>
           <label className="block text-sm font-medium mb-1">Telefone</label>
-          <input
-            className="w-full border border-slate-300 rounded-md px-3 py-2"
-            value={telefone}
-            onChange={(e) => setTelefone(e.target.value)}
-            placeholder="(00) 00000-0000"
-          />
+          <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={telefone} onChange={(e) => setTelefone(e.target.value)} />
         </div>
-
         <div>
           <label className="block text-sm font-medium mb-1">Status</label>
           <select className="w-full border border-slate-300 rounded-md px-3 py-2" value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -214,22 +171,11 @@ export default function NovoPassageiroPage() {
 
         <div className="md:col-span-2">
           <label className="block text-sm font-medium mb-1">Observações médicas</label>
-          <textarea
-            className="w-full border border-slate-300 rounded-md px-3 py-2 min-h-[90px]"
-            value={observacoesMedicas}
-            onChange={(e) => setObservacoesMedicas(e.target.value)}
-            placeholder="Alergias, restrições e informações úteis para operação"
-          />
+          <textarea className="w-full border border-slate-300 rounded-md px-3 py-2 min-h-[90px]" value={observacoesMedicas} onChange={(e) => setObservacoesMedicas(e.target.value)} />
         </div>
-
         <div className="md:col-span-2">
           <label className="block text-sm font-medium mb-1">Observações</label>
-          <textarea
-            className="w-full border border-slate-300 rounded-md px-3 py-2 min-h-[110px]"
-            value={observacoes}
-            onChange={(e) => setObservacoes(e.target.value)}
-            placeholder="Informações adicionais do passageiro..."
-          />
+          <textarea className="w-full border border-slate-300 rounded-md px-3 py-2 min-h-[110px]" value={observacoes} onChange={(e) => setObservacoes(e.target.value)} />
         </div>
       </div>
 

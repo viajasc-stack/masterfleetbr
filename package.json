@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "sync:icon:motorista": "node scripts/sync_motorista_app_icon.js",
     "lint": "eslint",
     "lint:critical": "eslint \"src/lib/observability.ts\" \"src/app/(painel)/financeiro/faturas/page.tsx\" \"src/app/(painel)/ordens-servico/page.tsx\"",
     "ci:verify": "npm run lint && npm run build",

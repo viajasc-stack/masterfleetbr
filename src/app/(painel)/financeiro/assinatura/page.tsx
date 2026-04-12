@@ -239,7 +239,7 @@ export default function AssinaturaPage() {
               <div className="text-sm font-medium text-slate-800 mb-2">Módulos contratáveis</div>
               {hasOperationalModule ? (
                 <div className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
-                  <strong>Operacional</strong> é o módulo padrão da plataforma e já contempla dashboard, OS, veículos, motoristas, fretamentos, contratos, passageiros e clientes.
+                  <strong>Operacional</strong> é o módulo padrão da plataforma e já contempla dashboard, OS, veículos, motoristas, fretamentos, contratos e clientes.
                 </div>
               ) : null}
               {modulos.length === 0 ? (

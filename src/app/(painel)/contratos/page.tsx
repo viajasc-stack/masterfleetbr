@@ -21,6 +21,60 @@ type Contrato = {
 
 type ClienteMini = { id: string; nome: string };
 
+type StatusContrato = {
+  label: string;
+  className: string;
+};
+
+function parseDateOnly(value: string | null) {
+  if (!value) return null;
+  const raw = value.slice(0, 10);
+  const [y, m, d] = raw.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+function getStatusContrato(c: Contrato): StatusContrato {
+  if (!c.ativo) {
+    return {
+      label: "Inativo",
+      className: "border-slate-200 text-slate-700 bg-slate-50",
+    };
+  }
+
+  const dataFim = parseDateOnly(c.data_fim);
+  if (!dataFim) {
+    return {
+      label: "Ativo",
+      className: "border-green-200 text-green-700 bg-green-50",
+    };
+  }
+
+  const hoje = new Date();
+  const hojeDateOnly = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  const diffMs = dataFim.getTime() - hojeDateOnly.getTime();
+  const diasRestantes = Math.floor(diffMs / 86_400_000);
+
+  if (diasRestantes < 0) {
+    return {
+      label: "Vencido",
+      className: "border-red-200 text-red-700 bg-red-50",
+    };
+  }
+
+  if (diasRestantes <= 10) {
+    return {
+      label: "Vencendo",
+      className: "border-amber-200 text-amber-800 bg-amber-50",
+    };
+  }
+
+  return {
+    label: "Ativo",
+    className: "border-green-200 text-green-700 bg-green-50",
+  };
+}
+
 export default function ContratosPage() {
   const [contratos, setContratos] = useState<Contrato[]>([]);
   const [clientesMap, setClientesMap] = useState<Record<string, string>>({});
@@ -127,7 +181,9 @@ export default function ContratosPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtrados.map((c) => (
+                {filtrados.map((c) => {
+                  const status = getStatusContrato(c);
+                  return (
                   <tr key={c.id} className="border-b last:border-b-0 hover:bg-slate-50 transition">
                     <td className="py-2 pr-4 font-medium">
                       <Link href={`/contratos/${c.id}`} className="hover:underline">
@@ -140,8 +196,8 @@ export default function ContratosPage() {
                       {(c.data_inicio || "—") + " até " + (c.data_fim || "—")}
                     </td>
                     <td className="py-2 pr-4">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs border ${c.ativo ? "border-green-200 text-green-700 bg-green-50" : "border-slate-200 text-slate-700 bg-slate-50"}`}>
-                        {c.ativo ? "Ativo" : "Inativo"}
+                      <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs border ${status.className}`}>
+                        {status.label}
                       </span>
                     </td>
                     <td className="py-2 pr-0 text-right">
@@ -155,7 +211,7 @@ export default function ContratosPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                );})}
               </tbody>
             </table>
           </div>

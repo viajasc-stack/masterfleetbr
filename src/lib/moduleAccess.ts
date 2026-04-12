@@ -6,12 +6,13 @@ type BillingAccessPayload = {
   modulos_ativos?: unknown;
 };
 
-const BASE_MODULES = ["operacional", "configuracoes", "usuarios", "suporte"];
+const BASE_MODULES = ["operacional", "configuracoes", "usuarios", "suporte", "escolar"];
 
 const ROUTE_MODULE_MAP: Array<{ prefix: string; modulo: string }> = [
   { prefix: "/ordens-servico", modulo: "operacional" },
   { prefix: "/orcamentos", modulo: "operacional" },
   { prefix: "/contratos", modulo: "operacional" },
+  { prefix: "/passageiros", modulo: "passageiros" },
   { prefix: "/clientes", modulo: "operacional" },
   { prefix: "/veiculos", modulo: "operacional" },
   { prefix: "/abastecimentos", modulo: "operacional" },
@@ -29,6 +30,7 @@ const ROUTE_MODULE_MAP: Array<{ prefix: string; modulo: string }> = [
   { prefix: "/escalas", modulo: "configuracoes" },
   { prefix: "/agenda", modulo: "agenda" },
   { prefix: "/viagens", modulo: "viagens" },
+  { prefix: "/escolar", modulo: "escolar" },
   { prefix: "/central-negocios", modulo: "operacional" },
   { prefix: "/aniversariantes", modulo: "relatorios" },
   { prefix: "/suporte", modulo: "suporte" },
@@ -62,9 +64,15 @@ export async function loadEmpresaModuleAccess() {
   }
 
   const { data: globalModulesData } = await supabase.rpc("get_modulos_globais_ativos");
-  const globalActiveModules = Array.isArray(globalModulesData)
+  const globalActiveModulesRaw = Array.isArray(globalModulesData)
     ? globalModulesData.map((m) => String(m))
     : [];
+
+  // Fallback de rollout: garante visibilidade do módulo Escolar no menu
+  // mesmo antes da ativação global refletir no banco em todos os ambientes.
+  const globalActiveModules = globalActiveModulesRaw.includes("escolar")
+    ? globalActiveModulesRaw
+    : [...globalActiveModulesRaw, "escolar"];
 
   function applyGlobalFilter(modules: string[]) {
     if (globalActiveModules.length === 0) return modules;

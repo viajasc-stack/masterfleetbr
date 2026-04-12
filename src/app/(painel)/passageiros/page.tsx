@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ActionIconLink } from "@/components/ui/ActionIcon";
 import { supabase } from "@/lib/supabase/client";
 
 type Passageiro = {
@@ -19,92 +20,136 @@ type Passageiro = {
   created_at: string;
 };
 
-type Contrato = {
-  id: string;
-  nome: string;
-  ativo: boolean;
-};
-
-type ContratoPassageiro = {
-  id: string;
-  contrato_id: string;
+type ResponsavelPagamento = {
   passageiro_id: string;
-  status: "ATIVO" | "INATIVO";
-  tipo_pagante: "PARTICULAR" | "EMPRESA";
-  tipo_cobranca: "DIARIA" | "MENSAL";
-  valor: number;
-  data_inicio: string | null;
-  data_fim: string | null;
+  texto: string;
 };
-
-function toMoney(v: string, fallback = 0) {
-  const n = Number(v.replace(".", "").replace(",", ".").trim());
-  return Number.isFinite(n) ? n : fallback;
-}
 
 export default function PassageirosPage() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
-  const [okMsg, setOkMsg] = useState("");
 
   const [passageiros, setPassageiros] = useState<Passageiro[]>([]);
-  const [contratos, setContratos] = useState<Contrato[]>([]);
-  const [vinculos, setVinculos] = useState<ContratoPassageiro[]>([]);
+  const [responsaveisPagamento, setResponsaveisPagamento] = useState<Record<string, string>>({});
 
   const [busca, setBusca] = useState("");
+  const [filtroPagante, setFiltroPagante] = useState<"todos" | "particular" | "empresa">("todos");
 
-  const [passageiroSel, setPassageiroSel] = useState("");
-  const [contratoSel, setContratoSel] = useState("");
-  const [tipoPagante, setTipoPagante] = useState<"PARTICULAR" | "EMPRESA">("PARTICULAR");
-  const [tipoCobranca, setTipoCobranca] = useState<"DIARIA" | "MENSAL">("DIARIA");
-  const [valor, setValor] = useState("0");
-  const [statusVinculo, setStatusVinculo] = useState<"ATIVO" | "INATIVO">("ATIVO");
-  const [dataInicio, setDataInicio] = useState("");
-  const [dataFim, setDataFim] = useState("");
-
-  async function carregarTudo() {
+  async function carregarPassageiros() {
     setLoading(true);
     setErro("");
 
-    const [pRes, cRes, cpRes] = await Promise.all([
-      supabase
-        .from("passageiros")
-        .select("id, nome, email, cpf, rg, data_nascimento, telefone, status, cidade, uf, created_at")
-        .order("nome", { ascending: true }),
-      supabase
-        .from("contratos")
-        .select("id, nome, ativo")
-        .order("nome", { ascending: true }),
-      supabase
-        .from("contrato_passageiros")
-        .select("id, contrato_id, passageiro_id, status, tipo_pagante, tipo_cobranca, valor, data_inicio, data_fim")
-        .order("created_at", { ascending: false }),
-    ]);
+    const { data, error } = await supabase
+      .from("passageiros")
+      .select("id, nome, email, cpf, rg, data_nascimento, telefone, status, cidade, uf, created_at")
+      .order("nome", { ascending: true });
 
-    const firstErr = pRes.error ?? cRes.error ?? cpRes.error;
-    if (firstErr) {
-      setErro(firstErr.message);
+    if (error) {
+      setErro(error.message);
       setLoading(false);
       return;
     }
 
-    setPassageiros((pRes.data ?? []) as Passageiro[]);
-    setContratos((cRes.data ?? []) as Contrato[]);
-    setVinculos((cpRes.data ?? []) as ContratoPassageiro[]);
+    const passageirosRows = (data ?? []) as Passageiro[];
+    setPassageiros(passageirosRows);
+
+    if (passageirosRows.length === 0) {
+      setResponsaveisPagamento({});
+      setLoading(false);
+      return;
+    }
+
+    const passageiroIds = passageirosRows.map((p) => p.id);
+    const { data: vinculosData } = await supabase
+      .from("contrato_passageiros")
+      .select("passageiro_id, contrato_id, tipo_pagante, empresa_pagante_id, status, created_at")
+      .in("passageiro_id", passageiroIds)
+      .order("created_at", { ascending: true });
+
+    const vinculos =
+      (vinculosData ?? []) as Array<{
+        passageiro_id: string;
+        contrato_id: string;
+        tipo_pagante: "PARTICULAR" | "EMPRESA";
+        empresa_pagante_id: string | null;
+        status: "ATIVO" | "INATIVO";
+        created_at: string;
+      }>;
+
+    const contratoIds = Array.from(new Set(vinculos.map((v) => v.contrato_id)));
+    const empresaPaganteIds = Array.from(new Set(vinculos.map((v) => v.empresa_pagante_id).filter(Boolean))) as string[];
+
+    const contratosRows: Array<{ id: string; cliente_id: string | null }> =
+      contratoIds.length > 0
+        ? (((await supabase.from("contratos").select("id, cliente_id").in("id", contratoIds)).data ?? []) as Array<{
+            id: string;
+            cliente_id: string | null;
+          }>)
+        : [];
+    const clienteIdsDosContratos = Array.from(new Set(contratosRows.map((c) => c.cliente_id).filter(Boolean))) as string[];
+
+    const clientesDiretosData: Array<{ id: string; nome: string }> =
+      empresaPaganteIds.length > 0
+        ? (((await supabase.from("clientes").select("id, nome").in("id", empresaPaganteIds)).data ?? []) as Array<{
+            id: string;
+            nome: string;
+          }>)
+        : [];
+
+    const { data: clientesContratosData } =
+      clienteIdsDosContratos.length > 0
+        ? await supabase.from("clientes").select("id, nome").in("id", clienteIdsDosContratos)
+        : { data: [] };
+
+    const clientesRows = [
+      ...clientesDiretosData,
+      ...((clientesContratosData ?? []) as Array<{ id: string; nome: string }>),
+    ];
+
+    const clienteNomeById = new Map<string, string>(clientesRows.map((c) => [c.id, c.nome]));
+    const contratoClienteById = new Map<string, string | null>(contratosRows.map((c) => [c.id, c.cliente_id]));
+
+    const porPassageiro = new Map<string, typeof vinculos>();
+    for (const v of vinculos) {
+      porPassageiro.set(v.passageiro_id, [...(porPassageiro.get(v.passageiro_id) ?? []), v]);
+    }
+
+    const responsavelList: ResponsavelPagamento[] = passageirosRows.map((p) => {
+      const lista = porPassageiro.get(p.id) ?? [];
+      if (lista.length === 0) return { passageiro_id: p.id, texto: "—" };
+
+      const escolhido = lista.find((v) => v.status === "ATIVO") ?? lista[0];
+      if (escolhido.tipo_pagante === "PARTICULAR") return { passageiro_id: p.id, texto: "Particular" };
+
+      const nomeEmpresaDireta = escolhido.empresa_pagante_id ? clienteNomeById.get(escolhido.empresa_pagante_id) : null;
+      if (nomeEmpresaDireta) return { passageiro_id: p.id, texto: `Empresa: ${nomeEmpresaDireta}` };
+
+      const clienteContratoId = contratoClienteById.get(escolhido.contrato_id);
+      const nomeClienteContrato = clienteContratoId ? clienteNomeById.get(clienteContratoId) : null;
+      if (nomeClienteContrato) return { passageiro_id: p.id, texto: `Empresa: ${nomeClienteContrato}` };
+
+      return { passageiro_id: p.id, texto: "Empresa" };
+    });
+
+    setResponsaveisPagamento(Object.fromEntries(responsavelList.map((r) => [r.passageiro_id, r.texto])));
     setLoading(false);
   }
 
   useEffect(() => {
     const t = setTimeout(() => {
-      void carregarTudo();
+      void carregarPassageiros();
     }, 0);
     return () => clearTimeout(t);
   }, []);
 
   const passageirosFiltrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    if (!q) return passageiros;
     return passageiros.filter((p) => {
+      const pagante = responsaveisPagamento[p.id] ?? "";
+      if (filtroPagante === "particular" && !pagante.toLowerCase().startsWith("particular")) return false;
+      if (filtroPagante === "empresa" && !pagante.toLowerCase().startsWith("empresa")) return false;
+
+      if (!q) return true;
       const alvo = [
         p.nome,
         p.email ?? "",
@@ -119,209 +164,44 @@ export default function PassageirosPage() {
         .toLowerCase();
       return alvo.includes(q);
     });
-  }, [passageiros, busca]);
-
-  const contratosMap = useMemo(() => {
-    const m: Record<string, Contrato> = {};
-    contratos.forEach((c) => {
-      m[c.id] = c;
-    });
-    return m;
-  }, [contratos]);
-
-  function vinculosDoPassageiro(passageiroId: string) {
-    return vinculos.filter((v) => v.passageiro_id === passageiroId);
-  }
-
-  async function vincularPassageiroContrato() {
-    if (!passageiroSel || !contratoSel) return;
-    if (dataInicio && dataFim && dataFim < dataInicio) {
-      setErro("Data fim do vínculo não pode ser menor que data início.");
-      return;
-    }
-    setErro("");
-    setOkMsg("");
-
-    const { error } = await supabase.from("contrato_passageiros").insert({
-      passageiro_id: passageiroSel,
-      contrato_id: contratoSel,
-      status: statusVinculo,
-      tipo_pagante: tipoPagante,
-      tipo_cobranca: tipoCobranca,
-      valor: toMoney(valor, 0),
-      data_inicio: dataInicio || null,
-      data_fim: dataFim || null,
-    });
-
-    if (error) {
-      setErro(error.message);
-      return;
-    }
-
-    setPassageiroSel("");
-    setContratoSel("");
-    setValor("0");
-    setStatusVinculo("ATIVO");
-    setDataInicio("");
-    setDataFim("");
-    setOkMsg("Passageiro vinculado ao contrato com sucesso.");
-    await carregarTudo();
-  }
-
-  async function salvarVinculo(v: ContratoPassageiro) {
-    if (v.data_inicio && v.data_fim && v.data_fim < v.data_inicio) {
-      setErro("Data fim do vínculo não pode ser menor que data início.");
-      return;
-    }
-    setErro("");
-    setOkMsg("");
-
-    const { error } = await supabase
-      .from("contrato_passageiros")
-      .update({
-        status: v.status,
-        tipo_pagante: v.tipo_pagante,
-        tipo_cobranca: v.tipo_cobranca,
-        valor: v.valor,
-        data_inicio: v.data_inicio,
-        data_fim: v.data_fim,
-      })
-      .eq("id", v.id);
-
-    if (error) {
-      setErro(error.message);
-      return;
-    }
-
-    setOkMsg("Vínculo atualizado com sucesso.");
-    await carregarTudo();
-  }
-
-  function atualizarVinculoLocal(id: string, patch: Partial<ContratoPassageiro>) {
-    setVinculos((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
-  }
-
-  async function removerVinculo(vinculoId: string) {
-    if (!confirm("Remover vínculo deste passageiro com o contrato?")) return;
-    setErro("");
-    setOkMsg("");
-
-    const { error } = await supabase.from("contrato_passageiros").delete().eq("id", vinculoId);
-    if (error) {
-      setErro(error.message);
-      return;
-    }
-
-    setOkMsg("Vínculo removido com sucesso.");
-    await carregarTudo();
-  }
+  }, [passageiros, busca, responsaveisPagamento, filtroPagante]);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Passageiros"
-        description="Módulo exclusivo para cadastro manual de passageiros e vínculo aos contratos."
+        description="Listagem de passageiros cadastrados no sistema."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center">
             <Link href="/passageiros/novo" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition">
-              + Novo Passageiro
+              + Adicionar passageiro
             </Link>
-            <button onClick={carregarTudo} className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 transition">
-              Recarregar
-            </button>
           </div>
         }
       />
 
       {erro ? <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{erro}</div> : null}
-      {okMsg ? <div className="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{okMsg}</div> : null}
-
-      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
-          <h2 className="font-semibold text-slate-900">Vincular passageiro ao contrato</h2>
-          <select
-            className="w-full border border-slate-300 rounded-md px-3 py-2"
-            value={passageiroSel}
-            onChange={(e) => setPassageiroSel(e.target.value)}
-          >
-            <option value="">Selecione o passageiro</option>
-            {passageiros.map((p) => (
-              <option key={p.id} value={p.id}>{p.nome}</option>
-            ))}
-          </select>
-          <select
-            className="w-full border border-slate-300 rounded-md px-3 py-2"
-            value={contratoSel}
-            onChange={(e) => setContratoSel(e.target.value)}
-          >
-            <option value="">Selecione o contrato</option>
-            {contratos.filter((c) => c.ativo).map((c) => (
-              <option key={c.id} value={c.id}>{c.nome}</option>
-            ))}
-          </select>
-          <div className="grid grid-cols-3 gap-2">
-            <select
-              className="border border-slate-300 rounded-md px-3 py-2"
-              value={tipoPagante}
-              onChange={(e) => setTipoPagante(e.target.value as "PARTICULAR" | "EMPRESA")}
-            >
-              <option value="PARTICULAR">Particular</option>
-              <option value="EMPRESA">Empresa</option>
-            </select>
-            <select
-              className="border border-slate-300 rounded-md px-3 py-2"
-              value={tipoCobranca}
-              onChange={(e) => setTipoCobranca(e.target.value as "DIARIA" | "MENSAL")}
-            >
-              <option value="DIARIA">Diária</option>
-              <option value="MENSAL">Mensal</option>
-            </select>
-            <input
-              className="border border-slate-300 rounded-md px-3 py-2"
-              value={valor}
-              onChange={(e) => setValor(e.target.value)}
-              placeholder="Valor"
-            />
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <select
-              className="border border-slate-300 rounded-md px-3 py-2"
-              value={statusVinculo}
-              onChange={(e) => setStatusVinculo(e.target.value as "ATIVO" | "INATIVO")}
-            >
-              <option value="ATIVO">Ativo</option>
-              <option value="INATIVO">Inativo</option>
-            </select>
-            <input
-              type="date"
-              className="border border-slate-300 rounded-md px-3 py-2"
-              value={dataInicio}
-              onChange={(e) => setDataInicio(e.target.value)}
-            />
-            <input
-              type="date"
-              className="border border-slate-300 rounded-md px-3 py-2"
-              value={dataFim}
-              onChange={(e) => setDataFim(e.target.value)}
-            />
-          </div>
-          <button
-            onClick={vincularPassageiroContrato}
-            disabled={!passageiroSel || !contratoSel}
-            className="bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-700 transition disabled:opacity-60"
-          >
-            Vincular ao contrato
-          </button>
-      </div>
 
       <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h2 className="font-semibold text-slate-900">Passageiros cadastrados</h2>
-          <input
-            className="w-full max-w-sm border border-slate-300 rounded-md px-3 py-2"
-            placeholder="Buscar passageiro por nome/CPF/telefone"
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-          />
+          <div className="flex w-full max-w-2xl gap-2">
+            <input
+              className="w-full border border-slate-300 rounded-md px-3 py-2"
+              placeholder="Buscar passageiro por nome/CPF/telefone"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+            />
+            <select
+              className="border border-slate-300 rounded-md px-3 py-2"
+              value={filtroPagante}
+              onChange={(e) => setFiltroPagante(e.target.value as "todos" | "particular" | "empresa")}
+            >
+              <option value="todos">Todos pagantes</option>
+              <option value="particular">Particular</option>
+              <option value="empresa">Empresa</option>
+            </select>
+          </div>
         </div>
 
         {loading ? (
@@ -335,111 +215,43 @@ export default function PassageirosPage() {
                 <tr className="border-b text-left">
                   <th className="py-2 pr-4">Passageiro</th>
                   <th className="py-2 pr-4">Contato</th>
+                  <th className="py-2 pr-4">Pagante</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Localidade</th>
-                  <th className="py-2 pr-4">Contratos vinculados</th>
+                  <th className="py-2 pr-0 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {passageirosFiltrados.map((p) => {
-                  const vincs = vinculosDoPassageiro(p.id);
                   return (
                     <tr key={p.id} className="border-b last:border-b-0 align-top">
                       <td className="py-2 pr-4">
-                        <div className="font-medium text-slate-900">{p.nome}</div>
-                        <div className="text-xs text-slate-500">CPF: {p.cpf ?? "—"}</div>
-                        <div className="text-xs text-slate-500">E-mail: {p.email ?? "—"}</div>
+                        <Link href={`/passageiros/${p.id}`} className="font-medium text-slate-900 hover:underline">
+                          {p.nome}
+                        </Link>
                       </td>
+                      <td className="py-2 pr-4 text-slate-700">{p.telefone ?? "—"}</td>
                       <td className="py-2 pr-4 text-slate-700">
-                        <div>{p.telefone ?? "—"}</div>
-                        <div className="mt-1">
-                          <Link href={`/passageiros/${p.id}`} className="text-xs text-blue-700 hover:underline">
-                            Editar cadastro
-                          </Link>
-                        </div>
+                        {(() => {
+                          const pagante = responsaveisPagamento[p.id] ?? "—";
+                          const isParticular = pagante.toLowerCase().startsWith("particular");
+                          const cls = isParticular
+                            ? "border-slate-300 text-slate-700 bg-slate-50"
+                            : "border-blue-200 text-blue-700 bg-blue-50";
+                          return <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs ${cls}`}>{pagante}</span>;
+                        })()}
                       </td>
                       <td className="py-2 pr-4 text-slate-700">{p.status}</td>
                       <td className="py-2 pr-4 text-slate-700">{[p.cidade, p.uf].filter(Boolean).join("/") || "—"}</td>
-                      <td className="py-2 pr-4">
-                        {vincs.length === 0 ? (
-                          <span className="text-xs text-slate-500">Sem vínculo</span>
-                        ) : (
-                          <div className="space-y-2">
-                            {vincs.map((v) => (
-                              <div key={v.id} className="rounded border border-slate-200 px-2 py-1.5 flex items-center justify-between gap-2">
-                                <div className="text-xs text-slate-700">
-                                  <div className="font-medium">{contratosMap[v.contrato_id]?.nome ?? "Contrato"}</div>
-                                  <div className="grid grid-cols-2 md:grid-cols-5 gap-1 mt-1">
-                                    <select
-                                      className="border border-slate-300 rounded px-1.5 py-1"
-                                      value={v.status}
-                                      onChange={(e) => atualizarVinculoLocal(v.id, { status: e.target.value as "ATIVO" | "INATIVO" })}
-                                    >
-                                      <option value="ATIVO">ATIVO</option>
-                                      <option value="INATIVO">INATIVO</option>
-                                    </select>
-                                    <select
-                                      className="border border-slate-300 rounded px-1.5 py-1"
-                                      value={v.tipo_pagante}
-                                      onChange={(e) => atualizarVinculoLocal(v.id, { tipo_pagante: e.target.value as "PARTICULAR" | "EMPRESA" })}
-                                    >
-                                      <option value="PARTICULAR">PARTICULAR</option>
-                                      <option value="EMPRESA">EMPRESA</option>
-                                    </select>
-                                    <select
-                                      className="border border-slate-300 rounded px-1.5 py-1"
-                                      value={v.tipo_cobranca}
-                                      onChange={(e) => atualizarVinculoLocal(v.id, { tipo_cobranca: e.target.value as "DIARIA" | "MENSAL" })}
-                                    >
-                                      <option value="DIARIA">DIARIA</option>
-                                      <option value="MENSAL">MENSAL</option>
-                                    </select>
-                                    <input
-                                      className="border border-slate-300 rounded px-1.5 py-1"
-                                      value={String(v.valor ?? 0)}
-                                      onChange={(e) => atualizarVinculoLocal(v.id, { valor: toMoney(e.target.value, 0) })}
-                                    />
-                                    <div className="text-[11px] text-slate-500 flex items-center">R$ {Number(v.valor ?? 0).toFixed(2)}</div>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-1 mt-1">
-                                    <input
-                                      type="date"
-                                      className="border border-slate-300 rounded px-1.5 py-1"
-                                      value={v.data_inicio ?? ""}
-                                      onChange={(e) => atualizarVinculoLocal(v.id, { data_inicio: e.target.value || null })}
-                                    />
-                                    <input
-                                      type="date"
-                                      className="border border-slate-300 rounded px-1.5 py-1"
-                                      value={v.data_fim ?? ""}
-                                      onChange={(e) => atualizarVinculoLocal(v.id, { data_fim: e.target.value || null })}
-                                    />
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => salvarVinculo(v)}
-                                    className="text-xs border border-emerald-300 text-emerald-700 rounded px-2 py-1 hover:bg-emerald-50"
-                                  >
-                                    Salvar
-                                  </button>
-                                  <Link
-                                    href={`/contratos/${v.contrato_id}/passageiros`}
-                                    className="text-xs border border-slate-300 rounded px-2 py-1 hover:bg-slate-50"
-                                  >
-                                    Gerenciar
-                                  </Link>
-                                  <button
-                                    onClick={() => removerVinculo(v.id)}
-                                    className="text-xs border border-rose-300 text-rose-700 rounded px-2 py-1 hover:bg-rose-50"
-                                  >
-                                    Remover
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                      <td className="py-2 pr-0 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          <ActionIconLink href={`/passageiros/${p.id}`} title="Associar operação" variant="success">
+                            🛣️
+                          </ActionIconLink>
+                          <ActionIconLink href={`/passageiros/${p.id}/cadastro`} title="Editar cadastro" variant="primary">
+                            ✏️
+                          </ActionIconLink>
+                        </div>
                       </td>
                     </tr>
                   );

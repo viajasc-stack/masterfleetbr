@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { supabase } from "@/lib/supabase/client";
+import { loadEmpresaModuleAccess } from "@/lib/moduleAccess";
 
 function sanitizeFileName(name: string) {
   return name
@@ -84,6 +85,7 @@ export default function EditarMotoristaPage() {
   const [resettingSenha, setResettingSenha] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string>("");
   const [uploadWarning, setUploadWarning] = useState<string>("");
+  const [canShowFinanceiro, setCanShowFinanceiro] = useState(false);
 
   const [motorista, setMotorista] = useState<MotoristaDb | null>(null);
 
@@ -268,6 +270,19 @@ export default function EditarMotoristaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void (async () => {
+        const access = await loadEmpresaModuleAccess();
+        setCanShowFinanceiro(
+          access.canUseAllModules || access.allowedModules.includes("financeiro")
+        );
+      })();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, []);
+
   function dateOrNull(v: string) {
     if (!v) return null;
     return v; // coluna date
@@ -330,6 +345,25 @@ export default function EditarMotoristaPage() {
       }
     }
 
+    const payloadFinanceiro = canShowFinanceiro
+      ? {
+          chave_pix: chavePix.trim() || null,
+          banco: banco.trim() || null,
+          agencia: agencia.trim() || null,
+          conta: conta.trim() || null,
+          vinculo_trabalho: vinculoTrabalho,
+          tipo_remuneracao: tipoRemuneracao,
+          salario_base: ["fixo_extra", "fixo_banco_horas"].includes(tipoRemuneracao)
+            ? numberOrNull(salarioBase)
+            : null,
+          valor_hora_extra: tipoRemuneracao === "fixo_extra" ? numberOrNull(valorHoraExtra) : null,
+          banco_horas_saldo: tipoRemuneracao === "fixo_banco_horas" ? numberOrNull(bancoHorasSaldo) : null,
+          valor_por_os: tipoRemuneracao === "por_os_executada" ? numberOrNull(valorPorOs) : null,
+          valor_diaria: tipoRemuneracao === "por_diaria" ? numberOrNull(valorDiaria) : null,
+          observacoes_remuneracao: observacoesRemuneracao.trim() || null,
+        }
+      : {};
+
     const payload = {
       nome: nome.trim(),
       apelido: apelido.trim() || null,
@@ -359,20 +393,7 @@ export default function EditarMotoristaPage() {
       data_admissao: dateOrNull(dataAdmissao),
       data_demissao: dateOrNull(dataDemissao),
 
-      chave_pix: chavePix.trim() || null,
-      banco: banco.trim() || null,
-      agencia: agencia.trim() || null,
-      conta: conta.trim() || null,
-      vinculo_trabalho: vinculoTrabalho,
-      tipo_remuneracao: tipoRemuneracao,
-      salario_base: ["fixo_extra", "fixo_banco_horas"].includes(tipoRemuneracao)
-        ? numberOrNull(salarioBase)
-        : null,
-      valor_hora_extra: tipoRemuneracao === "fixo_extra" ? numberOrNull(valorHoraExtra) : null,
-      banco_horas_saldo: tipoRemuneracao === "fixo_banco_horas" ? numberOrNull(bancoHorasSaldo) : null,
-      valor_por_os: tipoRemuneracao === "por_os_executada" ? numberOrNull(valorPorOs) : null,
-      valor_diaria: tipoRemuneracao === "por_diaria" ? numberOrNull(valorDiaria) : null,
-      observacoes_remuneracao: observacoesRemuneracao.trim() || null,
+      ...payloadFinanceiro,
       foto_perfil_url: fotoPerfilUrl,
       cnh_arquivo_url: cnhArquivoUrlFinal,
       cursos_urls: cursosUrlsFinal,
@@ -784,6 +805,8 @@ export default function EditarMotoristaPage() {
           </div>
         </div>
 
+        {canShowFinanceiro ? (
+          <>
         {/* Financeiro */}
         <div className="border-t pt-6">
           <h2 className="text-sm font-semibold text-slate-800 mb-4">
@@ -931,6 +954,8 @@ export default function EditarMotoristaPage() {
             </div>
           </div>
         </div>
+          </>
+        ) : null}
 
         {/* Observações */}
         <div className="border-t pt-6">

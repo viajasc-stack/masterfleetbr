@@ -60,6 +60,7 @@ const MODULE_LABELS: Record<string, string> = {
   financeiro: "Financeiro",
   manutencao: "Manutenção",
   oficina: "Oficina",
+  escolar: "Escolar",
   agenda: "Agenda",
   viagens: "Viagens",
   relatorios: "Relatórios",
@@ -214,7 +215,7 @@ export default function MasterEmpresaDetalhePage() {
           <div className="space-y-3">
             {empresaModulos.includes("operacional") ? (
               <div className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
-                <strong>Operacional</strong> cobre dashboard, OS, veículos, motoristas, fretamentos, contratos, passageiros e clientes.
+                <strong>Operacional</strong> cobre dashboard, OS, veículos, motoristas, fretamentos, contratos e clientes.
               </div>
             ) : null}
             <div className="flex flex-wrap gap-2">

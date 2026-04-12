@@ -60,6 +60,17 @@ const OFICINA_SUBLINKS = [
   { href: "/oficina/kpis", label: "Indicadores" },
 ];
 
+const ESCOLAR_SUBLINKS = [
+  { href: "/escolar", label: "Dashboard" },
+  { href: "/escolar/linhas", label: "Linhas" },
+  { href: "/escolar/alunos", label: "Alunos" },
+  { href: "/escolar/responsaveis", label: "Responsáveis" },
+  { href: "/escolar/familias", label: "Famílias" },
+  { href: "/escolar/presenca", label: "Presença" },
+  { href: "/escolar/mensalidades", label: "Mensalidades" },
+  { href: "/escolar/ocorrencias", label: "Ocorrências" },
+];
+
 const FRETAMENTOS_SUBLINKS = [
   { href: "/fretamentos/eventual", label: "Eventual" },
   { href: "/fretamentos/recorrente", label: "Recorrente" },
@@ -72,28 +83,34 @@ const CONFIGURACOES_SUBLINKS = [
   { href: "/configuracoes/fretamento-recorrente", label: "Fretamento recorrente" },
 ];
 
+const RELATORIOS_SUBLINKS = [
+  { href: "/relatorios", label: "Visão geral" },
+  { href: "/relatorios/ordens-servico", label: "Ordens de Serviço" },
+];
+
 const LINKS: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: "◼", group: "Operacional", modulo: "operacional" },
-  { href: "/ordens-servico", label: "Ordens de Serviço", icon: "◼", group: "Operacional", modulo: "operacional" },
-  { href: "/veiculos", label: "Veículos", icon: "◼", group: "Operacional", modulo: "operacional" },
-  { href: "/motoristas", label: "Motoristas", icon: "◼", group: "Operacional", modulo: "operacional" },
-  { href: "/fretamentos", label: "Fretamentos", icon: "◼", group: "Operacional", modulo: "operacional" },
-  { href: "/contratos", label: "Contratos", icon: "◼", group: "Operacional", modulo: "operacional" },
-  { href: "/passageiros", label: "Passageiros", icon: "◼", group: "Operacional", modulo: "operacional" },
-  { href: "/clientes", label: "Clientes", icon: "◼", group: "Operacional", modulo: "operacional" },
-  { href: "/inventario", label: "Estoque", icon: "◼", group: "Gestão", modulo: "inventario" },
-  { href: "/financeiro", label: "Financeiro", icon: "◼", group: "Gestão", modulo: "financeiro" },
-  { href: "/manutencao", label: "Manutenção", icon: "◼", group: "Gestão", modulo: "manutencao" },
-  { href: "/oficina", label: "Oficina", icon: "◼", group: "Gestão", modulo: "oficina" },
-  { href: "/abastecimentos", label: "Abastecimentos", icon: "◼", group: "Gestão", modulo: "operacional" },
-  { href: "/orcamentos", label: "Orçamentos", icon: "◼", group: "Gestão", modulo: "operacional" },
-  { href: "/agenda", label: "Agenda", icon: "◼", group: "Gestão", modulo: "agenda" },
-  { href: "/viagens", label: "Viagens", icon: "◼", group: "Gestão", modulo: "viagens" },
-  { href: "/central-negocios", label: "Central de Negócios", icon: "◼", group: "Gestão", modulo: "operacional" },
-  { href: "/relatorios", label: "Relatórios", icon: "◼", group: "Gestão", modulo: "relatorios" },
-  { href: "/bi/rentabilidade", label: "BI Rentabilidade", icon: "◼", group: "Gestão", modulo: "relatorios" },
-  { href: "/suporte", label: "Suporte", icon: "◼", group: "Administrativo", modulo: "suporte" },
-  { href: "/configuracoes", label: "Configurações", icon: "◼", group: "Administrativo", modulo: "configuracoes" },
+  { href: "/dashboard", label: "Dashboard", icon: "📊", group: "Operacional", modulo: "operacional" },
+  { href: "/ordens-servico", label: "Ordens de Serviço", icon: "🧾", group: "Operacional", modulo: "operacional" },
+  { href: "/veiculos", label: "Veículos", icon: "🚚", group: "Operacional", modulo: "operacional" },
+  { href: "/motoristas", label: "Motoristas", icon: "🧑‍✈️", group: "Operacional", modulo: "operacional" },
+  { href: "/fretamentos", label: "Fretamentos", icon: "🚌", group: "Operacional", modulo: "operacional" },
+  { href: "/contratos", label: "Contratos", icon: "📑", group: "Operacional", modulo: "operacional" },
+  { href: "/passageiros", label: "Passageiros", icon: "👥", group: "Operacional", modulo: "passageiros" },
+  { href: "/clientes", label: "Clientes", icon: "🤝", group: "Operacional", modulo: "operacional" },
+  { href: "/inventario", label: "Estoque", icon: "📦", group: "Gestão", modulo: "inventario" },
+  { href: "/financeiro", label: "Financeiro", icon: "💰", group: "Gestão", modulo: "financeiro" },
+  { href: "/manutencao", label: "Manutenção", icon: "🛠️", group: "Gestão", modulo: "manutencao" },
+  { href: "/oficina", label: "Oficina", icon: "🔧", group: "Gestão", modulo: "oficina" },
+  { href: "/escolar", label: "Escolar", icon: "🎓", group: "Gestão", modulo: "escolar" },
+  { href: "/abastecimentos", label: "Abastecimentos", icon: "⛽", group: "Gestão", modulo: "operacional" },
+  { href: "/orcamentos", label: "Orçamentos", icon: "📝", group: "Gestão", modulo: "operacional" },
+  { href: "/agenda", label: "Agenda", icon: "📅", group: "Gestão", modulo: "agenda" },
+  { href: "/viagens", label: "Viagens", icon: "🧭", group: "Gestão", modulo: "viagens" },
+  { href: "/central-negocios", label: "Central de Negócios", icon: "🏢", group: "Gestão", modulo: "operacional" },
+  { href: "/relatorios", label: "Relatórios", icon: "📈", group: "Gestão", modulo: "relatorios" },
+  { href: "/bi/rentabilidade", label: "BI Rentabilidade", icon: "📉", group: "Gestão", modulo: "relatorios" },
+  { href: "/suporte", label: "Suporte", icon: "🛟", group: "Administrativo", modulo: "suporte" },
+  { href: "/configuracoes", label: "Configurações", icon: "⚙️", group: "Administrativo", modulo: "configuracoes" },
 ];
 
 export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: SidebarProps) {
@@ -103,8 +120,10 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
   const [financeiroOpenManual, setFinanceiroOpenManual] = useState<boolean | null>(null);
   const [manutencaoOpenManual, setManutencaoOpenManual] = useState<boolean | null>(null);
   const [oficinaOpenManual, setOficinaOpenManual] = useState<boolean | null>(null);
+  const [escolarOpenManual, setEscolarOpenManual] = useState<boolean | null>(null);
   const [fretamentosOpenManual, setFretamentosOpenManual] = useState<boolean | null>(null);
   const [configuracoesOpenManual, setConfiguracoesOpenManual] = useState<boolean | null>(null);
+  const [relatoriosOpenManual, setRelatoriosOpenManual] = useState<boolean | null>(null);
   const [canUseAllModules, setCanUseAllModules] = useState(false);
   const [allowedModules, setAllowedModules] = useState<string[]>([]);
   const [globalActiveModules, setGlobalActiveModules] = useState<string[]>([]);
@@ -161,8 +180,10 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
   const financeiroOpen = financeiroOpenManual ?? Boolean(pathname?.startsWith("/financeiro"));
   const manutencaoOpen = manutencaoOpenManual ?? Boolean(pathname?.startsWith("/manutencao"));
   const oficinaOpen = oficinaOpenManual ?? Boolean(pathname?.startsWith("/oficina"));
+  const escolarOpen = escolarOpenManual ?? Boolean(pathname?.startsWith("/escolar"));
   const fretamentosOpen = fretamentosOpenManual ?? Boolean(pathname?.startsWith("/fretamentos"));
   const configuracoesOpen = configuracoesOpenManual ?? Boolean(pathname?.startsWith("/configuracoes"));
+  const relatoriosOpen = relatoriosOpenManual ?? Boolean(pathname?.startsWith("/relatorios") || pathname?.startsWith("/bi/"));
 
   function isAtivo(href: string) {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -264,7 +285,10 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
                         className={parentItemClass(ativo)}
                       >
                         <Link href={link.href} className="flex-1" onClick={onClose}>
-                          {link.label}
+                          <span className="flex items-center gap-2">
+                            <span className="text-base leading-none">{link.icon}</span>
+                            <span>{link.label}</span>
+                          </span>
                         </Link>
                         <button
                           type="button"
@@ -304,7 +328,10 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
                         className={parentItemClass(ativo)}
                       >
                         <Link href={link.href} className="flex-1" onClick={onClose}>
-                          {link.label}
+                          <span className="flex items-center gap-2">
+                            <span className="text-base leading-none">{link.icon}</span>
+                            <span>{link.label}</span>
+                          </span>
                         </Link>
                         <button
                           type="button"
@@ -347,7 +374,10 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
                         className={parentItemClass(ativo)}
                       >
                         <Link href={link.href} className="flex-1" onClick={onClose}>
-                          {link.label}
+                          <span className="flex items-center gap-2">
+                            <span className="text-base leading-none">{link.icon}</span>
+                            <span>{link.label}</span>
+                          </span>
                         </Link>
                         <button
                           type="button"
@@ -387,7 +417,10 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
                         className={parentItemClass(ativo)}
                       >
                         <Link href={link.href} className="flex-1" onClick={onClose}>
-                          {link.label}
+                          <span className="flex items-center gap-2">
+                            <span className="text-base leading-none">{link.icon}</span>
+                            <span>{link.label}</span>
+                          </span>
                         </Link>
                         <button
                           type="button"
@@ -420,6 +453,49 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
                   );
                 }
 
+                if (link.href === "/escolar") {
+                  return (
+                    <div key={link.href} className="mx-2">
+                      <div
+                        className={parentItemClass(ativo)}
+                      >
+                        <Link href={link.href} className="flex-1" onClick={onClose}>
+                          <span className="flex items-center gap-2">
+                            <span className="text-base leading-none">{link.icon}</span>
+                            <span>{link.label}</span>
+                          </span>
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => setEscolarOpenManual((v) => !(v ?? Boolean(pathname?.startsWith("/escolar"))))}
+                          className="text-xs text-slate-400 hover:text-slate-200"
+                          aria-label={escolarOpen ? "Recolher submenu escolar" : "Expandir submenu escolar"}
+                        >
+                          {escolarOpen ? "▾" : "▸"}
+                        </button>
+                      </div>
+
+                      {escolarOpen ? (
+                        <div className="mt-1 mb-2 ml-3 border-l border-slate-700/80 pl-2 space-y-0.5">
+                          {ESCOLAR_SUBLINKS.filter(() => hasModulo("escolar")).map((sub) => {
+                            const subAtivo = isAtivo(sub.href);
+                            return (
+                              <Link
+                                key={sub.href}
+                                href={sub.href}
+                                onClick={onClose}
+                                className={subItemClass(subAtivo)}
+                              >
+                                {sub.label}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }
+
                 if (link.href === "/fretamentos") {
                   return (
                     <div key={link.href} className="mx-2">
@@ -427,7 +503,10 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
                         className={parentItemClass(ativo)}
                       >
                         <Link href="/fretamentos/eventual" className="flex-1" onClick={onClose}>
-                          {link.label}
+                          <span className="flex items-center gap-2">
+                            <span className="text-base leading-none">{link.icon}</span>
+                            <span>{link.label}</span>
+                          </span>
                         </Link>
                         <button
                           type="button"
@@ -467,7 +546,10 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
                         className={parentItemClass(ativo)}
                       >
                         <Link href={link.href} className="flex-1" onClick={onClose}>
-                          {link.label}
+                          <span className="flex items-center gap-2">
+                            <span className="text-base leading-none">{link.icon}</span>
+                            <span>{link.label}</span>
+                          </span>
                         </Link>
                         <button
                           type="button"
@@ -500,6 +582,47 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
                   );
                 }
 
+                if (link.href === "/relatorios") {
+                  return (
+                    <div key={link.href} className="mx-2">
+                      <div className={parentItemClass(ativo)}>
+                        <Link href={link.href} className="flex-1" onClick={onClose}>
+                          <span className="flex items-center gap-2">
+                            <span className="text-base leading-none">{link.icon}</span>
+                            <span>{link.label}</span>
+                          </span>
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => setRelatoriosOpenManual((v) => !(v ?? Boolean(pathname?.startsWith("/relatorios") || pathname?.startsWith("/bi/"))))}
+                          className="text-xs text-slate-400 hover:text-slate-200"
+                          aria-label={relatoriosOpen ? "Recolher submenu de relatórios" : "Expandir submenu de relatórios"}
+                        >
+                          {relatoriosOpen ? "▾" : "▸"}
+                        </button>
+                      </div>
+
+                      {relatoriosOpen ? (
+                        <div className="mt-1 mb-2 ml-3 border-l border-slate-700/80 pl-2 space-y-0.5">
+                          {RELATORIOS_SUBLINKS.filter(() => hasModulo("relatorios")).map((sub) => {
+                            const subAtivo = isAtivo(sub.href);
+                            return (
+                              <Link
+                                key={sub.href}
+                                href={sub.href}
+                                onClick={onClose}
+                                className={subItemClass(subAtivo)}
+                              >
+                                {sub.label}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }
+
                 return (
                   <Link
                     key={link.href}
@@ -508,7 +631,7 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
                     className={`mx-2 ${parentItemClass(ativo)}`}
                   >
                     <span className="flex items-center gap-2">
-                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-500" />
+                      <span className="text-base leading-none">{link.icon}</span>
                       <span>{link.label}</span>
                       {link.href === "/suporte" && supportUnread > 0 ? (
                         <span className="inline-block h-2.5 w-2.5 rounded-full bg-rose-500" aria-label="Há mensagens novas no suporte" />

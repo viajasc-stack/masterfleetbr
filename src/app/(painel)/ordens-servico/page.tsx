@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
@@ -20,9 +20,24 @@ type OsRow = {
 
   origem: string | null;
   destino: string | null;
+  roteiro: string | null;
+  observacoes: string | null;
+  local_saida: string | null;
+  local_chegada: string | null;
 
   valor_total: number | null;
   status_pagamento: string | null;
+
+  km_inicial: number | null;
+  km_final: number | null;
+  assinatura_inicio_em: string | null;
+  assinatura_inicio_geo: unknown;
+  assinatura_inicio_endereco: string | null;
+  assinatura_inicio_foto_url: string | null;
+  assinatura_fim_em: string | null;
+  assinatura_fim_geo: unknown;
+  assinatura_fim_endereco: string | null;
+  assinatura_fim_foto_url: string | null;
 
   cliente_id: string | null;
   contrato_id: string | null;
@@ -36,6 +51,33 @@ type OsRow = {
   veiculos?: { placa: string } | null;
   motoristas?: { nome: string } | null;
 };
+
+function toNumber(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function extractLatLng(geo: unknown) {
+  if (!geo || typeof geo !== "object") return null;
+  const obj = geo as Record<string, unknown>;
+  const lat =
+    toNumber(obj.lat) ??
+    toNumber(obj.latitude) ??
+    toNumber(obj.coords && typeof obj.coords === "object" ? (obj.coords as Record<string, unknown>).latitude : null);
+  const lng =
+    toNumber(obj.lng) ??
+    toNumber(obj.longitude) ??
+    toNumber(obj.lon) ??
+    toNumber(obj.coords && typeof obj.coords === "object" ? (obj.coords as Record<string, unknown>).longitude : null);
+
+  if (lat == null || lng == null) return null;
+  return { lat, lng };
+}
+
+function statusTemVisualizacaoExecucao(status: string) {
+  const s = (status || "").toLowerCase();
+  return s === "em_execucao" || s === "em_andamento" || s === "concluida";
+}
 
 type VeiculoQuickOpt = {
   id: string;
@@ -112,6 +154,8 @@ export default function OrdensServicoPage() {
   const [quickVeiculoId, setQuickVeiculoId] = useState("");
   const [quickMotoristaId, setQuickMotoristaId] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
+  const [execucaoTarget, setExecucaoTarget] = useState<OsRow | null>(null);
+  const realtimeReloadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [diaReferencia, setDiaReferencia] = useState<Date>(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -130,8 +174,11 @@ export default function OrdensServicoPage() {
       .from("ordens_servico")
       .select(
         `
-        id, numero, tipo, status, inicio_em, fim_em, origem, destino,
-        valor_total, status_pagamento, cliente_id, contrato_id, veiculo_id, motorista_id, created_at,
+        id, numero, tipo, status, inicio_em, fim_em, origem, destino, roteiro, observacoes, local_saida, local_chegada,
+        valor_total, status_pagamento, km_inicial, km_final,
+        assinatura_inicio_em, assinatura_inicio_geo, assinatura_inicio_endereco, assinatura_inicio_foto_url,
+        assinatura_fim_em, assinatura_fim_geo, assinatura_fim_endereco, assinatura_fim_foto_url,
+        cliente_id, contrato_id, veiculo_id, motorista_id, created_at, updated_at,
         clientes:cliente_id ( nome ),
         veiculos:veiculo_id ( placa ),
         motoristas:motorista_id ( nome )
@@ -276,6 +323,32 @@ export default function OrdensServicoPage() {
   useEffect(() => {
     const id = setTimeout(() => { carregarOS(); }, 0);
     return () => clearTimeout(id);
+  }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("ordens-servico-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ordens_servico" },
+        () => {
+          if (realtimeReloadTimeoutRef.current) {
+            clearTimeout(realtimeReloadTimeoutRef.current);
+          }
+
+          realtimeReloadTimeoutRef.current = setTimeout(() => {
+            void carregarOS();
+          }, 250);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (realtimeReloadTimeoutRef.current) {
+        clearTimeout(realtimeReloadTimeoutRef.current);
+      }
+      void supabase.removeChannel(channel);
+    };
   }, []);
 
   const q = busca.trim().toLowerCase();
@@ -430,6 +503,13 @@ export default function OrdensServicoPage() {
     if (!iso) return "—";
     return new Date(iso).toLocaleString("pt-BR");
   }
+
+  const inicioGeoExecucao = extractLatLng(execucaoTarget?.assinatura_inicio_geo);
+  const fimGeoExecucao = extractLatLng(execucaoTarget?.assinatura_fim_geo);
+  const totalKmExecucao =
+    execucaoTarget?.km_inicial != null && execucaoTarget?.km_final != null
+      ? Number(execucaoTarget.km_final) - Number(execucaoTarget.km_inicial)
+      : null;
 
   async function excluirSelecionado() {
     if (!deleteTarget) return;
@@ -656,7 +736,9 @@ export default function OrdensServicoPage() {
               </thead>
               <tbody>
                 {filtradas.map((o) => {
-                  const emEdicaoRapida = quickEditId === o.id;
+                  const statusAtual = (o.status || "").toLowerCase();
+                  const isConcluida = statusAtual === "concluida";
+                  const emEdicaoRapida = quickEditId === o.id && !isConcluida;
                   const nomeContrato = o.contrato_id ? contratosMap[o.contrato_id] : "";
 
                   return (
@@ -673,12 +755,23 @@ export default function OrdensServicoPage() {
                       />
                     </td>
                     <td className="py-2 pr-4 font-medium">
-                      <Link
-                        href={`/ordens-servico/${o.id}`}
-                        className="hover:underline"
-                      >
-                        {formatNumeroOS(o.numero, o.created_at)}
-                      </Link>
+                      {isConcluida ? (
+                        <button
+                          type="button"
+                          className="hover:underline"
+                          onClick={() => setExecucaoTarget(o)}
+                          title="Visualizar detalhes da execução"
+                        >
+                          {formatNumeroOS(o.numero, o.created_at)}
+                        </button>
+                      ) : (
+                        <Link
+                          href={`/ordens-servico/${o.id}`}
+                          className="hover:underline"
+                        >
+                          {formatNumeroOS(o.numero, o.created_at)}
+                        </Link>
+                      )}
                       <div className="text-xs text-slate-500">
                         {o.tipo === "recorrente" ? "Recorrente" : "Eventual"}
                       </div>
@@ -770,7 +863,7 @@ export default function OrdensServicoPage() {
                               ❌
                             </ActionIconButton>
                           </>
-                        ) : (
+                        ) : !isConcluida ? (
                           <ActionIconButton
                             type="button"
                             title="Edição rápida de veículo/motorista"
@@ -779,24 +872,38 @@ export default function OrdensServicoPage() {
                           >
                             ⚡
                           </ActionIconButton>
-                        )}
+                        ) : null}
+                        {!isConcluida ? (
+                          <ActionIconLink
+                            href={`/ordens-servico/${o.id}`}
+                            title="Ver detalhes e edição completa"
+                            variant="primary"
+                          >
+                            ✏️
+                          </ActionIconLink>
+                        ) : null}
 
-                        <ActionIconLink
-                          href={`/ordens-servico/${o.id}`}
-                          title="Ver detalhes e edição completa"
-                          variant="primary"
-                        >
-                          ✏️
-                        </ActionIconLink>
+                        {statusTemVisualizacaoExecucao(o.status) ? (
+                          <ActionIconButton
+                            type="button"
+                            title="Visualizar dados de execução"
+                            variant="primary"
+                            onClick={() => setExecucaoTarget(o)}
+                          >
+                            👁️
+                          </ActionIconButton>
+                        ) : null}
 
-                        <ActionIconButton
-                          type="button"
-                          title="Cancelar OS"
-                          variant="danger"
-                          onClick={() => setDeleteTarget(o)}
-                        >
-                          🛑
-                        </ActionIconButton>
+                        {!isConcluida ? (
+                          <ActionIconButton
+                            type="button"
+                            title="Cancelar OS"
+                            variant="danger"
+                            onClick={() => setDeleteTarget(o)}
+                          >
+                            🛑
+                          </ActionIconButton>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -826,6 +933,142 @@ export default function OrdensServicoPage() {
         onCancel={() => setBulkDeleteOpen(false)}
         onConfirm={excluirSelecionadosEmLote}
       />
+
+      {execucaoTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Detalhes da execução</h3>
+                <p className="text-sm text-slate-600">
+                  {formatNumeroOS(execucaoTarget.numero, execucaoTarget.created_at)} • {labelStatus(execucaoTarget.status)}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+                onClick={() => setExecucaoTarget(null)}
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="max-h-[80vh] space-y-5 overflow-y-auto px-5 py-4 text-sm">
+              <div className="grid gap-3 md:grid-cols-5">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs text-slate-500">KM inicial</div>
+                  <div className="font-semibold text-slate-900">{execucaoTarget.km_inicial ?? "—"}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs text-slate-500">KM final</div>
+                  <div className="font-semibold text-slate-900">{execucaoTarget.km_final ?? "—"}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs text-slate-500">Total de KM da OS</div>
+                  <div className="font-semibold text-slate-900">{totalKmExecucao != null ? `${totalKmExecucao} km` : "—"}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs text-slate-500">Início real</div>
+                  <div className="font-semibold text-slate-900">{formatDt(execucaoTarget.assinatura_inicio_em)}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs text-slate-500">Fim real</div>
+                  <div className="font-semibold text-slate-900">{formatDt(execucaoTarget.assinatura_fim_em)}</div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-lg border border-slate-200 p-4">
+                  <h4 className="mb-2 font-semibold text-slate-900">Início (partida)</h4>
+                  <p className="text-slate-700"><span className="font-medium">Local operacional:</span> {execucaoTarget.local_saida || "—"}</p>
+                  <p className="text-slate-700"><span className="font-medium">Endereço capturado:</span> {execucaoTarget.assinatura_inicio_endereco || "—"}</p>
+                  <p className="text-slate-700">
+                    <span className="font-medium">Coordenadas:</span>{" "}
+                    {inicioGeoExecucao ? `${inicioGeoExecucao.lat}, ${inicioGeoExecucao.lng}` : "—"}
+                  </p>
+                  {inicioGeoExecucao ? (
+                    <a
+                      href={`https://www.google.com/maps?q=${inicioGeoExecucao.lat},${inicioGeoExecucao.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-block text-blue-700 hover:underline"
+                    >
+                      Abrir no mapa
+                    </a>
+                  ) : null}
+                  <p className="mt-2 text-slate-700">
+                    <span className="font-medium">Foto odômetro:</span>{" "}
+                    {execucaoTarget.assinatura_inicio_foto_url ? (
+                      <a
+                        href={execucaoTarget.assinatura_inicio_foto_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-700 hover:underline"
+                      >
+                        visualizar foto
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 p-4">
+                  <h4 className="mb-2 font-semibold text-slate-900">Fim (encerramento)</h4>
+                  <p className="text-slate-700"><span className="font-medium">Local operacional:</span> {execucaoTarget.local_chegada || "—"}</p>
+                  <p className="text-slate-700"><span className="font-medium">Endereço capturado:</span> {execucaoTarget.assinatura_fim_endereco || "—"}</p>
+                  <p className="text-slate-700">
+                    <span className="font-medium">Coordenadas:</span>{" "}
+                    {fimGeoExecucao ? `${fimGeoExecucao.lat}, ${fimGeoExecucao.lng}` : "—"}
+                  </p>
+                  {fimGeoExecucao ? (
+                    <a
+                      href={`https://www.google.com/maps?q=${fimGeoExecucao.lat},${fimGeoExecucao.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-block text-blue-700 hover:underline"
+                    >
+                      Abrir no mapa
+                    </a>
+                  ) : null}
+                  <p className="mt-2 text-slate-700">
+                    <span className="font-medium">Foto odômetro:</span>{" "}
+                    {execucaoTarget.assinatura_fim_foto_url ? (
+                      <a
+                        href={execucaoTarget.assinatura_fim_foto_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-700 hover:underline"
+                      >
+                        visualizar foto
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 p-4">
+                <h4 className="mb-2 font-semibold text-slate-900">Roteiro e observações</h4>
+                <p className="text-slate-700"><span className="font-medium">Roteiro:</span> {execucaoTarget.roteiro || "—"}</p>
+                <p className="text-slate-700"><span className="font-medium">Observações:</span> {execucaoTarget.observacoes || "—"}</p>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 p-4">
+                <h4 className="mb-3 font-semibold text-slate-900">Linha do tempo</h4>
+                <ol className="space-y-2 text-slate-700">
+                  <li>• Criada em {formatDt(execucaoTarget.created_at)}</li>
+                  <li>• Início programado: {formatDt(execucaoTarget.inicio_em)}</li>
+                  <li>• Início real: {formatDt(execucaoTarget.assinatura_inicio_em)}</li>
+                  <li>• Fim programado: {formatDt(execucaoTarget.fim_em)}</li>
+                  <li>• Fim real: {formatDt(execucaoTarget.assinatura_fim_em)}</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

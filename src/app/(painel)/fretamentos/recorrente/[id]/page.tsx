@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
 
 type ContratoOpt = { id: string; nome: string; ativo: boolean };
@@ -14,6 +15,7 @@ type HorarioDraft = {
   key: string;
   id?: string;
   hora: string;
+  rota_nome: string;
   roteiro: string;
   motorista_id: string;
   veiculo_id: string;
@@ -34,6 +36,7 @@ function novoHorario(seed = Date.now()): HorarioDraft {
   return {
     key: String(seed + Math.random()),
     hora: "",
+    rota_nome: "",
     roteiro: "",
     motorista_id: "",
     veiculo_id: "",
@@ -48,6 +51,7 @@ export default function EditarFretamentoRecorrentePage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
 
   const [contratos, setContratos] = useState<ContratoOpt[]>([]);
   const [veiculos, setVeiculos] = useState<VeiculoOpt[]>([]);
@@ -57,6 +61,11 @@ export default function EditarFretamentoRecorrentePage() {
   const [veiculoPadraoId, setVeiculoPadraoId] = useState("");
   const [horarios, setHorarios] = useState<HorarioDraft[]>([novoHorario()]);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
+
+  function confirmarSucesso() {
+    router.push("/fretamentos/recorrente");
+    router.refresh();
+  }
 
   async function carregarCombosEDados() {
     if (!contratoId) return;
@@ -68,7 +77,7 @@ export default function EditarFretamentoRecorrentePage() {
       supabase.from("motoristas").select("id, nome, ativo").order("nome", { ascending: true }),
       supabase
         .from("contrato_horarios")
-        .select("id, hora, horario, observacao, motorista_id, veiculo_id, dias_semana, ordem")
+        .select("id, hora, horario, rota_nome, observacao, motorista_id, veiculo_id, dias_semana, ordem")
         .eq("contrato_id", contratoId)
         .order("ordem", { ascending: true })
         .order("hora", { ascending: true }),
@@ -89,6 +98,7 @@ export default function EditarFretamentoRecorrentePage() {
         id: string;
         hora: string | null;
         horario: string | null;
+        rota_nome: string | null;
         observacao: string | null;
         motorista_id: string | null;
         veiculo_id: string | null;
@@ -97,6 +107,7 @@ export default function EditarFretamentoRecorrentePage() {
         key: `h-${h.id}`,
         id: h.id,
         hora: h.hora ?? h.horario ?? "",
+        rota_nome: h.rota_nome ?? "",
         roteiro: h.observacao ?? "",
         motorista_id: h.motorista_id ?? "",
         veiculo_id: h.veiculo_id ?? "",
@@ -167,6 +178,9 @@ export default function EditarFretamentoRecorrentePage() {
     const semHora = horarios.find((h) => !h.hora);
     if (semHora) return alert("Todos os horários devem ter hora.");
 
+    const semRotaNome = horarios.find((h) => !h.rota_nome.trim());
+    if (semRotaNome) return alert("Todos os horários devem ter o nome da rota.");
+
     const semDias = horarios.find((h) => (h.dias_semana?.length ?? 0) === 0);
     if (semDias) return alert("Todos os horários precisam ter pelo menos 1 dia da semana.");
 
@@ -180,6 +194,7 @@ export default function EditarFretamentoRecorrentePage() {
           .update({
             hora: h.hora,
             horario: h.hora,
+            rota_nome: h.rota_nome.trim(),
             observacao: h.roteiro.trim() || null,
             motorista_id: h.motorista_id || null,
             veiculo_id: h.veiculo_id || null,
@@ -198,6 +213,7 @@ export default function EditarFretamentoRecorrentePage() {
               contrato_id: contratoId,
               hora: h.hora,
               horario: h.hora,
+              rota_nome: h.rota_nome.trim(),
               observacao: h.roteiro.trim() || null,
               motorista_id: h.motorista_id || null,
               veiculo_id: h.veiculo_id || null,
@@ -221,7 +237,7 @@ export default function EditarFretamentoRecorrentePage() {
       return;
     }
 
-    router.push("/fretamentos/recorrente");
+    setSuccessModalOpen(true);
   }
 
   return (
@@ -320,7 +336,7 @@ export default function EditarFretamentoRecorrentePage() {
                     </button>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-3">
+                  <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                     <div>
                       <label className="block text-sm font-medium mb-1">Hora *</label>
                       <input
@@ -328,6 +344,18 @@ export default function EditarFretamentoRecorrentePage() {
                         className="w-full border border-slate-300 rounded-md px-3 py-2"
                         value={h.hora}
                         onChange={(e) => atualizarHorario(h.key, { hora: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="lg:col-span-2">
+                      <label className="block text-sm font-medium mb-1">Nome da rota *</label>
+                      <input
+                        type="text"
+                        className="w-full border border-slate-300 rounded-md px-3 py-2"
+                        value={h.rota_nome}
+                        onChange={(e) => atualizarHorario(h.key, { rota_nome: e.target.value })}
+                        placeholder="Ex: Centro - Margem Esquerda"
                         required
                       />
                     </div>
@@ -366,7 +394,7 @@ export default function EditarFretamentoRecorrentePage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1">Roteiro</label>
+                    <label className="block text-sm font-medium mb-1">Roteiro / observações</label>
                     <textarea
                       className="w-full border border-slate-300 rounded-md px-3 py-2 min-h-[90px]"
                       value={h.roteiro}
@@ -416,6 +444,14 @@ export default function EditarFretamentoRecorrentePage() {
           </>
         )}
       </form>
+
+      <SuccessRedirectModal
+        open={successModalOpen}
+        title="Fretamento recorrente atualizado com sucesso"
+        description="Alterações salvas."
+        seconds={5}
+        onConfirm={confirmarSucesso}
+      />
     </div>
   );
 }

@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
+import { loadEmpresaModuleAccess } from "@/lib/moduleAccess";
 
 type ClienteOpt = { id: string; nome: string };
 type VeiculoOpt = { id: string; placa: string; marca: string | null; modelo: string | null; status?: string };
@@ -18,7 +20,6 @@ type StatusOS =
   | "cancelada";
 
 type StatusPg = "pendente" | "parcial" | "pago" | "cancelado";
-type StatusPresenca = "PENDENTE" | "EMBARCOU" | "FALTOU" | "EXTRA";
 
 type OsDb = {
   id: string;
@@ -55,27 +56,36 @@ type OsDb = {
 
   aprovado_em: string | null;
   aprovado_por: string | null;
+  licenca_intermunicipal_url?: string | null;
+  licenca_interestadual_url?: string | null;
+  licenca_intermunicipal_urls?: string[] | null;
+  licenca_interestadual_urls?: string[] | null;
 
   created_at: string;
   updated_at: string;
 };
 
-type PresencaRow = {
-  id: string;
-  passageiro_id: string;
-  status: StatusPresenca;
-  hora_registro: string | null;
-};
+function sanitizeFileName(name: string) {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "_");
+}
 
-type PassageiroMini = {
-  passageiro_id: string;
-  nome: string | null;
-  telefone: string | null;
-  cpf: string | null;
-  status: string | null;
-  contato_emergencia_nome: string | null;
-  contato_emergencia_telefone: string | null;
-};
+function isBucketNotFoundError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return error.message.toLowerCase().includes("bucket not found");
+}
+
+function hasMissingOsFileColumns(message?: string) {
+  const msg = String(message ?? "").toLowerCase();
+  return (
+    msg.includes("licenca_intermunicipal_url") ||
+    msg.includes("licenca_interestadual_url") ||
+    msg.includes("licenca_intermunicipal_urls") ||
+    msg.includes("licenca_interestadual_urls")
+  );
+}
 
 function isoToInputLocal(iso: string | null) {
   if (!iso) return "";
@@ -105,10 +115,10 @@ export default function EditarOSPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [canShowFinanceiro, setCanShowFinanceiro] = useState(false);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
-  const [presencas, setPresencas] = useState<PresencaRow[]>([]);
-  const [passageirosMap, setPassageirosMap] = useState<Record<string, PassageiroMini>>({});
-  const [syncingPresencas, setSyncingPresencas] = useState(false);
+  const [uploadWarning, setUploadWarning] = useState("");
 
   const [os, setOs] = useState<OsDb | null>(null);
 
@@ -145,10 +155,52 @@ export default function EditarOSPage() {
 
   const [localSaida, setLocalSaida] = useState("");
   const [localChegada, setLocalChegada] = useState("");
-  const [rotaReferenciaLat, setRotaReferenciaLat] = useState("");
-  const [rotaReferenciaLng, setRotaReferenciaLng] = useState("");
-  const [raioDesvioM, setRaioDesvioM] = useState("1500");
   const [observacoes, setObservacoes] = useState("");
+  const [licencaIntermunicipalFiles, setLicencaIntermunicipalFiles] = useState<File[]>([]);
+  const [licencaIntermunicipalPreviewUrls, setLicencaIntermunicipalPreviewUrls] = useState<string[]>([]);
+  const [licencaInterestadualFiles, setLicencaInterestadualFiles] = useState<File[]>([]);
+  const [licencaInterestadualPreviewUrls, setLicencaInterestadualPreviewUrls] = useState<string[]>([]);
+
+  useEffect(() => {
+    return () => {
+      licencaIntermunicipalPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+      licencaInterestadualPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [licencaIntermunicipalPreviewUrls, licencaInterestadualPreviewUrls]);
+
+  function onChangeLicencaIntermunicipal(fileList: FileList | null) {
+    const files = fileList ? Array.from(fileList) : [];
+    setLicencaIntermunicipalFiles(files);
+    setLicencaIntermunicipalPreviewUrls((prev) => {
+      prev.forEach((url) => URL.revokeObjectURL(url));
+      return files.map((file) => URL.createObjectURL(file));
+    });
+  }
+
+  function onChangeLicencaInterestadual(fileList: FileList | null) {
+    const files = fileList ? Array.from(fileList) : [];
+    setLicencaInterestadualFiles(files);
+    setLicencaInterestadualPreviewUrls((prev) => {
+      prev.forEach((url) => URL.revokeObjectURL(url));
+      return files.map((file) => URL.createObjectURL(file));
+    });
+  }
+
+  async function uploadLicenca(empresa: string, file: File) {
+    const path = `${empresa}/fretamentos-eventual/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${sanitizeFileName(file.name)}`;
+    const { error } = await supabase.storage.from("contratos").upload(path, file, { upsert: false });
+    if (error) throw new Error(error.message);
+    const { data } = supabase.storage.from("contratos").getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  async function uploadLicencas(empresa: string, files: File[]) {
+    const urls: string[] = [];
+    for (const file of files) {
+      urls.push(await uploadLicenca(empresa, file));
+    }
+    return urls;
+  }
 
   async function carregarCombos() {
     const c = await supabase.from("clientes").select("id, nome").order("nome");
@@ -175,13 +227,34 @@ export default function EditarOSPage() {
     setLoading(true);
     setStatusMsg("Carregando OS...");
 
-    const { data, error } = await supabase
+    const tentativaComLicencas = await supabase
       .from("ordens_servico")
       .select(
-        "id, contrato_id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, created_at, updated_at"
+        "id, contrato_id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, licenca_intermunicipal_url, licenca_interestadual_url, licenca_intermunicipal_urls, licenca_interestadual_urls, created_at, updated_at"
       )
       .eq("id", id)
       .limit(1);
+
+    let data = tentativaComLicencas.data;
+    let error = tentativaComLicencas.error;
+
+    if (hasMissingOsFileColumns(error?.message)) {
+      const fallbackSemLicencas = await supabase
+        .from("ordens_servico")
+        .select(
+          "id, contrato_id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, created_at, updated_at"
+        )
+        .eq("id", id)
+        .limit(1);
+      data = (fallbackSemLicencas.data ?? []).map((item) => ({
+        ...item,
+        licenca_intermunicipal_url: null,
+        licenca_interestadual_url: null,
+        licenca_intermunicipal_urls: null,
+        licenca_interestadual_urls: null,
+      }));
+      error = fallbackSemLicencas.error;
+    }
 
     if (error) {
       setStatusMsg("❌ Erro ao carregar: " + error.message);
@@ -201,9 +274,9 @@ export default function EditarOSPage() {
 
     const o = row;
     setOs(o);
-    await carregarPresencas(o.id);
 
-    setTipo(o.tipo ?? "eventual");
+    const tipoNormalizado: TipoOS = String(o.tipo ?? "eventual").toLowerCase() === "recorrente" ? "recorrente" : "eventual";
+    setTipo(tipoNormalizado);
     setStatus(o.status ?? "pendente");
 
     setClienteId(o.cliente_id ?? "");
@@ -228,88 +301,30 @@ export default function EditarOSPage() {
 
     setLocalSaida(o.local_saida ?? "");
     setLocalChegada(o.local_chegada ?? "");
-    setRotaReferenciaLat(
-      typeof o.rota_referencia_lat === "number" ? String(o.rota_referencia_lat) : ""
-    );
-    setRotaReferenciaLng(
-      typeof o.rota_referencia_lng === "number" ? String(o.rota_referencia_lng) : ""
-    );
-    setRaioDesvioM(
-      typeof o.raio_desvio_m === "number" ? String(o.raio_desvio_m) : "1500"
-    );
     setObservacoes(o.observacoes ?? "");
 
     setStatusMsg("");
     setLoading(false);
   }
 
-  async function carregarPresencas(osId: string) {
-    const { data, error } = await supabase
-      .from("os_passageiros_presenca")
-      .select("id, passageiro_id, status, hora_registro")
-      .eq("os_id", osId)
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      console.error(error);
-      return;
-    }
-
-    const rows = (data ?? []) as PresencaRow[];
-    setPresencas(rows);
-
-    const ids = rows.map((r) => r.passageiro_id);
-    if (ids.length === 0) {
-      setPassageirosMap({});
-      return;
-    }
-
-    const { data: pData } = await supabase.rpc("rpc_os_passageiros_detalhes", {
-      p_os_id: osId,
-    });
-
-    const map: Record<string, PassageiroMini> = {};
-    ((pData ?? []) as PassageiroMini[]).forEach((p) => {
-      map[p.passageiro_id] = p;
-    });
-    setPassageirosMap(map);
-  }
-
-  async function sincronizarPassageirosFretamento() {
-    if (!os?.id) return;
-    setSyncingPresencas(true);
-    const { error } = await supabase.rpc("rpc_os_sync_passageiros_fretamento", {
-      p_os_id: os.id,
-    });
-    setSyncingPresencas(false);
-    if (error) {
-      alert("Erro ao sincronizar passageiros: " + error.message);
-      return;
-    }
-    await carregarPresencas(os.id);
-  }
-
-  async function marcarPresenca(passageiroId: string, novoStatus: StatusPresenca) {
-    if (!os?.id) return;
-    const { error } = await supabase.rpc("rpc_os_atualizar_presenca_passageiro", {
-      p_os_id: os.id,
-      p_passageiro_id: passageiroId,
-      p_status: novoStatus,
-    });
-    if (error) {
-      alert("Erro ao atualizar presença: " + error.message);
-      return;
-    }
-    await carregarPresencas(os.id);
-  }
-
   useEffect(() => {
     (async () => {
       await carregarCombos();
       await carregarOS();
+      const access = await loadEmpresaModuleAccess();
+      setCanShowFinanceiro(access.canUseAllModules || access.allowedModules.includes("financeiro"));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  function confirmarSucesso() {
+    if (tipo === "eventual") {
+      router.push("/fretamentos/eventual");
+    } else {
+      router.push("/ordens-servico");
+    }
+    router.refresh();
+  }
 
   const clientesFiltrados = useMemo(() => {
     const q = buscaCliente.trim().toLowerCase();
@@ -331,17 +346,6 @@ export default function EditarOSPage() {
     if (!q) return motoristas;
     return motoristas.filter((x) => x.nome.toLowerCase().includes(q));
   }, [motoristas, buscaMotorista]);
-
-  const resumoPresencas = useMemo(() => {
-    return presencas.reduce(
-      (acc, p) => {
-        acc.total += 1;
-        acc[p.status] += 1;
-        return acc;
-      },
-      { total: 0, PENDENTE: 0, EMBARCOU: 0, FALTOU: 0, EXTRA: 0 } as Record<"total" | StatusPresenca, number>
-    );
-  }, [presencas]);
 
   function toInt(v: string, fallback = 0) {
     const n = Number(v);
@@ -369,13 +373,6 @@ export default function EditarOSPage() {
     return Number.isFinite(n) ? n : fallback;
   }
 
-  function toNullableNumber(v: string) {
-    const s = v.trim().replace(",", ".");
-    if (!s) return null;
-    const n = Number(s);
-    return Number.isFinite(n) ? n : null;
-  }
-
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
     if (!id) return;
@@ -387,6 +384,53 @@ export default function EditarOSPage() {
 
     setSaving(true);
     setStatusMsg("Salvando...");
+    setUploadWarning("");
+
+    let licencaIntermunicipalUrls = Array.isArray(os?.licenca_intermunicipal_urls)
+      ? [...(os?.licenca_intermunicipal_urls ?? [])]
+      : (os?.licenca_intermunicipal_url ? [os.licenca_intermunicipal_url] : []);
+    let licencaInterestadualUrls = Array.isArray(os?.licenca_interestadual_urls)
+      ? [...(os?.licenca_interestadual_urls ?? [])]
+      : (os?.licenca_interestadual_url ? [os.licenca_interestadual_url] : []);
+
+    if (licencaIntermunicipalFiles.length > 0 || licencaInterestadualFiles.length > 0) {
+      const { data: sess } = await supabase.auth.getSession();
+      const userId = sess.session?.user.id;
+      const { data: prof } = await supabase.from("profiles").select("empresa_id").eq("user_id", userId).maybeSingle();
+      if (!prof?.empresa_id) {
+        setSaving(false);
+        setStatusMsg("");
+        return alert("Não foi possível identificar sua empresa.");
+      }
+
+      if (licencaIntermunicipalFiles.length > 0) {
+        try {
+          licencaIntermunicipalUrls = await uploadLicencas(prof.empresa_id, licencaIntermunicipalFiles);
+        } catch (uploadError) {
+          if (isBucketNotFoundError(uploadError)) {
+            setUploadWarning("Upload ignorado porque o bucket 'contratos' ainda não existe.");
+          } else {
+            setSaving(false);
+            setStatusMsg("");
+            return alert(`Erro no upload da licença intermunicipal: ${uploadError instanceof Error ? uploadError.message : "erro desconhecido"}`);
+          }
+        }
+      }
+
+      if (licencaInterestadualFiles.length > 0) {
+        try {
+          licencaInterestadualUrls = await uploadLicencas(prof.empresa_id, licencaInterestadualFiles);
+        } catch (uploadError) {
+          if (isBucketNotFoundError(uploadError)) {
+            setUploadWarning("Upload ignorado porque o bucket 'contratos' ainda não existe.");
+          } else {
+            setSaving(false);
+            setStatusMsg("");
+            return alert(`Erro no upload da licença interestadual: ${uploadError instanceof Error ? uploadError.message : "erro desconhecido"}`);
+          }
+        }
+      }
+    }
 
     const payload = {
       tipo,
@@ -405,23 +449,35 @@ export default function EditarOSPage() {
 
       qtd_passageiros: toInt(qtdPassageiros, 0),
 
-      valor_total: toMoney(valorTotal, 0),
-      valor_sinal: toMoney(valorSinal, 0),
-      forma_pagamento: formaPagamento.trim() || null,
-      status_pagamento: statusPagamento,
+      valor_total: canShowFinanceiro ? toMoney(valorTotal, 0) : (os?.valor_total ?? 0),
+      valor_sinal: canShowFinanceiro ? toMoney(valorSinal, 0) : (os?.valor_sinal ?? 0),
+      forma_pagamento: canShowFinanceiro ? formaPagamento.trim() || null : os?.forma_pagamento ?? null,
+      status_pagamento: canShowFinanceiro ? statusPagamento : os?.status_pagamento ?? "pendente",
 
       local_saida: localSaida.trim() || null,
       local_chegada: localChegada.trim() || null,
-      rota_referencia_lat: toNullableNumber(rotaReferenciaLat),
-      rota_referencia_lng: toNullableNumber(rotaReferenciaLng),
-      raio_desvio_m: Math.max(50, toMoney(raioDesvioM, 1500)),
       observacoes: observacoes.trim() || null,
     };
 
-    const { error } = await supabase
+    const tentativaComLicencas = await supabase
       .from("ordens_servico")
-      .update(payload)
+      .update({
+        ...payload,
+        licenca_intermunicipal_url: licencaIntermunicipalUrls[0] ?? null,
+        licenca_interestadual_url: licencaInterestadualUrls[0] ?? null,
+        licenca_intermunicipal_urls: licencaIntermunicipalUrls.length ? licencaIntermunicipalUrls : null,
+        licenca_interestadual_urls: licencaInterestadualUrls.length ? licencaInterestadualUrls : null,
+      })
       .eq("id", id);
+
+    let error = tentativaComLicencas.error;
+    if (hasMissingOsFileColumns(error?.message)) {
+      const fallback = await supabase.from("ordens_servico").update(payload).eq("id", id);
+      error = fallback.error;
+      if (licencaIntermunicipalUrls.length || licencaInterestadualUrls.length) {
+        setUploadWarning("Fretamento salvo sem vínculo das licenças (colunas ainda não criadas no banco).");
+      }
+    }
 
     setSaving(false);
 
@@ -430,8 +486,8 @@ export default function EditarOSPage() {
       return;
     }
 
-    router.push("/ordens-servico");
-    router.refresh();
+    setStatusMsg("");
+    setSuccessModalOpen(true);
   }
 
   if (loading) {
@@ -478,6 +534,12 @@ export default function EditarOSPage() {
       {statusMsg ? (
         <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-700">
           {statusMsg}
+        </div>
+      ) : null}
+
+      {uploadWarning ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          {uploadWarning}
         </div>
       ) : null}
 
@@ -686,92 +748,64 @@ export default function EditarOSPage() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Lat. referência rota</label>
-              <input
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={rotaReferenciaLat}
-                onChange={(e) => setRotaReferenciaLat(e.target.value)}
-                placeholder="-23.5505"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Lng. referência rota</label>
-              <input
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={rotaReferenciaLng}
-                onChange={(e) => setRotaReferenciaLng(e.target.value)}
-                placeholder="-46.6333"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Raio de desvio (m)</label>
-              <input
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={raioDesvioM}
-                onChange={(e) => setRaioDesvioM(e.target.value)}
-                placeholder="1500"
-              />
-            </div>
           </div>
         </div>
 
-        {/* Financeiro */}
-        <div className="border-t pt-6">
-          <h2 className="text-sm font-semibold text-slate-800 mb-4">
-            Valores / Pagamento
-          </h2>
+        {canShowFinanceiro ? (
+          <div className="border-t pt-6">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">
+              Valores / Pagamento
+            </h2>
 
-          <div className="grid gap-4 md:grid-cols-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Valor total</label>
-              <input
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={valorTotal}
-                onChange={(e) => setValorTotal(e.target.value)}
-              />
-            </div>
+            <div className="grid gap-4 md:grid-cols-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Valor total</label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={valorTotal}
+                  onChange={(e) => setValorTotal(e.target.value)}
+                />
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Sinal</label>
-              <input
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={valorSinal}
-                onChange={(e) => setValorSinal(e.target.value)}
-              />
-            </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Sinal</label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={valorSinal}
+                  onChange={(e) => setValorSinal(e.target.value)}
+                />
+              </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium mb-1">
-                Forma de pagamento
-              </label>
-              <input
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={formaPagamento}
-                onChange={(e) => setFormaPagamento(e.target.value)}
-                placeholder="pix, boleto, transferência..."
-              />
-            </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1">
+                  Forma de pagamento
+                </label>
+                <input
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={formaPagamento}
+                  onChange={(e) => setFormaPagamento(e.target.value)}
+                  placeholder="pix, boleto, transferência..."
+                />
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Status pagamento
-              </label>
-              <select
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={statusPagamento}
-                onChange={(e) => setStatusPagamento(e.target.value as StatusPg)}
-              >
-                <option value="pendente">Pendente</option>
-                <option value="parcial">Parcial</option>
-                <option value="pago">Pago</option>
-                <option value="cancelado">Cancelado</option>
-              </select>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Status pagamento
+                </label>
+                <select
+                  className="w-full border border-slate-300 rounded-md px-3 py-2"
+                  value={statusPagamento}
+                  onChange={(e) => setStatusPagamento(e.target.value as StatusPg)}
+                >
+                  <option value="pendente">Pendente</option>
+                  <option value="parcial">Parcial</option>
+                  <option value="pago">Pago</option>
+                  <option value="cancelado">Cancelado</option>
+                </select>
+              </div>
             </div>
           </div>
-        </div>
+        ) : null}
 
         {/* Observações */}
         <div className="border-t pt-6">
@@ -786,68 +820,99 @@ export default function EditarOSPage() {
           />
         </div>
 
-        {/* Presença de passageiros (fretamento compartilhado) */}
-        <div className="border-t pt-6 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-slate-800">Presença de passageiros</h2>
-            <button
-              type="button"
-              onClick={sincronizarPassageirosFretamento}
-              className="border border-indigo-300 text-indigo-700 px-3 py-2 rounded-md hover:bg-indigo-50 text-sm disabled:opacity-60"
-              disabled={syncingPresencas}
-            >
-              {syncingPresencas ? "Sincronizando..." : "Sincronizar da programação"}
-            </button>
-          </div>
+        {(tipo === "eventual" || os.tipo === "eventual") ? (
+          <div className="border-t pt-6 grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium mb-1">Licença de fretamento intermunicipal (PDF/arquivo)</label>
+              <input
+                type="file"
+                multiple
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => onChangeLicencaIntermunicipal(e.target.files)}
+              />
 
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="px-2 py-1 rounded border border-slate-300">Total: {resumoPresencas.total}</span>
-            <span className="px-2 py-1 rounded border border-slate-300">Pendente: {resumoPresencas.PENDENTE}</span>
-            <span className="px-2 py-1 rounded border border-emerald-300 text-emerald-700 bg-emerald-50">Embarcou: {resumoPresencas.EMBARCOU}</span>
-            <span className="px-2 py-1 rounded border border-rose-300 text-rose-700 bg-rose-50">Faltou: {resumoPresencas.FALTOU}</span>
-            <span className="px-2 py-1 rounded border border-amber-300 text-amber-700 bg-amber-50">Extra: {resumoPresencas.EXTRA}</span>
-          </div>
+              {((os.licenca_intermunicipal_urls && os.licenca_intermunicipal_urls.length > 0)
+                ? os.licenca_intermunicipal_urls
+                : (os.licenca_intermunicipal_url ? [os.licenca_intermunicipal_url] : [])
+              ).map((url, idx) => (
+                <a key={`licenca-intermunicipal-atual-${idx}-${url}`} href={url} target="_blank" rel="noreferrer" className="mt-3 inline-block mr-2">
+                  <div className="rounded-lg border border-slate-300 p-2 w-[180px] bg-slate-50 hover:bg-slate-100 transition">
+                    {url.toLowerCase().includes(".pdf") ? (
+                      <iframe src={url} title={`Licença intermunicipal atual ${idx + 1}`} className="h-24 w-full rounded border border-slate-200 bg-white" />
+                    ) : (
+                      <div className="h-24 w-full rounded border border-slate-200 bg-white flex items-center justify-center text-xs text-slate-600 text-center px-2">Arquivo atual</div>
+                    )}
+                    <p className="text-[11px] text-blue-700 mt-2">Arquivo atual {idx + 1}</p>
+                  </div>
+                </a>
+              ))}
 
-          {presencas.length === 0 ? (
-            <div className="text-xs text-slate-500">Nenhum passageiro sincronizado para esta OS.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left border-b">
-                    <th className="py-2 pr-4">Passageiro</th>
-                    <th className="py-2 pr-4">Status</th>
-                    <th className="py-2 pr-4">Hora</th>
-                    <th className="py-2 pr-0 text-right">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {presencas.map((p) => (
-                    <tr key={p.id} className="border-b last:border-b-0">
-                      <td className="py-2 pr-4">
-                        <div>{passageirosMap[p.passageiro_id]?.nome ?? p.passageiro_id.slice(0, 8)}</div>
-                        <div className="text-[11px] text-slate-500">
-                          {passageirosMap[p.passageiro_id]?.telefone ?? "sem telefone"}
-                          {passageirosMap[p.passageiro_id]?.cpf ? ` • CPF ${passageirosMap[p.passageiro_id]?.cpf}` : ""}
-                        </div>
-                      </td>
-                      <td className="py-2 pr-4">{p.status}</td>
-                      <td className="py-2 pr-4">{p.hora_registro ? new Date(p.hora_registro).toLocaleString("pt-BR") : "—"}</td>
-                      <td className="py-2 pr-0 text-right">
-                        <div className="inline-flex items-center gap-1">
-                          <button type="button" onClick={() => marcarPresenca(p.passageiro_id, "EMBARCOU")} className="px-2 py-1 text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50">Embarcou</button>
-                          <button type="button" onClick={() => marcarPresenca(p.passageiro_id, "FALTOU")} className="px-2 py-1 text-xs rounded border border-rose-300 text-rose-700 hover:bg-rose-50">Faltou</button>
-                          <button type="button" onClick={() => marcarPresenca(p.passageiro_id, "EXTRA")} className="px-2 py-1 text-xs rounded border border-amber-300 text-amber-700 hover:bg-amber-50">Extra</button>
-                          <button type="button" onClick={() => marcarPresenca(p.passageiro_id, "PENDENTE")} className="px-2 py-1 text-xs rounded border border-slate-300 text-slate-700 hover:bg-slate-50">Pendente</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {licencaIntermunicipalPreviewUrls.map((previewUrl, idx) => {
+                const file = licencaIntermunicipalFiles[idx];
+                return (
+                  <a key={`licenca-intermunicipal-nova-${idx}-${previewUrl}`} href={previewUrl} target="_blank" rel="noreferrer" className="mt-3 inline-block mr-2">
+                    <div className="rounded-lg border border-blue-300 p-2 w-[180px] bg-blue-50 hover:bg-blue-100 transition">
+                      {file?.type.startsWith("image/") ? (
+                        <img src={previewUrl} alt={`Prévia da licença intermunicipal ${idx + 1}`} className="h-24 w-full rounded object-cover border border-slate-200 bg-white" />
+                      ) : file?.type === "application/pdf" ? (
+                        <iframe src={previewUrl} title={`Prévia da licença intermunicipal ${idx + 1}`} className="h-24 w-full rounded border border-slate-200 bg-white" />
+                      ) : (
+                        <div className="h-24 w-full rounded border border-slate-200 bg-white flex items-center justify-center text-xs text-slate-600 text-center px-2">Prévia indisponível para este tipo de arquivo</div>
+                      )}
+                      <p className="text-[11px] text-slate-600 mt-2 truncate" title={file?.name}>{file?.name}</p>
+                      <p className="text-[11px] text-blue-700">Novo arquivo {idx + 1}</p>
+                    </div>
+                  </a>
+                );
+              })}
             </div>
-          )}
-        </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Licença de fretamento interestadual (PDF/arquivo)</label>
+              <input
+                type="file"
+                multiple
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                onChange={(e) => onChangeLicencaInterestadual(e.target.files)}
+              />
+
+              {((os.licenca_interestadual_urls && os.licenca_interestadual_urls.length > 0)
+                ? os.licenca_interestadual_urls
+                : (os.licenca_interestadual_url ? [os.licenca_interestadual_url] : [])
+              ).map((url, idx) => (
+                <a key={`licenca-interestadual-atual-${idx}-${url}`} href={url} target="_blank" rel="noreferrer" className="mt-3 inline-block mr-2">
+                  <div className="rounded-lg border border-slate-300 p-2 w-[180px] bg-slate-50 hover:bg-slate-100 transition">
+                    {url.toLowerCase().includes(".pdf") ? (
+                      <iframe src={url} title={`Licença interestadual atual ${idx + 1}`} className="h-24 w-full rounded border border-slate-200 bg-white" />
+                    ) : (
+                      <div className="h-24 w-full rounded border border-slate-200 bg-white flex items-center justify-center text-xs text-slate-600 text-center px-2">Arquivo atual</div>
+                    )}
+                    <p className="text-[11px] text-blue-700 mt-2">Arquivo atual {idx + 1}</p>
+                  </div>
+                </a>
+              ))}
+
+              {licencaInterestadualPreviewUrls.map((previewUrl, idx) => {
+                const file = licencaInterestadualFiles[idx];
+                return (
+                  <a key={`licenca-interestadual-nova-${idx}-${previewUrl}`} href={previewUrl} target="_blank" rel="noreferrer" className="mt-3 inline-block mr-2">
+                    <div className="rounded-lg border border-blue-300 p-2 w-[180px] bg-blue-50 hover:bg-blue-100 transition">
+                      {file?.type.startsWith("image/") ? (
+                        <img src={previewUrl} alt={`Prévia da licença interestadual ${idx + 1}`} className="h-24 w-full rounded object-cover border border-slate-200 bg-white" />
+                      ) : file?.type === "application/pdf" ? (
+                        <iframe src={previewUrl} title={`Prévia da licença interestadual ${idx + 1}`} className="h-24 w-full rounded border border-slate-200 bg-white" />
+                      ) : (
+                        <div className="h-24 w-full rounded border border-slate-200 bg-white flex items-center justify-center text-xs text-slate-600 text-center px-2">Prévia indisponível para este tipo de arquivo</div>
+                      )}
+                      <p className="text-[11px] text-slate-600 mt-2 truncate" title={file?.name}>{file?.name}</p>
+                      <p className="text-[11px] text-blue-700">Novo arquivo {idx + 1}</p>
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
 
         {/* Ações */}
         <div className="flex gap-3">
@@ -872,6 +937,14 @@ export default function EditarOSPage() {
           em: {new Date(os.updated_at).toLocaleString("pt-BR")}
         </div>
       </form>
+
+      <SuccessRedirectModal
+        open={successModalOpen}
+        title={tipo === "eventual" ? "Fretamento eventual atualizado com sucesso" : "OS atualizada com sucesso"}
+        description="Alterações salvas."
+        seconds={5}
+        onConfirm={confirmarSucesso}
+      />
     </div>
   );
 }

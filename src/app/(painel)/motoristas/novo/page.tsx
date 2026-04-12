@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
+import { loadEmpresaModuleAccess } from "@/lib/moduleAccess";
 
 function sanitizeFileName(name: string) {
   return name
@@ -28,6 +29,7 @@ export default function NovoMotoristaPage() {
   const [statusMsg, setStatusMsg] = useState<string>("");
   const [uploadWarning, setUploadWarning] = useState<string>("");
   const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [canShowFinanceiro, setCanShowFinanceiro] = useState(false);
 
   // Identificação
   const [nome, setNome] = useState("");
@@ -130,6 +132,19 @@ export default function NovoMotoristaPage() {
     return () => clearTimeout(id);
   }, []);
 
+  useEffect(() => {
+    const id = setTimeout(() => {
+      void (async () => {
+        const access = await loadEmpresaModuleAccess();
+        setCanShowFinanceiro(
+          access.canUseAllModules || access.allowedModules.includes("financeiro")
+        );
+      })();
+    }, 0);
+
+    return () => clearTimeout(id);
+  }, []);
+
   function confirmarSucesso() {
     router.push("/motoristas");
     router.refresh();
@@ -209,6 +224,25 @@ export default function NovoMotoristaPage() {
     }
 
     try {
+      const payloadFinanceiro = canShowFinanceiro
+        ? {
+            chave_pix: chavePix.trim() || null,
+            banco: banco.trim() || null,
+            agencia: agencia.trim() || null,
+            conta: conta.trim() || null,
+            vinculo_trabalho: vinculoTrabalho,
+            tipo_remuneracao: tipoRemuneracao,
+            salario_base: ["fixo_extra", "fixo_banco_horas"].includes(tipoRemuneracao)
+              ? numberOrNull(salarioBase)
+              : null,
+            valor_hora_extra: tipoRemuneracao === "fixo_extra" ? numberOrNull(valorHoraExtra) : null,
+            banco_horas_saldo: tipoRemuneracao === "fixo_banco_horas" ? numberOrNull(bancoHorasSaldo) : null,
+            valor_por_os: tipoRemuneracao === "por_os_executada" ? numberOrNull(valorPorOs) : null,
+            valor_diaria: tipoRemuneracao === "por_diaria" ? numberOrNull(valorDiaria) : null,
+            observacoes_remuneracao: observacoesRemuneracao.trim() || null,
+          }
+        : {};
+
       const payload = {
         empresa_id: empresaId,
         create_auth_user: true,
@@ -242,21 +276,7 @@ export default function NovoMotoristaPage() {
         data_admissao: dateOrNull(dataAdmissao),
         data_demissao: dateOrNull(dataDemissao),
 
-        chave_pix: chavePix.trim() || null,
-        banco: banco.trim() || null,
-        agencia: agencia.trim() || null,
-        conta: conta.trim() || null,
-
-        vinculo_trabalho: vinculoTrabalho,
-        tipo_remuneracao: tipoRemuneracao,
-        salario_base: ["fixo_extra", "fixo_banco_horas"].includes(tipoRemuneracao)
-          ? numberOrNull(salarioBase)
-          : null,
-        valor_hora_extra: tipoRemuneracao === "fixo_extra" ? numberOrNull(valorHoraExtra) : null,
-        banco_horas_saldo: tipoRemuneracao === "fixo_banco_horas" ? numberOrNull(bancoHorasSaldo) : null,
-        valor_por_os: tipoRemuneracao === "por_os_executada" ? numberOrNull(valorPorOs) : null,
-        valor_diaria: tipoRemuneracao === "por_diaria" ? numberOrNull(valorDiaria) : null,
-        observacoes_remuneracao: observacoesRemuneracao.trim() || null,
+        ...payloadFinanceiro,
 
         observacoes: observacoes.trim() || null,
       };
@@ -622,13 +642,15 @@ export default function NovoMotoristaPage() {
           </div>
         </div>
 
-        {/* Vínculo e remuneração */}
-        <div className="border-t pt-6">
-          <h2 className="text-sm font-semibold text-slate-800 mb-4">
-            Vínculo e remuneração
-          </h2>
+        {canShowFinanceiro ? (
+          <>
+            {/* Vínculo e remuneração */}
+            <div className="border-t pt-6">
+              <h2 className="text-sm font-semibold text-slate-800 mb-4">
+                Vínculo e remuneração
+              </h2>
 
-          <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-3">
             <div>
               <label className="block text-sm font-medium mb-1">Formato de trabalho</label>
               <select
@@ -719,62 +741,64 @@ export default function NovoMotoristaPage() {
               </div>
             )}
 
-            <div className="md:col-span-3">
-              <label className="block text-sm font-medium mb-1">Observações da remuneração</label>
-              <input
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={observacoesRemuneracao}
-                onChange={(e) => setObservacoesRemuneracao(e.target.value)}
-                placeholder="Regras combinadas, datas de fechamento, etc."
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Financeiro */}
-        <div className="border-t pt-6">
-          <h2 className="text-sm font-semibold text-slate-800 mb-4">
-            Financeiro (opcional)
-          </h2>
-
-          <div className="grid gap-4 md:grid-cols-4">
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium mb-1">Chave PIX</label>
-              <input
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={chavePix}
-                onChange={(e) => setChavePix(e.target.value)}
-              />
+                <div className="md:col-span-3">
+                  <label className="block text-sm font-medium mb-1">Observações da remuneração</label>
+                  <input
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                    value={observacoesRemuneracao}
+                    onChange={(e) => setObservacoesRemuneracao(e.target.value)}
+                    placeholder="Regras combinadas, datas de fechamento, etc."
+                  />
+                </div>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Banco</label>
-              <input
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={banco}
-                onChange={(e) => setBanco(e.target.value)}
-              />
-            </div>
+            {/* Financeiro */}
+            <div className="border-t pt-6">
+              <h2 className="text-sm font-semibold text-slate-800 mb-4">
+                Financeiro (opcional)
+              </h2>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Agência</label>
-              <input
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={agencia}
-                onChange={(e) => setAgencia(e.target.value)}
-              />
-            </div>
+              <div className="grid gap-4 md:grid-cols-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium mb-1">Chave PIX</label>
+                  <input
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                    value={chavePix}
+                    onChange={(e) => setChavePix(e.target.value)}
+                  />
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Conta</label>
-              <input
-                className="w-full border border-slate-300 rounded-md px-3 py-2"
-                value={conta}
-                onChange={(e) => setConta(e.target.value)}
-              />
+                <div>
+                  <label className="block text-sm font-medium mb-1">Banco</label>
+                  <input
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                    value={banco}
+                    onChange={(e) => setBanco(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Agência</label>
+                  <input
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                    value={agencia}
+                    onChange={(e) => setAgencia(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Conta</label>
+                  <input
+                    className="w-full border border-slate-300 rounded-md px-3 py-2"
+                    value={conta}
+                    onChange={(e) => setConta(e.target.value)}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </>
+        ) : null}
 
         {/* Observações */}
         <div className="border-t pt-6">

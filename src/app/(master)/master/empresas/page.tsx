@@ -26,6 +26,7 @@ const MODULE_LABELS: Record<string, string> = {
   financeiro: "Financeiro",
   manutencao: "Manutenção",
   oficina: "Oficina",
+  escolar: "Escolar",
   agenda: "Agenda",
   viagens: "Viagens",
   relatorios: "Relatórios",
@@ -87,14 +88,7 @@ export default function MasterEmpresasPage() {
 
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
-
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [bulkAction, setBulkAction] = useState("bloquear");
-  const [bulkCouponId, setBulkCouponId] = useState("");
-
-  const [creating, setCreating] = useState(false);
-  const [novoNome, setNovoNome] = useState("");
-  const [novoEmail, setNovoEmail] = useState("");
 
   async function carregar() {
     setLoading(true);
@@ -139,26 +133,6 @@ export default function MasterEmpresasPage() {
     }
   }
 
-  async function adicionarEmpresa() {
-    if (!novoNome.trim()) return;
-    setCreating(true);
-    setErro("");
-    setMsg("");
-    const { error } = await supabase.rpc("master_create_empresa", {
-      p_nome: novoNome.trim(),
-      p_email: novoEmail.trim() || null,
-    });
-    setCreating(false);
-    if (error) {
-      setErro(error.message);
-      return;
-    }
-    setNovoNome("");
-    setNovoEmail("");
-    setMsg("Empresa adicionada com sucesso.");
-    await carregar();
-  }
-
   async function excluirSelecionadas() {
     if (selectedIds.length === 0) return;
     if (!confirm(`Excluir ${selectedIds.length} empresa(s)? Esta ação não pode ser desfeita.`)) return;
@@ -188,30 +162,6 @@ export default function MasterEmpresasPage() {
     await carregar();
   }
 
-  async function executarAcaoMassa() {
-    if (selectedIds.length === 0) return;
-    setErro("");
-    setMsg("");
-
-    const payload: Record<string, string> = {};
-    if (bulkCouponId) payload.coupon_id = bulkCouponId;
-
-    const { data, error } = await supabase.rpc("master_bulk_empresa_action", {
-      p_ids: selectedIds,
-      p_action: bulkAction,
-      p_payload: payload,
-    });
-
-    if (error) {
-      setErro(error.message);
-      return;
-    }
-
-    const total = Number(data ?? 0);
-    setMsg(`Ação "${bulkAction}" executada em ${total} empresa(s).`);
-    await carregar();
-  }
-
   async function acessarPainelEmpresa(id: string) {
     setErro("");
     const { data, error } = await supabase.rpc("master_assume_empresa", { p_empresa_id: id });
@@ -219,7 +169,7 @@ export default function MasterEmpresasPage() {
       setErro(error?.message ?? "Não foi possível assumir a empresa.");
       return;
     }
-    window.location.href = "/dashboard";
+    window.location.assign("/dashboard");
   }
 
   const allCurrentSelected = filtradas.length > 0 && filtradas.every((e) => selectedIds.includes(e.id));
@@ -241,59 +191,6 @@ export default function MasterEmpresasPage() {
             className="border border-rose-300 bg-white text-rose-700 hover:bg-rose-50 px-4 py-2 rounded-lg text-sm transition disabled:opacity-50"
           >
             Excluir em massa ({selectedIds.length})
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
-        <h2 className="font-semibold text-slate-900">Ações em massa</h2>
-        <div className="grid md:grid-cols-4 gap-3">
-          <select className="border border-slate-300 rounded-md px-3 py-2 text-sm" value={bulkAction} onChange={(e) => setBulkAction(e.target.value)}>
-            <option value="bloquear">Bloquear</option>
-            <option value="ativar">Ativar</option>
-            <option value="trial_plus_7">Extender trial +7 dias</option>
-            <option value="aplicar_cupom">Aplicar cupom</option>
-          </select>
-          <input
-            className="border border-slate-300 rounded-md px-3 py-2 text-sm"
-            value={bulkCouponId}
-            onChange={(e) => setBulkCouponId(e.target.value)}
-            placeholder="coupon_id (aplicar_cupom)"
-          />
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 flex items-center">
-            Gerenciamento de módulos é feito na edição individual da empresa.
-          </div>
-          <button
-            onClick={executarAcaoMassa}
-            disabled={selectedIds.length === 0}
-            className="bg-slate-900 text-white hover:bg-slate-800 px-4 py-2 rounded-md text-sm transition disabled:opacity-60"
-          >
-            Executar em selecionadas ({selectedIds.length})
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-        <h2 className="font-semibold text-slate-900">Adicionar empresa manualmente</h2>
-        <div className="grid md:grid-cols-3 gap-3">
-          <input
-            className="bg-white border border-slate-300 rounded-md px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-indigo-400"
-            value={novoNome}
-            onChange={(e) => setNovoNome(e.target.value)}
-            placeholder="Nome da empresa"
-          />
-          <input
-            className="bg-white border border-slate-300 rounded-md px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-indigo-400"
-            value={novoEmail}
-            onChange={(e) => setNovoEmail(e.target.value)}
-            placeholder="Email da empresa (opcional)"
-          />
-          <button
-            onClick={adicionarEmpresa}
-            disabled={creating || !novoNome.trim()}
-            className="bg-indigo-600 text-white hover:bg-indigo-500 px-4 py-2 rounded-md text-sm transition disabled:opacity-60"
-          >
-            {creating ? "Adicionando..." : "Adicionar empresa"}
           </button>
         </div>
       </div>
@@ -372,7 +269,6 @@ export default function MasterEmpresasPage() {
                     <td className="px-4 py-3">
                       <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(e.id)} />
                     </td>
-
                     <td className="px-4 py-3">
                       <div>
                         <Link href={`/master/empresas/${e.id}`} className="font-medium text-slate-900 hover:text-indigo-700 hover:underline">

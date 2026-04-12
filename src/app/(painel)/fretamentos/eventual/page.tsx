@@ -4,18 +4,40 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
+import { loadEmpresaModuleAccess } from "@/lib/moduleAccess";
 import { supabase } from "@/lib/supabase/client";
 import { logError, logInfo } from "@/lib/observability";
 
 type FretamentoRow = {
   id: string;
+  numero: number | null;
+  contrato_id: string | null;
   status: "pendente" | "em_execucao" | "concluida" | "cancelada";
   cliente_id: string | null;
+  veiculo_id: string | null;
+  motorista_id: string | null;
   destino: string | null;
   inicio_em: string | null;
   fim_em: string | null;
+  origem: string | null;
+  roteiro: string | null;
+  observacoes: string | null;
+  local_saida: string | null;
+  local_chegada: string | null;
+  valor_total: number | null;
+  valor_sinal: number | null;
+  forma_pagamento: string | null;
+  status_pagamento: string | null;
+  rota_referencia_lat: number | null;
+  rota_referencia_lng: number | null;
+  raio_desvio_m: number | null;
+  aprovado_em: string | null;
+  aprovado_por: string | null;
   created_at: string;
+  updated_at: string | null;
   clientes?: { nome: string }[] | { nome: string } | null;
+  veiculos?: { placa: string | null; marca: string | null; modelo: string | null }[] | { placa: string | null; marca: string | null; modelo: string | null } | null;
+  motoristas?: { nome: string }[] | { nome: string } | null;
 };
 
 type Cliente = { id: string; nome: string };
@@ -34,16 +56,44 @@ function statusLabel(status: StatusFiltro | FretamentoRow["status"]) {
   return "Todos";
 }
 
+function statusClassName(status: FretamentoRow["status"]) {
+  if (status === "pendente") return "border-amber-200 text-amber-800 bg-amber-50";
+  if (status === "em_execucao") return "border-blue-200 text-blue-700 bg-blue-50";
+  if (status === "concluida") return "border-green-200 text-green-700 bg-green-50";
+  return "border-slate-200 text-slate-700 bg-slate-50";
+}
+
+function formatMoeda(value: number | null) {
+  if (value === null || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+}
+
 function clienteNome(row: FretamentoRow) {
   if (!row.clientes) return "—";
   if (Array.isArray(row.clientes)) return row.clientes[0]?.nome ?? "—";
   return row.clientes.nome ?? "—";
 }
 
+function motoristaNome(row: FretamentoRow) {
+  if (!row.motoristas) return "—";
+  if (Array.isArray(row.motoristas)) return row.motoristas[0]?.nome ?? "—";
+  return row.motoristas.nome ?? "—";
+}
+
+function veiculoNome(row: FretamentoRow) {
+  const v = Array.isArray(row.veiculos) ? row.veiculos[0] : row.veiculos;
+  if (!v) return "—";
+  const placa = v.placa?.trim() ?? "";
+  const modelo = [v.marca, v.modelo].filter(Boolean).join(" ").trim();
+  if (placa && modelo) return `${placa} • ${modelo}`;
+  return placa || modelo || "—";
+}
+
 export default function FretamentoEventualPage() {
   const [loading, setLoading] = useState(true);
   const [lista, setLista] = useState<FretamentoRow[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [canShowFinanceiro, setCanShowFinanceiro] = useState(false);
 
   const [busca, setBusca] = useState("");
   const [status, setStatus] = useState<StatusFiltro>("pendente");
@@ -52,6 +102,7 @@ export default function FretamentoEventualPage() {
   const [periodoFim, setPeriodoFim] = useState("");
 
   const [deleteTarget, setDeleteTarget] = useState<FretamentoRow | null>(null);
+  const [quickViewTarget, setQuickViewTarget] = useState<FretamentoRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [erro, setErro] = useState("");
   const [okMsg, setOkMsg] = useState("");
@@ -63,7 +114,7 @@ export default function FretamentoEventualPage() {
     try {
       const { data: osData, error: osErr } = await supabase
         .from("ordens_servico")
-        .select("id, status, cliente_id, destino, inicio_em, fim_em, created_at, clientes:cliente_id(nome)")
+        .select("id, numero, contrato_id, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, local_saida, local_chegada, valor_total, valor_sinal, forma_pagamento, status_pagamento, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, created_at, updated_at, clientes:cliente_id(nome), veiculos:veiculo_id(placa, marca, modelo), motoristas:motorista_id(nome)")
         .eq("tipo", "eventual");
 
       const { data: clientesData, error: cliErr } = await supabase
@@ -89,6 +140,17 @@ export default function FretamentoEventualPage() {
       void carregar();
     }, 0);
     return () => clearTimeout(id);
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const access = await loadEmpresaModuleAccess();
+        setCanShowFinanceiro(access.canUseAllModules || access.allowedModules.includes("financeiro"));
+      } catch {
+        setCanShowFinanceiro(false);
+      }
+    })();
   }, []);
 
   const filtrados = useMemo(() => {
@@ -239,14 +301,34 @@ export default function FretamentoEventualPage() {
               <tbody>
                 {filtrados.map((item) => (
                   <tr key={item.id} className="border-b last:border-b-0 hover:bg-slate-50 transition">
-                    <td className="py-2 pr-4">{clienteNome(item)}</td>
+                    <td className="py-2 pr-4">
+                      <button
+                        type="button"
+                        onClick={() => setQuickViewTarget(item)}
+                        className="text-slate-900 hover:underline"
+                        title="Visualização rápida"
+                      >
+                        {clienteNome(item)}
+                      </button>
+                    </td>
                     <td className="py-2 pr-4">{item.destino ?? "—"}</td>
                     <td className="py-2 pr-4">{formatDataHora(item.inicio_em)}</td>
                     <td className="py-2 pr-4">{formatDataHora(item.fim_em)}</td>
-                    <td className="py-2 pr-4">{statusLabel(item.status)}</td>
+                    <td className="py-2 pr-4">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs border ${statusClassName(item.status)}`}>
+                        {statusLabel(item.status)}
+                      </span>
+                    </td>
                     <td className="py-2 pr-0 text-right">
                       <div className="inline-flex items-center gap-2">
-                        <Link href={`/ordens-servico/${item.id}`} className="px-2 py-1 text-xs border border-slate-300 rounded-md hover:bg-slate-50" title="Visualizar">👁️</Link>
+                        <button
+                          type="button"
+                          onClick={() => setQuickViewTarget(item)}
+                          className="px-2 py-1 text-xs border border-slate-300 rounded-md hover:bg-slate-50"
+                          title="Visualizar"
+                        >
+                          👁️
+                        </button>
                         <Link href={`/ordens-servico/${item.id}`} className="px-2 py-1 text-xs border border-blue-200 text-blue-700 rounded-md hover:bg-blue-50" title="Editar">✏️</Link>
                         <button type="button" onClick={() => setDeleteTarget(item)} className="px-2 py-1 text-xs border border-red-200 text-red-700 rounded-md hover:bg-red-50" title="Cancelar">Cancelar</button>
                       </div>
@@ -268,6 +350,140 @@ export default function FretamentoEventualPage() {
         onCancel={() => setDeleteTarget(null)}
         onConfirm={excluirSelecionado}
       />
+
+      {quickViewTarget ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 px-4 py-6 flex items-center justify-center"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setQuickViewTarget(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-xl bg-white border border-slate-200 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-slate-900">Visualização rápida do fretamento</h3>
+              <button
+                type="button"
+                onClick={() => setQuickViewTarget(null)}
+                className="text-slate-500 hover:text-slate-700"
+                aria-label="Fechar"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="px-5 py-4 grid gap-3 text-sm max-h-[70vh] overflow-y-auto">
+              <div>
+                <div className="text-slate-500">Número</div>
+                <div className="font-medium text-slate-900">{quickViewTarget.numero ?? "—"}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Cliente</div>
+                <div className="font-medium text-slate-900">{clienteNome(quickViewTarget)}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Veículo</div>
+                <div className="font-medium text-slate-900">{veiculoNome(quickViewTarget)}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Motorista</div>
+                <div className="font-medium text-slate-900">{motoristaNome(quickViewTarget)}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Destino</div>
+                <div className="font-medium text-slate-900">{quickViewTarget.destino ?? "—"}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Origem</div>
+                <div className="font-medium text-slate-900">{quickViewTarget.origem ?? "—"}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Local de saída</div>
+                <div className="font-medium text-slate-900">{quickViewTarget.local_saida ?? "—"}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Local de chegada</div>
+                <div className="font-medium text-slate-900">{quickViewTarget.local_chegada ?? "—"}</div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="text-slate-500">Data início</div>
+                  <div className="font-medium text-slate-900">{formatDataHora(quickViewTarget.inicio_em)}</div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Data fim</div>
+                  <div className="font-medium text-slate-900">{formatDataHora(quickViewTarget.fim_em)}</div>
+                </div>
+              </div>
+              <div>
+                <div className="text-slate-500">Status</div>
+                <div className="font-medium text-slate-900">{statusLabel(quickViewTarget.status)}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Roteiro</div>
+                <div className="font-medium text-slate-900 whitespace-pre-wrap">{quickViewTarget.roteiro ?? "—"}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Observações internas</div>
+                <div className="font-medium text-slate-900 whitespace-pre-wrap">{quickViewTarget.observacoes ?? "—"}</div>
+              </div>
+
+              {canShowFinanceiro ? (
+                <div className="border-t border-slate-200 pt-3">
+                  <div className="text-slate-700 font-semibold mb-2">Financeiro</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-slate-500">Valor total</div>
+                      <div className="font-medium text-slate-900">{formatMoeda(quickViewTarget.valor_total)}</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500">Valor sinal</div>
+                      <div className="font-medium text-slate-900">{formatMoeda(quickViewTarget.valor_sinal)}</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500">Forma de pagamento</div>
+                      <div className="font-medium text-slate-900">{quickViewTarget.forma_pagamento ?? "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500">Status pagamento</div>
+                      <div className="font-medium text-slate-900">{quickViewTarget.status_pagamento ?? "—"}</div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="border-t border-slate-200 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="text-slate-500">Criado em</div>
+                  <div className="font-medium text-slate-900">{formatDataHora(quickViewTarget.created_at)}</div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Atualizado em</div>
+                  <div className="font-medium text-slate-900">{formatDataHora(quickViewTarget.updated_at)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setQuickViewTarget(null)}
+                className="px-3 py-2 text-sm border border-slate-300 rounded-md hover:bg-slate-50"
+              >
+                Fechar
+              </button>
+              <Link
+                href={`/ordens-servico/${quickViewTarget.id}`}
+                className="px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                Abrir detalhe completo
+              </Link>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

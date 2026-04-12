@@ -235,7 +235,7 @@ export default function MasterEmpresaEditarPage() {
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="font-semibold text-slate-900 mb-4">Módulos da empresa</h2>
           <div className="mb-4 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
-            <strong>Operacional</strong> é o módulo padrão e reúne dashboard, OS, veículos, motoristas, fretamentos, contratos, passageiros e clientes.
+            <strong>Operacional</strong> é o módulo padrão e reúne dashboard, OS, veículos, motoristas, fretamentos, contratos e clientes.
           </div>
           <div className="grid md:grid-cols-2 gap-3">
             {modulosCatalogo.map((modulo) => {

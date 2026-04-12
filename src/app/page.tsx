@@ -45,6 +45,96 @@ type LandingContent = {
   };
 };
 
+type SalesModule = {
+  title: string;
+  subtitle: string;
+  details: string[];
+};
+
+const SALES_MODULES: SalesModule[] = [
+  {
+    title: "Operação diária centralizada",
+    subtitle: "Dashboard + ordens + contratos + clientes",
+    details: [
+      "Visão executiva com indicadores de OS, contratos e operação em andamento.",
+      "Gestão completa de ordens de serviço desde abertura até conclusão.",
+      "Cadastro de clientes, passageiros, veículos e motoristas com histórico consolidado.",
+    ],
+  },
+  {
+    title: "Manutenção + Oficina profissional",
+    subtitle: "Triagem de manutenção e execução técnica segregada",
+    details: [
+      "Módulo de manutenção focado em solicitações, preventivas, planos e indicadores.",
+      "Módulo de oficina para execução operacional das ordens e acompanhamento técnico.",
+      "Separação clara entre operação técnica e controle financeiro por módulo.",
+    ],
+  },
+  {
+    title: "Inventário e suprimentos",
+    subtitle: "Controle de itens, entradas, saídas e compras",
+    details: [
+      "Gestão de estoque por categorias, locais e movimentações.",
+      "Rastreio de entradas/saídas e apoio ao planejamento de reposição.",
+      "Integração com processos de manutenção e oficina para consumo operacional.",
+    ],
+  },
+  {
+    title: "Financeiro e faturamento",
+    subtitle: "Contas, assinatura e saúde financeira",
+    details: [
+      "Contas a pagar e receber com visão prática para tomada de decisão.",
+      "Acompanhamento de assinatura e configurações de pagamento por empresa.",
+      "Base para previsibilidade de caixa e governança financeira.",
+    ],
+  },
+  {
+    title: "Agenda, viagens e fretamento",
+    subtitle: "Planejamento operacional sem ruído",
+    details: [
+      "Organização de agenda e viagens com foco em execução diária.",
+      "Apoio a fluxos de fretamento eventual e recorrente.",
+      "Menos conflito operacional e mais previsibilidade de entrega.",
+    ],
+  },
+  {
+    title: "Expansão comercial",
+    subtitle: "Central de negócios + suporte + governança master",
+    details: [
+      "Central de negócios para ampliar oportunidades entre empresas.",
+      "Suporte estruturado para reduzir atrito na operação.",
+      "Painel master com configurações globais, módulos, planos e segurança.",
+    ],
+  },
+];
+
+const SALES_STEPS = [
+  { title: "1. Captação", desc: "Entrada de clientes, contratos e demandas operacionais." },
+  { title: "2. Planejamento", desc: "Agenda, viagens, equipe e frota organizadas em fluxo único." },
+  { title: "3. Execução", desc: "OS, manutenção e oficina com rastreabilidade ponta a ponta." },
+  { title: "4. Controle", desc: "Financeiro, indicadores e governança para decisões rápidas." },
+  { title: "5. Escala", desc: "Central de negócios, módulos avançados e crescimento sustentável." },
+];
+
+const FAQ_ITEMS = [
+  {
+    q: "Serve para empresas pequenas e grandes?",
+    a: "Sim. Você pode começar com operação essencial e evoluir com módulos conforme sua empresa cresce.",
+  },
+  {
+    q: "Dá para adaptar ao meu processo atual?",
+    a: "Sim. O sistema permite configuração por módulo, estrutura de operação e parâmetros por empresa.",
+  },
+  {
+    q: "Consigo centralizar tudo em um único lugar?",
+    a: "Esse é o objetivo do MasterFleetBR: unir operação, manutenção, oficina, estoque, financeiro e gestão.",
+  },
+  {
+    q: "A implantação é rápida?",
+    a: "Sim. A proposta é acelerar entrada em produção com setup guiado e evolução contínua sem retrabalho.",
+  },
+];
+
 const FALLBACK_CONTENT: LandingContent = {
   brand: {
     name: "MasterFleetBR",
@@ -160,11 +250,11 @@ export default async function HomePage() {
           <span className="ml-2 text-xs text-slate-500">{content.brand.tagline}</span>
         </div>
         <div className="flex gap-3">
-          <Link href="/login" className="text-sm text-slate-400 hover:text-white transition px-3 py-1.5">
-            Entrar
+          <Link href={content.hero.secondaryCtaHref} className="text-sm text-slate-400 hover:text-white transition px-3 py-1.5">
+            {content.hero.secondaryCtaLabel}
           </Link>
-          <Link href="/cadastro" className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition">
-            Teste grátis
+          <Link href={content.hero.primaryCtaHref} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition">
+            {content.hero.primaryCtaLabel}
           </Link>
         </div>
       </header>
@@ -202,6 +292,43 @@ export default async function HomePage() {
       </section>
 
       <section className="max-w-6xl mx-auto px-6 py-16 border-t border-slate-800">
+        <h2 className="text-3xl font-bold text-center mb-4">Portal de vendas com contexto real da sua operação</h2>
+        <p className="text-center text-slate-400 mb-12 max-w-3xl mx-auto">
+          Estruturamos o MasterFleetBR para vender valor de negócio: menos retrabalho, mais controle e crescimento com previsibilidade.
+          Abaixo está uma visão detalhada das frentes que sua equipe consegue dominar em uma única plataforma.
+        </p>
+        <div className="grid lg:grid-cols-2 gap-6">
+          {SALES_MODULES.map((module) => (
+            <div key={module.title} className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6">
+              <h3 className="text-lg font-semibold text-white">{module.title}</h3>
+              <p className="text-sm text-emerald-400 mt-1">{module.subtitle}</p>
+              <ul className="mt-4 space-y-2">
+                {module.details.map((detail) => (
+                  <li key={detail} className="text-sm text-slate-300 flex items-start gap-2">
+                    <span className="text-emerald-400 mt-0.5">✓</span>
+                    <span>{detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="max-w-6xl mx-auto px-6 py-16 border-t border-slate-800">
+        <h2 className="text-3xl font-bold text-center mb-4">Como o sistema transforma operação em resultado</h2>
+        <p className="text-center text-slate-400 mb-12">Um fluxo único do comercial ao pós-serviço para reduzir ruído e aumentar margem.</p>
+        <div className="grid md:grid-cols-5 gap-4">
+          {SALES_STEPS.map((step) => (
+            <div key={step.title} className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+              <div className="text-emerald-400 text-sm font-semibold">{step.title}</div>
+              <div className="text-sm text-slate-300 mt-2">{step.desc}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="max-w-6xl mx-auto px-6 py-16 border-t border-slate-800">
         <h2 className="text-3xl font-bold text-center mb-12">{content.featuresTitle}</h2>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {content.features.map((f) => (
@@ -221,6 +348,18 @@ export default async function HomePage() {
             <div key={item} className="rounded-xl border border-slate-800 bg-slate-900/40 px-5 py-4 text-slate-300 text-sm">
               <span className="text-emerald-400 mr-2">✓</span>
               {item}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="max-w-6xl mx-auto px-6 py-16 border-t border-slate-800">
+        <h2 className="text-3xl font-bold text-center mb-10">Perguntas frequentes</h2>
+        <div className="grid md:grid-cols-2 gap-4">
+          {FAQ_ITEMS.map((item) => (
+            <div key={item.q} className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+              <h3 className="font-semibold text-white">{item.q}</h3>
+              <p className="text-sm text-slate-400 mt-2">{item.a}</p>
             </div>
           ))}
         </div>

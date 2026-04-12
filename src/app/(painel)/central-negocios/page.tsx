@@ -27,6 +27,7 @@ type ModuloCatalogo = {
 
 const MODULO_HREF_MAP: Record<string, string> = {
   operacional: "/dashboard",
+  passageiros: "/passageiros",
   orcamentos: "/orcamentos",
   inventario: "/inventario",
   financeiro: "/financeiro",

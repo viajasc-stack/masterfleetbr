@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
 
 type ContratoOpt = { id: string; nome: string; ativo: boolean };
@@ -13,6 +14,7 @@ type MotoristaOpt = { id: string; nome: string };
 type HorarioDraft = {
   key: string;
   hora: string;
+  rota_nome: string;
   roteiro: string;
   motorista_id: string;
   veiculo_id: string;
@@ -33,6 +35,7 @@ function novoHorario(seed = Date.now()): HorarioDraft {
   return {
     key: String(seed + Math.random()),
     hora: "",
+    rota_nome: "",
     roteiro: "",
     motorista_id: "",
     veiculo_id: "",
@@ -45,6 +48,7 @@ export default function NovoFretamentoRecorrentePage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
 
   const [contratos, setContratos] = useState<ContratoOpt[]>([]);
   const [veiculos, setVeiculos] = useState<VeiculoOpt[]>([]);
@@ -54,6 +58,11 @@ export default function NovoFretamentoRecorrentePage() {
   const [motoristaPadraoId, setMotoristaPadraoId] = useState("");
   const [veiculoPadraoId, setVeiculoPadraoId] = useState("");
   const [horarios, setHorarios] = useState<HorarioDraft[]>([novoHorario()]);
+
+  function confirmarSucesso() {
+    router.push("/fretamentos/recorrente");
+    router.refresh();
+  }
 
   async function carregarCombos() {
     setLoading(true);
@@ -132,6 +141,9 @@ export default function NovoFretamentoRecorrentePage() {
     const semHora = horarios.find((h) => !h.hora);
     if (semHora) return alert("Todos os horários devem ter hora.");
 
+    const semRotaNome = horarios.find((h) => !h.rota_nome.trim());
+    if (semRotaNome) return alert("Todos os horários devem ter o nome da rota.");
+
     const semDias = horarios.find((h) => (h.dias_semana?.length ?? 0) === 0);
     if (semDias) return alert("Todos os horários precisam ter pelo menos 1 dia da semana.");
 
@@ -141,6 +153,7 @@ export default function NovoFretamentoRecorrentePage() {
       contrato_id: contratoId,
       hora: h.hora,
       horario: h.hora,
+      rota_nome: h.rota_nome.trim(),
       observacao: h.roteiro.trim() || null,
       motorista_id: h.motorista_id || null,
       veiculo_id: h.veiculo_id || null,
@@ -157,7 +170,7 @@ export default function NovoFretamentoRecorrentePage() {
       return;
     }
 
-    router.push("/fretamentos/recorrente");
+    setSuccessModalOpen(true);
   }
 
   return (
@@ -267,7 +280,7 @@ export default function NovoFretamentoRecorrentePage() {
                     </button>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-3">
+                  <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                     <div>
                       <label className="block text-sm font-medium mb-1">Hora *</label>
                       <input
@@ -275,6 +288,18 @@ export default function NovoFretamentoRecorrentePage() {
                         className="w-full border border-slate-300 rounded-md px-3 py-2"
                         value={h.hora}
                         onChange={(e) => atualizarHorario(h.key, { hora: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="lg:col-span-2">
+                      <label className="block text-sm font-medium mb-1">Nome da rota *</label>
+                      <input
+                        type="text"
+                        className="w-full border border-slate-300 rounded-md px-3 py-2"
+                        value={h.rota_nome}
+                        onChange={(e) => atualizarHorario(h.key, { rota_nome: e.target.value })}
+                        placeholder="Ex: Centro - Margem Esquerda"
                         required
                       />
                     </div>
@@ -313,7 +338,7 @@ export default function NovoFretamentoRecorrentePage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1">Roteiro</label>
+                    <label className="block text-sm font-medium mb-1">Roteiro / observações</label>
                     <textarea
                       className="w-full border border-slate-300 rounded-md px-3 py-2 min-h-[90px]"
                       value={h.roteiro}
@@ -363,6 +388,14 @@ export default function NovoFretamentoRecorrentePage() {
           </>
         )}
       </form>
+
+      <SuccessRedirectModal
+        open={successModalOpen}
+        title="Fretamento recorrente criado com sucesso"
+        description="Cadastro concluído."
+        seconds={5}
+        onConfirm={confirmarSucesso}
+      />
     </div>
   );
 }
