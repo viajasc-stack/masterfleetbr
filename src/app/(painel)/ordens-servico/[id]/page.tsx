@@ -24,6 +24,7 @@ type StatusPg = "pendente" | "parcial" | "pago" | "cancelado";
 type OsDb = {
   id: string;
   contrato_id: string | null;
+  contrato_horario_id: string | null;
 
   numero: number | null;
   tipo: TipoOS;
@@ -230,7 +231,7 @@ export default function EditarOSPage() {
     const tentativaComLicencas = await supabase
       .from("ordens_servico")
       .select(
-        "id, contrato_id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, licenca_intermunicipal_url, licenca_interestadual_url, licenca_intermunicipal_urls, licenca_interestadual_urls, created_at, updated_at"
+        "id, contrato_id, contrato_horario_id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, licenca_intermunicipal_url, licenca_interestadual_url, licenca_intermunicipal_urls, licenca_interestadual_urls, created_at, updated_at"
       )
       .eq("id", id)
       .limit(1);
@@ -242,7 +243,7 @@ export default function EditarOSPage() {
       const fallbackSemLicencas = await supabase
         .from("ordens_servico")
         .select(
-          "id, contrato_id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, created_at, updated_at"
+          "id, contrato_id, contrato_horario_id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, created_at, updated_at"
         )
         .eq("id", id)
         .limit(1);
@@ -432,6 +433,8 @@ export default function EditarOSPage() {
       }
     }
 
+    const roteiroNormalizado = roteiro.trim() || null;
+
     const payload = {
       tipo,
       status,
@@ -445,7 +448,7 @@ export default function EditarOSPage() {
 
       origem: origem.trim() || null,
       destino: destino.trim() || null,
-      roteiro: roteiro.trim() || null,
+      roteiro: roteiroNormalizado,
 
       qtd_passageiros: toInt(qtdPassageiros, 0),
 
@@ -484,6 +487,33 @@ export default function EditarOSPage() {
     if (error) {
       setStatusMsg("❌ Erro ao salvar: " + error.message);
       return;
+    }
+
+    if (tipo === "recorrente" && os?.contrato_id && os?.contrato_horario_id) {
+      const { error: horarioErr } = await supabase
+        .from("contrato_horarios")
+        .update({ observacao: roteiroNormalizado })
+        .eq("id", os.contrato_horario_id)
+        .eq("contrato_id", os.contrato_id);
+
+      if (horarioErr) {
+        setStatusMsg("❌ Roteiro salvo na OS, mas não foi possível sincronizar o horário do contrato: " + horarioErr.message);
+        return;
+      }
+
+      const { error: futurasErr } = await supabase
+        .from("ordens_servico")
+        .update({ roteiro: roteiroNormalizado })
+        .eq("tipo", "recorrente")
+        .eq("contrato_id", os.contrato_id)
+        .eq("contrato_horario_id", os.contrato_horario_id)
+        .neq("id", id)
+        .in("status", ["pendente", "em_execucao", "em_andamento"]);
+
+      if (futurasErr) {
+        setStatusMsg("❌ Roteiro salvo na OS, mas não foi possível sincronizar as demais OS vinculadas: " + futurasErr.message);
+        return;
+      }
     }
 
     setStatusMsg("");
