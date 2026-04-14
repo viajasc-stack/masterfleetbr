@@ -31,6 +31,9 @@ type OsDb = {
   status: StatusOS;
 
   cliente_id: string | null;
+  contratante_eh_responsavel?: boolean | null;
+  responsavel_viagem_nome?: string | null;
+  responsavel_viagem_contato?: string | null;
   veiculo_id: string | null;
   motorista_id: string | null;
 
@@ -139,6 +142,9 @@ export default function EditarOSPage() {
   const [clienteId, setClienteId] = useState("");
   const [veiculoId, setVeiculoId] = useState("");
   const [motoristaId, setMotoristaId] = useState("");
+  const [contratanteEhResponsavel, setContratanteEhResponsavel] = useState(false);
+  const [responsavelViagemNome, setResponsavelViagemNome] = useState("");
+  const [responsavelViagemContato, setResponsavelViagemContato] = useState("");
 
   const [inicioEm, setInicioEm] = useState("");
   const [fimEm, setFimEm] = useState("");
@@ -231,7 +237,7 @@ export default function EditarOSPage() {
     const tentativaComLicencas = await supabase
       .from("ordens_servico")
       .select(
-        "id, contrato_id, contrato_horario_id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, licenca_intermunicipal_url, licenca_interestadual_url, licenca_intermunicipal_urls, licenca_interestadual_urls, created_at, updated_at"
+        "id, contrato_id, contrato_horario_id, numero, tipo, status, cliente_id, contratante_eh_responsavel, responsavel_viagem_nome, responsavel_viagem_contato, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, licenca_intermunicipal_url, licenca_interestadual_url, licenca_intermunicipal_urls, licenca_interestadual_urls, created_at, updated_at"
       )
       .eq("id", id)
       .limit(1);
@@ -243,7 +249,7 @@ export default function EditarOSPage() {
       const fallbackSemLicencas = await supabase
         .from("ordens_servico")
         .select(
-          "id, contrato_id, contrato_horario_id, numero, tipo, status, cliente_id, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, created_at, updated_at"
+          "id, contrato_id, contrato_horario_id, numero, tipo, status, cliente_id, contratante_eh_responsavel, responsavel_viagem_nome, responsavel_viagem_contato, veiculo_id, motorista_id, inicio_em, fim_em, origem, destino, roteiro, observacoes, qtd_passageiros, valor_total, valor_sinal, forma_pagamento, status_pagamento, local_saida, local_chegada, rota_referencia_lat, rota_referencia_lng, raio_desvio_m, aprovado_em, aprovado_por, created_at, updated_at"
         )
         .eq("id", id)
         .limit(1);
@@ -281,6 +287,9 @@ export default function EditarOSPage() {
     setStatus(o.status ?? "pendente");
 
     setClienteId(o.cliente_id ?? "");
+    setContratanteEhResponsavel(Boolean(o.contratante_eh_responsavel));
+    setResponsavelViagemNome(o.responsavel_viagem_nome ?? "");
+    setResponsavelViagemContato(o.responsavel_viagem_contato ?? "");
     setVeiculoId(o.veiculo_id ?? "");
     setMotoristaId(o.motorista_id ?? "");
 
@@ -347,6 +356,15 @@ export default function EditarOSPage() {
     if (!q) return motoristas;
     return motoristas.filter((x) => x.nome.toLowerCase().includes(q));
   }, [motoristas, buscaMotorista]);
+
+  const clienteSelecionadoNome = useMemo(() => {
+    return clientes.find((c) => c.id === clienteId)?.nome ?? "";
+  }, [clientes, clienteId]);
+
+  useEffect(() => {
+    if (!contratanteEhResponsavel) return;
+    setResponsavelViagemNome(clienteSelecionadoNome);
+  }, [contratanteEhResponsavel, clienteSelecionadoNome]);
 
   function toInt(v: string, fallback = 0) {
     const n = Number(v);
@@ -440,6 +458,9 @@ export default function EditarOSPage() {
       status,
 
       cliente_id: clienteId || null,
+      contratante_eh_responsavel: contratanteEhResponsavel,
+      responsavel_viagem_nome: (contratanteEhResponsavel ? clienteSelecionadoNome : responsavelViagemNome).trim() || null,
+      responsavel_viagem_contato: responsavelViagemContato.trim() || null,
       veiculo_id: veiculoId || null,
       motorista_id: motoristaId || null,
 
@@ -697,6 +718,41 @@ export default function EditarOSPage() {
                   </option>
                 ))}
               </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t pt-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-4">Responsável da viagem</h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={contratanteEhResponsavel}
+                  onChange={(e) => setContratanteEhResponsavel(e.target.checked)}
+                />
+                Contratante também é o responsável da viagem
+              </label>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Nome do responsável</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={contratanteEhResponsavel ? clienteSelecionadoNome : responsavelViagemNome}
+                onChange={(e) => setResponsavelViagemNome(e.target.value)}
+                placeholder="Ex.: Maria da Silva"
+                disabled={contratanteEhResponsavel}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Contato do responsável</label>
+              <input
+                className="w-full border border-slate-300 rounded-md px-3 py-2"
+                value={responsavelViagemContato}
+                onChange={(e) => setResponsavelViagemContato(e.target.value)}
+                placeholder="Ex.: (11) 99999-9999"
+              />
             </div>
           </div>
         </div>

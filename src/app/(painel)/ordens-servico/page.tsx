@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { loadEmpresaModuleAccess } from "@/lib/moduleAccess";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DeleteConfirmDialog } from "@/components/ui/DeleteConfirmDialog";
 import { ActionIconButton, ActionIconLink } from "@/components/ui/ActionIcon";
@@ -25,6 +26,7 @@ type OsRow = {
   local_saida: string | null;
   local_chegada: string | null;
 
+  modo_cobranca: string | null;
   valor_total: number | null;
   status_pagamento: string | null;
 
@@ -142,6 +144,7 @@ export default function OrdensServicoPage() {
   const [osList, setOsList] = useState<OsRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<OsRow | null>(null);
+  const [hardDeleteTarget, setHardDeleteTarget] = useState<OsRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -166,6 +169,7 @@ export default function OrdensServicoPage() {
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>(filtroInicial);
   const [periodoInicio, setPeriodoInicio] = useState("");
   const [periodoFim, setPeriodoFim] = useState("");
+  const [canShowFinanceiro, setCanShowFinanceiro] = useState(false);
 
   async function carregarOS() {
     setLoading(true);
@@ -175,7 +179,7 @@ export default function OrdensServicoPage() {
       .select(
         `
         id, numero, tipo, status, inicio_em, fim_em, origem, destino, roteiro, observacoes, local_saida, local_chegada,
-        valor_total, status_pagamento, km_inicial, km_final,
+        modo_cobranca, valor_total, status_pagamento, km_inicial, km_final,
         assinatura_inicio_em, assinatura_inicio_geo, assinatura_inicio_endereco, assinatura_inicio_foto_url,
         assinatura_fim_em, assinatura_fim_geo, assinatura_fim_endereco, assinatura_fim_foto_url,
         cliente_id, contrato_id, veiculo_id, motorista_id, created_at, updated_at,
@@ -351,6 +355,19 @@ export default function OrdensServicoPage() {
     };
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const access = await loadEmpresaModuleAccess();
+        setCanShowFinanceiro(
+          access.canUseAllModules || access.allowedModules.includes("financeiro")
+        );
+      } catch {
+        setCanShowFinanceiro(false);
+      }
+    })();
+  }, []);
+
   const q = busca.trim().toLowerCase();
 
   const periodoInicioDate = useMemo(() => {
@@ -494,6 +511,13 @@ export default function OrdensServicoPage() {
     return "Pendente";
   }
 
+  function labelModoCobranca(modo: string | null) {
+    const m = (modo || "").toLowerCase();
+    if (m === "km") return "Por KM";
+    if (m === "fixo") return "Valor fixo";
+    return "—";
+  }
+
   function formatMoney(v: number | null) {
     const n = typeof v === "number" ? v : 0;
     return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -533,6 +557,38 @@ export default function OrdensServicoPage() {
     logInfo("operacao.ordens_servico", "OS cancelada", { os_id: deleteTarget.id });
     setDeleteTarget(null);
     setOkMsg("OS cancelada com sucesso.");
+    await carregarOS();
+  }
+
+  async function excluirCanceladaDefinitivamente() {
+    if (!hardDeleteTarget) return;
+
+    setDeleting(true);
+    setErro("");
+    setOkMsg("");
+
+    const { error } = await supabase
+      .from("ordens_servico")
+      .delete()
+      .eq("id", hardDeleteTarget.id)
+      .eq("status", "cancelada");
+
+    setDeleting(false);
+
+    if (error) {
+      logError("operacao.ordens_servico", "Falha ao excluir OS cancelada", error, {
+        os_id: hardDeleteTarget.id,
+      });
+      setErro(`Não foi possível excluir a OS cancelada: ${error.message}`);
+      return;
+    }
+
+    logInfo("operacao.ordens_servico", "OS cancelada excluída definitivamente", {
+      os_id: hardDeleteTarget.id,
+    });
+
+    setHardDeleteTarget(null);
+    setOkMsg("OS cancelada excluída com sucesso.");
     await carregarOS();
   }
 
@@ -738,6 +794,7 @@ export default function OrdensServicoPage() {
                 {filtradas.map((o) => {
                   const statusAtual = (o.status || "").toLowerCase();
                   const isConcluida = statusAtual === "concluida";
+                  const isCancelada = statusAtual === "cancelada";
                   const emEdicaoRapida = quickEditId === o.id && !isConcluida;
                   const nomeContrato = o.contrato_id ? contratosMap[o.contrato_id] : "";
 
@@ -863,7 +920,7 @@ export default function OrdensServicoPage() {
                               ❌
                             </ActionIconButton>
                           </>
-                        ) : !isConcluida ? (
+                        ) : !isConcluida && !isCancelada ? (
                           <ActionIconButton
                             type="button"
                             title="Edição rápida de veículo/motorista"
@@ -894,7 +951,7 @@ export default function OrdensServicoPage() {
                           </ActionIconButton>
                         ) : null}
 
-                        {!isConcluida ? (
+                        {!isConcluida && !isCancelada ? (
                           <ActionIconButton
                             type="button"
                             title="Cancelar OS"
@@ -902,6 +959,17 @@ export default function OrdensServicoPage() {
                             onClick={() => setDeleteTarget(o)}
                           >
                             🛑
+                          </ActionIconButton>
+                        ) : null}
+
+                        {isCancelada ? (
+                          <ActionIconButton
+                            type="button"
+                            title="Excluir OS cancelada definitivamente"
+                            variant="danger"
+                            onClick={() => setHardDeleteTarget(o)}
+                          >
+                            🗑️
                           </ActionIconButton>
                         ) : null}
                       </div>
@@ -932,6 +1000,16 @@ export default function OrdensServicoPage() {
         loading={deleting}
         onCancel={() => setBulkDeleteOpen(false)}
         onConfirm={excluirSelecionadosEmLote}
+      />
+
+      <DeleteConfirmDialog
+        open={!!hardDeleteTarget}
+        title="Excluir OS cancelada"
+        description={`Esta ação é definitiva. Deseja excluir a OS "${hardDeleteTarget ? formatNumeroOS(hardDeleteTarget.numero, hardDeleteTarget.created_at) : ""}"?`}
+        confirmLabel="Excluir definitivamente"
+        loading={deleting}
+        onCancel={() => setHardDeleteTarget(null)}
+        onConfirm={excluirCanceladaDefinitivamente}
       />
 
       {execucaoTarget ? (
@@ -1054,6 +1132,22 @@ export default function OrdensServicoPage() {
                 <p className="text-slate-700"><span className="font-medium">Roteiro:</span> {execucaoTarget.roteiro || "—"}</p>
                 <p className="text-slate-700"><span className="font-medium">Observações:</span> {execucaoTarget.observacoes || "—"}</p>
               </div>
+
+              {canShowFinanceiro ? (
+                <div className="rounded-lg border border-slate-200 p-4">
+                  <h4 className="mb-2 font-semibold text-slate-900">Financeiro</h4>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs text-slate-500">Tipo de cobrança</div>
+                      <div className="font-semibold text-slate-900">{labelModoCobranca(execucaoTarget.modo_cobranca)}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs text-slate-500">Valor total</div>
+                      <div className="font-semibold text-slate-900">{formatMoney(execucaoTarget.valor_total)}</div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="rounded-lg border border-slate-200 p-4">
                 <h4 className="mb-3 font-semibold text-slate-900">Linha do tempo</h4>

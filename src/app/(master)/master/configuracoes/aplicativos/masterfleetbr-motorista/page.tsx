@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 
 type MotoristaAppSetting = {
   app_icon_url?: string | null;
+  logo_login_url?: string | null;
 };
 
 function sanitizeFileName(name: string) {
@@ -21,6 +22,8 @@ export default function MasterConfiguracoesAppMotoristaPage() {
   const [msg, setMsg] = useState("");
   const [iconUrl, setIconUrl] = useState("");
   const [iconFile, setIconFile] = useState<File | null>(null);
+  const [logoUrl, setLogoUrl] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
 
   async function carregar() {
     setLoading(true);
@@ -36,6 +39,7 @@ export default function MasterConfiguracoesAppMotoristaPage() {
     const settings = (data as { settings?: Record<string, unknown> }).settings ?? {};
     const appCfg = (settings.apps_masterfleetbr_motorista as MotoristaAppSetting | undefined) ?? {};
     setIconUrl(appCfg.app_icon_url ?? "");
+    setLogoUrl(appCfg.logo_login_url ?? "");
     setLoading(false);
   }
 
@@ -58,6 +62,18 @@ export default function MasterConfiguracoesAppMotoristaPage() {
     return data.publicUrl;
   }
 
+  async function uploadLogo(file: File) {
+    const path = `global/apps/masterfleetbr-motorista/logo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${sanitizeFileName(file.name)}`;
+    const { error } = await supabase.storage
+      .from("branding")
+      .upload(path, file, { upsert: false, contentType: file.type || "image/png" });
+
+    if (error) throw new Error(error.message);
+
+    const { data } = supabase.storage.from("branding").getPublicUrl(path);
+    return data.publicUrl;
+  }
+
   async function salvar(ev: FormEvent) {
     ev.preventDefault();
     setSaving(true);
@@ -65,14 +81,19 @@ export default function MasterConfiguracoesAppMotoristaPage() {
 
     try {
       let nextUrl = iconUrl || null;
+      let nextLogoUrl = logoUrl || null;
       if (iconFile) {
         nextUrl = await uploadIcon(iconFile);
+      }
+      if (logoFile) {
+        nextLogoUrl = await uploadLogo(logoFile);
       }
 
       const { error } = await supabase.rpc("master_upsert_setting", {
         p_key: "apps_masterfleetbr_motorista",
         p_value: {
           app_icon_url: nextUrl,
+          logo_login_url: nextLogoUrl,
         },
       });
 
@@ -82,8 +103,24 @@ export default function MasterConfiguracoesAppMotoristaPage() {
         return;
       }
 
+      const { error: runtimeCfgError } = await supabase
+        .from("app_configuracoes")
+        .insert({
+          empresa_id: null,
+          chave: "logo_login_url",
+          valor: nextLogoUrl ?? "",
+        });
+
+      if (runtimeCfgError) {
+        setMsg(`Configuração master salva, mas falhou ao publicar no app runtime: ${runtimeCfgError.message}`);
+        setSaving(false);
+        return;
+      }
+
       setIconUrl(nextUrl ?? "");
       setIconFile(null);
+      setLogoUrl(nextLogoUrl ?? "");
+      setLogoFile(null);
       setMsg("Configuração do app salva com sucesso.");
     } catch (error) {
       setMsg(error instanceof Error ? error.message : "Erro ao salvar configuração do app.");
@@ -131,6 +168,27 @@ export default function MasterConfiguracoesAppMotoristaPage() {
             </div>
 
             <form onSubmit={salvar} className="space-y-3">
+              <div className="rounded-lg border border-slate-200 p-4 bg-slate-50">
+                <div className="text-xs text-slate-500 mb-2">Logo exibida no login e troca de senha do app</div>
+                {logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logoUrl} alt="Logo do app motorista" className="h-20 w-20 rounded-xl object-cover border border-slate-200 bg-white" />
+                ) : (
+                  <div className="text-sm text-slate-600">Sem logo configurada. O app usa a logo padrão embarcada.</div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Enviar logo para telas de autenticação</label>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+                  onChange={(e) => setLogoFile(e.target.files?.[0] ?? null)}
+                />
+                <p className="text-xs text-slate-500 mt-1">Esta imagem aparece no login e na alteração de senha do app motorista.</p>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Enviar novo ícone</label>
                 <input

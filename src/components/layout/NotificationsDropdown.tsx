@@ -12,6 +12,16 @@ type Notification = {
   meta: Record<string, unknown> | null;
 };
 
+async function readApiError(res: Response, fallbackCode: string) {
+  try {
+    const data = (await res.json()) as { error?: string };
+    if (data?.error) return data.error;
+  } catch {
+    // ignore parse error
+  }
+  return fallbackCode;
+}
+
 export default function NotificationsDropdown() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -91,7 +101,10 @@ export default function NotificationsDropdown() {
         },
         body: JSON.stringify({ ids: [id] }),
       });
-      if (!res.ok) throw new Error("failed_mark_read");
+      if (!res.ok) {
+        const apiError = await readApiError(res, "failed_mark_read");
+        throw new Error(apiError);
+      }
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, lido: true } : n)));
       setUnreadCount((c) => Math.max(0, c - 1));
     } catch (err) {
@@ -176,7 +189,10 @@ export default function NotificationsDropdown() {
                     },
                     body: JSON.stringify({ ids }),
                   });
-                  if (!res.ok) throw new Error('failed_mark_all');
+                  if (!res.ok) {
+                    const apiError = await readApiError(res, 'failed_mark_all');
+                    throw new Error(apiError);
+                  }
                   setNotifications((prev) => prev.map((n) => ({ ...n, lido: true })));
                   setUnreadCount(0);
                 } catch (err) {

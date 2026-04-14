@@ -21,6 +21,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_payload" }, { status: 400 });
   }
 
+  const ids = body.ids
+    .filter((id: unknown): id is string => typeof id === "string" && id.trim().length > 0)
+    .map((id: string) => id.trim());
+
+  if (ids.length === 0) {
+    return NextResponse.json({ ok: true, updated: 0, audit_logged: 0 });
+  }
+
   const accessToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? null;
   let userId: string | null = null;
 
@@ -37,18 +45,31 @@ export async function POST(req: Request) {
     const { error: updateError } = await supabase
       .from("notifications")
       .update({ lido: true })
-      .in("id", body.ids);
+      .in("id", ids);
 
     if (updateError) throw updateError;
 
-    // insert audit rows
-    const auditRows = body.ids.map((id: string) => ({ notification_id: id, user_id: userId, action: 'mark_read' }));
-    const { error: auditError } = await supabase.from('notifications_audit').insert(auditRows);
-    if (auditError) throw auditError;
+    let auditLogged = 0;
 
-    return NextResponse.json({ ok: true });
+    // auditoria é best-effort para não quebrar o fluxo principal de marcar como lida
+    if (userId) {
+      const auditRows = ids.map((id: string) => ({
+        notification_id: id,
+        user_id: userId,
+        action: "mark_read",
+      }));
+
+      const { error: auditError } = await supabase.from("notifications_audit").insert(auditRows);
+      if (auditError) {
+        console.error("mark-read audit error", auditError);
+      } else {
+        auditLogged = auditRows.length;
+      }
+    }
+
+    return NextResponse.json({ ok: true, updated: ids.length, audit_logged: auditLogged });
   } catch (err: unknown) {
-    console.error('mark-read error', err);
+    console.error("mark-read error", err);
     return NextResponse.json({ error: getErrorMessage(err) }, { status: 500 });
   }
 }

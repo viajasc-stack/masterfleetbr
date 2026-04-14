@@ -40,6 +40,9 @@ export default function NovoFretamentoEventualPage() {
   const [clienteId, setClienteId] = useState("");
   const [veiculoId, setVeiculoId] = useState("");
   const [motoristaId, setMotoristaId] = useState("");
+  const [contratanteEhResponsavel, setContratanteEhResponsavel] = useState(false);
+  const [responsavelViagemNome, setResponsavelViagemNome] = useState("");
+  const [responsavelViagemContato, setResponsavelViagemContato] = useState("");
 
   const [inicioEm, setInicioEm] = useState("");
   const [fimData, setFimData] = useState("");
@@ -160,6 +163,15 @@ export default function NovoFretamentoEventualPage() {
     const q = buscaMotorista.trim().toLowerCase();
     return q ? motoristas.filter((x) => x.nome.toLowerCase().includes(q)) : motoristas;
   }, [motoristas, buscaMotorista]);
+
+  const clienteSelecionadoNome = useMemo(() => {
+    return clientes.find((c) => c.id === clienteId)?.nome ?? "";
+  }, [clientes, clienteId]);
+
+  useEffect(() => {
+    if (!contratanteEhResponsavel) return;
+    setResponsavelViagemNome(clienteSelecionadoNome);
+  }, [contratanteEhResponsavel, clienteSelecionadoNome]);
 
   function toMoney(v: string, fallback = 0) {
     const raw = v.trim().replace(/\s+/g, "");
@@ -313,6 +325,9 @@ export default function NovoFretamentoEventualPage() {
           ? toNumberOrNull(qtdHorasExtra)
           : null,
       observacoes: observacoes.trim() || null,
+      contratante_eh_responsavel: contratanteEhResponsavel,
+      responsavel_viagem_nome: (contratanteEhResponsavel ? clienteSelecionadoNome : responsavelViagemNome).trim() || null,
+      responsavel_viagem_contato: responsavelViagemContato.trim() || null,
     };
 
     const tentativaComLicencas = await supabase
@@ -435,6 +450,37 @@ export default function NovoFretamentoEventualPage() {
         </div>
 
         <div className="border-t pt-6 grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <h2 className="text-sm font-semibold text-slate-800 mb-2">Responsável da viagem</h2>
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={contratanteEhResponsavel}
+                onChange={(e) => setContratanteEhResponsavel(e.target.checked)}
+              />
+              Contratante também é o responsável da viagem
+            </label>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Nome do responsável</label>
+            <input
+              className="w-full border border-slate-300 rounded-md px-3 py-2"
+              value={contratanteEhResponsavel ? clienteSelecionadoNome : responsavelViagemNome}
+              onChange={(e) => setResponsavelViagemNome(e.target.value)}
+              placeholder="Ex.: Maria da Silva"
+              disabled={contratanteEhResponsavel}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Contato do responsável</label>
+            <input
+              className="w-full border border-slate-300 rounded-md px-3 py-2"
+              value={responsavelViagemContato}
+              onChange={(e) => setResponsavelViagemContato(e.target.value)}
+              placeholder="Ex.: (11) 99999-9999"
+            />
+          </div>
+
           <div>
             <label className="block text-sm font-medium mb-1">Origem (cidade)</label>
             <input className="w-full border border-slate-300 rounded-md px-3 py-2" value={origem} onChange={(e) => setOrigem(e.target.value)} placeholder="Cidade de origem" />
