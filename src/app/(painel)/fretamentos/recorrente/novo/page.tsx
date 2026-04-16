@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
 
-type ContratoOpt = { id: string; nome: string; ativo: boolean };
+type ContratoOpt = { id: string; nome: string; ativo: boolean; dias_semana?: number[] | null };
 type VeiculoOpt = { id: string; placa: string; modelo: string | null };
 type MotoristaOpt = { id: string; nome: string };
 
@@ -31,7 +31,7 @@ const DIAS = [
   { v: 6, label: "Sáb" },
 ];
 
-function novoHorario(seed = Date.now()): HorarioDraft {
+function novoHorario(seed = Date.now(), diasSemanaPadrao: number[] = [1, 2, 3, 4, 5]): HorarioDraft {
   return {
     key: String(seed + Math.random()),
     hora: "",
@@ -39,7 +39,7 @@ function novoHorario(seed = Date.now()): HorarioDraft {
     roteiro: "",
     motorista_id: "",
     veiculo_id: "",
-    dias_semana: [1, 2, 3, 4, 5],
+    dias_semana: [...diasSemanaPadrao].sort((a, b) => a - b),
   };
 }
 
@@ -68,7 +68,7 @@ export default function NovoFretamentoRecorrentePage() {
     setLoading(true);
 
     const [contratosRes, veiculosRes, motoristasRes] = await Promise.all([
-      supabase.from("contratos").select("id, nome, ativo").order("nome", { ascending: true }),
+      supabase.from("contratos").select("id, nome, ativo, dias_semana").order("nome", { ascending: true }),
       supabase.from("veiculos").select("id, placa, modelo, status").order("placa", { ascending: true }),
       supabase.from("motoristas").select("id, nome, ativo").order("nome", { ascending: true }),
     ]);
@@ -96,6 +96,28 @@ export default function NovoFretamentoRecorrentePage() {
   }, []);
 
   const contratoSelecionado = useMemo(() => contratos.find((c) => c.id === contratoId) ?? null, [contratoId, contratos]);
+  const diasSemanaPadraoContrato = useMemo(() => {
+    const dias = (contratoSelecionado?.dias_semana ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+    return dias.length > 0 ? [...dias].sort((a, b) => a - b) : [1, 2, 3, 4, 5];
+  }, [contratoSelecionado?.dias_semana]);
+
+  useEffect(() => {
+    if (!contratoSelecionado) return;
+
+    setHorarios((prev) =>
+      prev.map((h) => {
+        const horarioVazio = !h.hora && !h.rota_nome.trim() && !h.roteiro.trim() && !h.motorista_id && !h.veiculo_id;
+        const aindaNoPadraoAntigo =
+          h.dias_semana.length === 5 && [1, 2, 3, 4, 5].every((dia, idx) => h.dias_semana[idx] === dia);
+
+        if (horarioVazio && aindaNoPadraoAntigo) {
+          return { ...h, dias_semana: diasSemanaPadraoContrato };
+        }
+
+        return h;
+      })
+    );
+  }, [contratoSelecionado, diasSemanaPadraoContrato]);
 
   function atualizarHorario(key: string, patch: Partial<HorarioDraft>) {
     setHorarios((prev) => prev.map((h) => (h.key === key ? { ...h, ...patch } : h)));
@@ -118,7 +140,7 @@ export default function NovoFretamentoRecorrentePage() {
     setHorarios((prev) => [
       ...prev,
       {
-        ...novoHorario(),
+        ...novoHorario(Date.now(), diasSemanaPadraoContrato),
         motorista_id: motoristaPadraoId,
         veiculo_id: veiculoPadraoId,
       },

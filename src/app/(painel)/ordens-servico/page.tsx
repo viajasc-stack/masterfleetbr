@@ -158,6 +158,26 @@ export default function OrdensServicoPage() {
   const [quickMotoristaId, setQuickMotoristaId] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
   const [execucaoTarget, setExecucaoTarget] = useState<OsRow | null>(null);
+  const [execucaoEditMode, setExecucaoEditMode] = useState(false);
+  const [execucaoSaving, setExecucaoSaving] = useState(false);
+  const [execucaoForm, setExecucaoForm] = useState({
+    status: "",
+    km_inicial: "",
+    km_final: "",
+    assinatura_inicio_em: "",
+    assinatura_fim_em: "",
+    inicio_em: "",
+    fim_em: "",
+    local_saida: "",
+    local_chegada: "",
+    assinatura_inicio_endereco: "",
+    assinatura_fim_endereco: "",
+    roteiro: "",
+    observacoes: "",
+    modo_cobranca: "",
+    valor_total: "",
+    status_pagamento: "",
+  });
   const realtimeReloadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [diaReferencia, setDiaReferencia] = useState<Date>(() => {
     const d = new Date();
@@ -528,11 +548,99 @@ export default function OrdensServicoPage() {
     return new Date(iso).toLocaleString("pt-BR");
   }
 
+  function toDatetimeLocalValue(iso: string | null) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const tzOffset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
+  }
+
+  function abrirModalExecucao(os: OsRow) {
+    setExecucaoTarget(os);
+    setExecucaoEditMode(false);
+    setExecucaoSaving(false);
+    setExecucaoForm({
+      status: os.status ?? "",
+      km_inicial: os.km_inicial != null ? String(os.km_inicial) : "",
+      km_final: os.km_final != null ? String(os.km_final) : "",
+      assinatura_inicio_em: toDatetimeLocalValue(os.assinatura_inicio_em),
+      assinatura_fim_em: toDatetimeLocalValue(os.assinatura_fim_em),
+      inicio_em: toDatetimeLocalValue(os.inicio_em),
+      fim_em: toDatetimeLocalValue(os.fim_em),
+      local_saida: os.local_saida ?? "",
+      local_chegada: os.local_chegada ?? "",
+      assinatura_inicio_endereco: os.assinatura_inicio_endereco ?? "",
+      assinatura_fim_endereco: os.assinatura_fim_endereco ?? "",
+      roteiro: os.roteiro ?? "",
+      observacoes: os.observacoes ?? "",
+      modo_cobranca: os.modo_cobranca ?? "",
+      valor_total: os.valor_total != null ? String(os.valor_total) : "",
+      status_pagamento: os.status_pagamento ?? "",
+    });
+  }
+
+  function fecharModalExecucao() {
+    if (execucaoSaving) return;
+    setExecucaoEditMode(false);
+    setExecucaoTarget(null);
+  }
+
+  async function salvarExecucaoDetalhes() {
+    if (!execucaoTarget) return;
+
+    setExecucaoSaving(true);
+    setErro("");
+    setOkMsg("");
+
+    const payload = {
+      status: execucaoForm.status || execucaoTarget.status,
+      km_inicial: execucaoForm.km_inicial.trim() ? Number(execucaoForm.km_inicial) : null,
+      km_final: execucaoForm.km_final.trim() ? Number(execucaoForm.km_final) : null,
+      assinatura_inicio_em: execucaoForm.assinatura_inicio_em ? new Date(execucaoForm.assinatura_inicio_em).toISOString() : null,
+      assinatura_fim_em: execucaoForm.assinatura_fim_em ? new Date(execucaoForm.assinatura_fim_em).toISOString() : null,
+      inicio_em: execucaoForm.inicio_em ? new Date(execucaoForm.inicio_em).toISOString() : null,
+      fim_em: execucaoForm.fim_em ? new Date(execucaoForm.fim_em).toISOString() : null,
+      local_saida: execucaoForm.local_saida.trim() || null,
+      local_chegada: execucaoForm.local_chegada.trim() || null,
+      assinatura_inicio_endereco: execucaoForm.assinatura_inicio_endereco.trim() || null,
+      assinatura_fim_endereco: execucaoForm.assinatura_fim_endereco.trim() || null,
+      roteiro: execucaoForm.roteiro.trim() || null,
+      observacoes: execucaoForm.observacoes.trim() || null,
+      modo_cobranca: execucaoForm.modo_cobranca || null,
+      valor_total: execucaoForm.valor_total.trim() ? Number(execucaoForm.valor_total) : null,
+      status_pagamento: execucaoForm.status_pagamento || null,
+    };
+
+    const { error } = await supabase.from("ordens_servico").update(payload).eq("id", execucaoTarget.id);
+    setExecucaoSaving(false);
+
+    if (error) {
+      logError("operacao.ordens_servico", "Falha ao salvar detalhes no modal de execução", error, {
+        os_id: execucaoTarget.id,
+      });
+      setErro(`Não foi possível salvar os detalhes da execução: ${error.message}`);
+      return;
+    }
+
+    const atualizada: OsRow = {
+      ...execucaoTarget,
+      ...payload,
+    };
+
+    setOsList((prev) => prev.map((o) => (o.id === execucaoTarget.id ? { ...o, ...payload } : o)));
+    setExecucaoTarget(atualizada);
+    setExecucaoEditMode(false);
+    setOkMsg("Detalhes da execução atualizados com sucesso.");
+  }
+
   const inicioGeoExecucao = extractLatLng(execucaoTarget?.assinatura_inicio_geo);
   const fimGeoExecucao = extractLatLng(execucaoTarget?.assinatura_fim_geo);
+  const kmInicialVisual = execucaoEditMode ? toNumber(execucaoForm.km_inicial) : execucaoTarget?.km_inicial ?? null;
+  const kmFinalVisual = execucaoEditMode ? toNumber(execucaoForm.km_final) : execucaoTarget?.km_final ?? null;
   const totalKmExecucao =
-    execucaoTarget?.km_inicial != null && execucaoTarget?.km_final != null
-      ? Number(execucaoTarget.km_final) - Number(execucaoTarget.km_inicial)
+    kmInicialVisual != null && kmFinalVisual != null
+      ? Number(kmFinalVisual) - Number(kmInicialVisual)
       : null;
 
   async function excluirSelecionado() {
@@ -816,7 +924,7 @@ export default function OrdensServicoPage() {
                         <button
                           type="button"
                           className="hover:underline"
-                          onClick={() => setExecucaoTarget(o)}
+                          onClick={() => abrirModalExecucao(o)}
                           title="Visualizar detalhes da execução"
                         >
                           {formatNumeroOS(o.numero, o.created_at)}
@@ -945,7 +1053,7 @@ export default function OrdensServicoPage() {
                             type="button"
                             title="Visualizar dados de execução"
                             variant="primary"
-                            onClick={() => setExecucaoTarget(o)}
+                            onClick={() => abrirModalExecucao(o)}
                           >
                             👁️
                           </ActionIconButton>
@@ -1022,24 +1130,90 @@ export default function OrdensServicoPage() {
                   {formatNumeroOS(execucaoTarget.numero, execucaoTarget.created_at)} • {labelStatus(execucaoTarget.status)}
                 </p>
               </div>
-              <button
-                type="button"
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-                onClick={() => setExecucaoTarget(null)}
-              >
-                Fechar
-              </button>
+              <div className="flex items-center gap-2">
+                {!execucaoEditMode ? (
+                  <button
+                    type="button"
+                    className="rounded-md border border-blue-300 px-3 py-1.5 text-sm text-blue-700 hover:bg-blue-50"
+                    onClick={() => setExecucaoEditMode(true)}
+                  >
+                    Editar detalhes
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="rounded-md border border-emerald-300 px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+                      onClick={() => void salvarExecucaoDetalhes()}
+                      disabled={execucaoSaving}
+                    >
+                      {execucaoSaving ? "Salvando..." : "Salvar alterações"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+                      onClick={() => abrirModalExecucao(execucaoTarget)}
+                      disabled={execucaoSaving}
+                    >
+                      Cancelar edição
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+                  onClick={fecharModalExecucao}
+                  disabled={execucaoSaving}
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
 
             <div className="max-h-[80vh] space-y-5 overflow-y-auto px-5 py-4 text-sm">
-              <div className="grid gap-3 md:grid-cols-5">
+              <div className="grid gap-3 md:grid-cols-6">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs text-slate-500">Status da OS</div>
+                  {execucaoEditMode ? (
+                    <select
+                      className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                      value={execucaoForm.status}
+                      onChange={(e) => setExecucaoForm((prev) => ({ ...prev, status: e.target.value }))}
+                    >
+                      <option value="pendente">Pendente</option>
+                      <option value="em_execucao">Em execução</option>
+                      <option value="concluida">Concluída</option>
+                      <option value="cancelada">Cancelada</option>
+                    </select>
+                  ) : (
+                    <div className="font-semibold text-slate-900">{labelStatus(execucaoTarget.status)}</div>
+                  )}
+                </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="text-xs text-slate-500">KM inicial</div>
-                  <div className="font-semibold text-slate-900">{execucaoTarget.km_inicial ?? "—"}</div>
+                  {execucaoEditMode ? (
+                    <input
+                      type="number"
+                      className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                      value={execucaoForm.km_inicial}
+                      onChange={(e) => setExecucaoForm((prev) => ({ ...prev, km_inicial: e.target.value }))}
+                    />
+                  ) : (
+                    <div className="font-semibold text-slate-900">{execucaoTarget.km_inicial ?? "—"}</div>
+                  )}
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="text-xs text-slate-500">KM final</div>
-                  <div className="font-semibold text-slate-900">{execucaoTarget.km_final ?? "—"}</div>
+                  {execucaoEditMode ? (
+                    <input
+                      type="number"
+                      className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                      value={execucaoForm.km_final}
+                      onChange={(e) => setExecucaoForm((prev) => ({ ...prev, km_final: e.target.value }))}
+                    />
+                  ) : (
+                    <div className="font-semibold text-slate-900">{execucaoTarget.km_final ?? "—"}</div>
+                  )}
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="text-xs text-slate-500">Total de KM da OS</div>
@@ -1047,19 +1221,51 @@ export default function OrdensServicoPage() {
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="text-xs text-slate-500">Início real</div>
-                  <div className="font-semibold text-slate-900">{formatDt(execucaoTarget.assinatura_inicio_em)}</div>
+                  {execucaoEditMode ? (
+                    <input
+                      type="datetime-local"
+                      className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                      value={execucaoForm.assinatura_inicio_em}
+                      onChange={(e) => setExecucaoForm((prev) => ({ ...prev, assinatura_inicio_em: e.target.value }))}
+                    />
+                  ) : (
+                    <div className="font-semibold text-slate-900">{formatDt(execucaoTarget.assinatura_inicio_em)}</div>
+                  )}
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="text-xs text-slate-500">Fim real</div>
-                  <div className="font-semibold text-slate-900">{formatDt(execucaoTarget.assinatura_fim_em)}</div>
+                  {execucaoEditMode ? (
+                    <input
+                      type="datetime-local"
+                      className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                      value={execucaoForm.assinatura_fim_em}
+                      onChange={(e) => setExecucaoForm((prev) => ({ ...prev, assinatura_fim_em: e.target.value }))}
+                    />
+                  ) : (
+                    <div className="font-semibold text-slate-900">{formatDt(execucaoTarget.assinatura_fim_em)}</div>
+                  )}
                 </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-lg border border-slate-200 p-4">
                   <h4 className="mb-2 font-semibold text-slate-900">Início (partida)</h4>
-                  <p className="text-slate-700"><span className="font-medium">Local operacional:</span> {execucaoTarget.local_saida || "—"}</p>
-                  <p className="text-slate-700"><span className="font-medium">Endereço capturado:</span> {execucaoTarget.assinatura_inicio_endereco || "—"}</p>
+                  <p className="text-slate-700"><span className="font-medium">Local operacional:</span> {execucaoEditMode ? (
+                    <input
+                      type="text"
+                      className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                      value={execucaoForm.local_saida}
+                      onChange={(e) => setExecucaoForm((prev) => ({ ...prev, local_saida: e.target.value }))}
+                    />
+                  ) : (execucaoTarget.local_saida || "—")}</p>
+                  <p className="text-slate-700"><span className="font-medium">Endereço capturado:</span> {execucaoEditMode ? (
+                    <input
+                      type="text"
+                      className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                      value={execucaoForm.assinatura_inicio_endereco}
+                      onChange={(e) => setExecucaoForm((prev) => ({ ...prev, assinatura_inicio_endereco: e.target.value }))}
+                    />
+                  ) : (execucaoTarget.assinatura_inicio_endereco || "—")}</p>
                   <p className="text-slate-700">
                     <span className="font-medium">Coordenadas:</span>{" "}
                     {inicioGeoExecucao ? `${inicioGeoExecucao.lat}, ${inicioGeoExecucao.lng}` : "—"}
@@ -1093,8 +1299,22 @@ export default function OrdensServicoPage() {
 
                 <div className="rounded-lg border border-slate-200 p-4">
                   <h4 className="mb-2 font-semibold text-slate-900">Fim (encerramento)</h4>
-                  <p className="text-slate-700"><span className="font-medium">Local operacional:</span> {execucaoTarget.local_chegada || "—"}</p>
-                  <p className="text-slate-700"><span className="font-medium">Endereço capturado:</span> {execucaoTarget.assinatura_fim_endereco || "—"}</p>
+                  <p className="text-slate-700"><span className="font-medium">Local operacional:</span> {execucaoEditMode ? (
+                    <input
+                      type="text"
+                      className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                      value={execucaoForm.local_chegada}
+                      onChange={(e) => setExecucaoForm((prev) => ({ ...prev, local_chegada: e.target.value }))}
+                    />
+                  ) : (execucaoTarget.local_chegada || "—")}</p>
+                  <p className="text-slate-700"><span className="font-medium">Endereço capturado:</span> {execucaoEditMode ? (
+                    <input
+                      type="text"
+                      className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                      value={execucaoForm.assinatura_fim_endereco}
+                      onChange={(e) => setExecucaoForm((prev) => ({ ...prev, assinatura_fim_endereco: e.target.value }))}
+                    />
+                  ) : (execucaoTarget.assinatura_fim_endereco || "—")}</p>
                   <p className="text-slate-700">
                     <span className="font-medium">Coordenadas:</span>{" "}
                     {fimGeoExecucao ? `${fimGeoExecucao.lat}, ${fimGeoExecucao.lng}` : "—"}
@@ -1129,8 +1349,20 @@ export default function OrdensServicoPage() {
 
               <div className="rounded-lg border border-slate-200 p-4">
                 <h4 className="mb-2 font-semibold text-slate-900">Roteiro e observações</h4>
-                <p className="text-slate-700"><span className="font-medium">Roteiro:</span> {execucaoTarget.roteiro || "—"}</p>
-                <p className="text-slate-700"><span className="font-medium">Observações:</span> {execucaoTarget.observacoes || "—"}</p>
+                <p className="text-slate-700"><span className="font-medium">Roteiro:</span> {execucaoEditMode ? (
+                  <textarea
+                    className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                    value={execucaoForm.roteiro}
+                    onChange={(e) => setExecucaoForm((prev) => ({ ...prev, roteiro: e.target.value }))}
+                  />
+                ) : (execucaoTarget.roteiro || "—")}</p>
+                <p className="text-slate-700"><span className="font-medium">Observações:</span> {execucaoEditMode ? (
+                  <textarea
+                    className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                    value={execucaoForm.observacoes}
+                    onChange={(e) => setExecucaoForm((prev) => ({ ...prev, observacoes: e.target.value }))}
+                  />
+                ) : (execucaoTarget.observacoes || "—")}</p>
               </div>
 
               {canShowFinanceiro ? (
@@ -1139,11 +1371,51 @@ export default function OrdensServicoPage() {
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                       <div className="text-xs text-slate-500">Tipo de cobrança</div>
-                      <div className="font-semibold text-slate-900">{labelModoCobranca(execucaoTarget.modo_cobranca)}</div>
+                      {execucaoEditMode ? (
+                        <select
+                          className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                          value={execucaoForm.modo_cobranca}
+                          onChange={(e) => setExecucaoForm((prev) => ({ ...prev, modo_cobranca: e.target.value }))}
+                        >
+                          <option value="">Selecione...</option>
+                          <option value="fixo">Valor fixo</option>
+                          <option value="km">Por KM</option>
+                        </select>
+                      ) : (
+                        <div className="font-semibold text-slate-900">{labelModoCobranca(execucaoTarget.modo_cobranca)}</div>
+                      )}
                     </div>
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                       <div className="text-xs text-slate-500">Valor total</div>
-                      <div className="font-semibold text-slate-900">{formatMoney(execucaoTarget.valor_total)}</div>
+                      {execucaoEditMode ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                          value={execucaoForm.valor_total}
+                          onChange={(e) => setExecucaoForm((prev) => ({ ...prev, valor_total: e.target.value }))}
+                        />
+                      ) : (
+                        <div className="font-semibold text-slate-900">{formatMoney(execucaoTarget.valor_total)}</div>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs text-slate-500">Status do pagamento</div>
+                      {execucaoEditMode ? (
+                        <select
+                          className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                          value={execucaoForm.status_pagamento}
+                          onChange={(e) => setExecucaoForm((prev) => ({ ...prev, status_pagamento: e.target.value }))}
+                        >
+                          <option value="">Pendente</option>
+                          <option value="pendente">Pendente</option>
+                          <option value="parcial">Parcial</option>
+                          <option value="pago">Pago</option>
+                          <option value="cancelado">Cancelado</option>
+                        </select>
+                      ) : (
+                        <div className="font-semibold text-slate-900">{labelPagamento(execucaoTarget.status_pagamento)}</div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1153,9 +1425,33 @@ export default function OrdensServicoPage() {
                 <h4 className="mb-3 font-semibold text-slate-900">Linha do tempo</h4>
                 <ol className="space-y-2 text-slate-700">
                   <li>• Criada em {formatDt(execucaoTarget.created_at)}</li>
-                  <li>• Início programado: {formatDt(execucaoTarget.inicio_em)}</li>
+                  <li>
+                    • Início programado:{" "}
+                    {execucaoEditMode ? (
+                      <input
+                        type="datetime-local"
+                        className="ml-1 rounded-md border border-slate-300 px-2 py-1"
+                        value={execucaoForm.inicio_em}
+                        onChange={(e) => setExecucaoForm((prev) => ({ ...prev, inicio_em: e.target.value }))}
+                      />
+                    ) : (
+                      formatDt(execucaoTarget.inicio_em)
+                    )}
+                  </li>
                   <li>• Início real: {formatDt(execucaoTarget.assinatura_inicio_em)}</li>
-                  <li>• Fim programado: {formatDt(execucaoTarget.fim_em)}</li>
+                  <li>
+                    • Fim programado:{" "}
+                    {execucaoEditMode ? (
+                      <input
+                        type="datetime-local"
+                        className="ml-1 rounded-md border border-slate-300 px-2 py-1"
+                        value={execucaoForm.fim_em}
+                        onChange={(e) => setExecucaoForm((prev) => ({ ...prev, fim_em: e.target.value }))}
+                      />
+                    ) : (
+                      formatDt(execucaoTarget.fim_em)
+                    )}
+                  </li>
                   <li>• Fim real: {formatDt(execucaoTarget.assinatura_fim_em)}</li>
                 </ol>
               </div>

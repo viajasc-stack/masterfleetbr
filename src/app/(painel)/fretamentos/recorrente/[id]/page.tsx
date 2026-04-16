@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { SuccessRedirectModal } from "@/components/ui/SuccessRedirectModal";
 import { supabase } from "@/lib/supabase/client";
 
-type ContratoOpt = { id: string; nome: string; ativo: boolean };
+type ContratoOpt = { id: string; nome: string; ativo: boolean; dias_semana?: number[] | null };
 type VeiculoOpt = { id: string; placa: string; modelo: string | null };
 type MotoristaOpt = { id: string; nome: string };
 
@@ -32,7 +32,7 @@ const DIAS = [
   { v: 6, label: "Sáb" },
 ];
 
-function novoHorario(seed = Date.now()): HorarioDraft {
+function novoHorario(seed = Date.now(), diasSemanaPadrao: number[] = [1, 2, 3, 4, 5]): HorarioDraft {
   return {
     key: String(seed + Math.random()),
     hora: "",
@@ -40,7 +40,7 @@ function novoHorario(seed = Date.now()): HorarioDraft {
     roteiro: "",
     motorista_id: "",
     veiculo_id: "",
-    dias_semana: [1, 2, 3, 4, 5],
+    dias_semana: [...diasSemanaPadrao].sort((a, b) => a - b),
   };
 }
 
@@ -72,7 +72,7 @@ export default function EditarFretamentoRecorrentePage() {
     setLoading(true);
 
     const [contratosRes, veiculosRes, motoristasRes, horariosRes] = await Promise.all([
-      supabase.from("contratos").select("id, nome, ativo").order("nome", { ascending: true }),
+      supabase.from("contratos").select("id, nome, ativo, dias_semana").order("nome", { ascending: true }),
       supabase.from("veiculos").select("id, placa, modelo, status").order("placa", { ascending: true }),
       supabase.from("motoristas").select("id, nome, ativo").order("nome", { ascending: true }),
       supabase
@@ -93,6 +93,10 @@ export default function EditarFretamentoRecorrentePage() {
       ((motoristasRes.data ?? []) as Array<MotoristaOpt & { ativo?: boolean | null }>).filter((m) => m.ativo !== false)
     );
 
+    const contratoAtual = ((contratosRes.data ?? []) as ContratoOpt[]).find((c) => c.id === contratoId) ?? null;
+    const diasContrato = (contratoAtual?.dias_semana ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+    const diasSemanaDoContrato = diasContrato.length > 0 ? [...diasContrato].sort((a, b) => a - b) : [1, 2, 3, 4, 5];
+
     const rows =
       ((horariosRes.data ?? []) as Array<{
         id: string;
@@ -111,10 +115,10 @@ export default function EditarFretamentoRecorrentePage() {
         roteiro: h.observacao ?? "",
         motorista_id: h.motorista_id ?? "",
         veiculo_id: h.veiculo_id ?? "",
-        dias_semana: h.dias_semana ?? [1, 2, 3, 4, 5],
+        dias_semana: diasSemanaDoContrato,
       })) ?? [];
 
-    setHorarios(rows.length > 0 ? rows : [novoHorario()]);
+    setHorarios(rows.length > 0 ? rows : [novoHorario(Date.now(), diasSemanaDoContrato)]);
     setRemovedIds([]);
     setLoading(false);
   }
@@ -128,6 +132,10 @@ export default function EditarFretamentoRecorrentePage() {
   }, [contratoId]);
 
   const contratoSelecionado = useMemo(() => contratos.find((c) => c.id === contratoId) ?? null, [contratoId, contratos]);
+  const diasSemanaPadraoContrato = useMemo(() => {
+    const dias = (contratoSelecionado?.dias_semana ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+    return dias.length > 0 ? [...dias].sort((a, b) => a - b) : [1, 2, 3, 4, 5];
+  }, [contratoSelecionado?.dias_semana]);
 
   function atualizarHorario(key: string, patch: Partial<HorarioDraft>) {
     setHorarios((prev) => prev.map((h) => (h.key === key ? { ...h, ...patch } : h)));
@@ -150,7 +158,7 @@ export default function EditarFretamentoRecorrentePage() {
     setHorarios((prev) => [
       ...prev,
       {
-        ...novoHorario(),
+        ...novoHorario(Date.now(), diasSemanaPadraoContrato),
         motorista_id: motoristaPadraoId,
         veiculo_id: veiculoPadraoId,
       },
