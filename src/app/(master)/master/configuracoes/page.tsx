@@ -400,6 +400,12 @@ export default function MasterConfiguracoesPage() {
         <div className="text-xs uppercase tracking-wider text-slate-500 mb-3">Integrações</div>
         <div className="flex flex-wrap gap-2">
           <Link
+            href="/master/configuracoes/masteria"
+            className="inline-flex items-center rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition"
+          >
+            MasterIA
+          </Link>
+          <Link
             href="/master/configuracoes/aplicativos"
             className="inline-flex items-center rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition"
           >

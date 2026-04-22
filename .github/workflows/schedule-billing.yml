@@ -2,7 +2,7 @@ name: Scheduled billing-cycle
 
 on:
   schedule:
-    - cron: '0 0 1 * *' # run on 1st day of month at 00:00 UTC
+    - cron: '0 4 * * *' # roda diariamente às 01:00 America/Sao_Paulo (04:00 UTC)
 
 jobs:
   billing:

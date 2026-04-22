@@ -32,7 +32,14 @@ const MODULE_LABELS: Record<string, string> = {
   relatorios: "Relatórios",
 };
 
-const HIDDEN_MODULE_CODES = new Set(["api_integracoes", "automacoes"]);
+const HIDDEN_MODULE_CODES = new Set([
+  "api_integracoes",
+  "automacoes",
+  "configuracoes",
+  "usuarios",
+  "suporte",
+  "relatorios",
+]);
 
 function formatModuloLabel(codigo: string) {
   return MODULE_LABELS[codigo] ?? codigo;

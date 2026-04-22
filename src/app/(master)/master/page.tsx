@@ -95,10 +95,10 @@ export default function MasterPage() {
               <div className="text-sm font-semibold text-slate-900">Gerenciar Empresas</div>
               <div className="text-xs text-slate-500 mt-0.5">Ações, status e módulos</div>
             </Link>
-            <Link href="/master/planos"
+            <Link href="/master/modulos"
               className="rounded-xl border border-slate-200 bg-white p-5 hover:bg-slate-50 transition">
-              <div className="text-sm font-semibold text-slate-900">Catálogo modular</div>
-              <div className="text-xs text-slate-500 mt-0.5">Preços e disponibilidade dos módulos</div>
+              <div className="text-sm font-semibold text-slate-900">Módulos</div>
+              <div className="text-xs text-slate-500 mt-0.5">Listagem, preços e disponibilidade dos módulos</div>
             </Link>
           </div>
         </>

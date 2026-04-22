@@ -53,7 +53,9 @@ export default function PainelLayout({ children }: { children: React.ReactNode }
         setTrialDiasRestantes(null);
       }
 
-      if (proximaCobranca && !Number.isNaN(proximaCobranca.getTime())) {
+      if (statusAssinatura === "bloqueada") {
+        setMensalidadeBanner("Seu acesso está bloqueado, efetue o pagamento para continuar usando");
+      } else if (proximaCobranca && !Number.isNaN(proximaCobranca.getTime())) {
         const hoje = new Date();
         hoje.setHours(0, 0, 0, 0);
 

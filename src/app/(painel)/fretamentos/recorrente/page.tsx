@@ -86,6 +86,28 @@ function addDays(base: Date, days: number) {
   return d;
 }
 
+function getContratoStatus(contrato: ContratoRow) {
+  if (!contrato.ativo) {
+    return {
+      label: "Inativo",
+      className: "border-slate-200 text-slate-700 bg-slate-50",
+    };
+  }
+
+  const hoje = toYmdLocal(new Date());
+  if (contrato.data_fim && contrato.data_fim < hoje) {
+    return {
+      label: "Vencido",
+      className: "border-amber-200 text-amber-700 bg-amber-50",
+    };
+  }
+
+  return {
+    label: "Ativo",
+    className: "border-green-200 text-green-700 bg-green-50",
+  };
+}
+
 export default function FretamentoRecorrentePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -101,6 +123,7 @@ export default function FretamentoRecorrentePage() {
 
   const [busca, setBusca] = useState("");
   const [expandedContratoId, setExpandedContratoId] = useState<string | null>(null);
+  const [selectedContratoIds, setSelectedContratoIds] = useState<string[]>([]);
 
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<HorarioRow | null>(null);
@@ -169,6 +192,27 @@ export default function FretamentoRecorrentePage() {
       return c.nome.toLowerCase().includes(q) || cliente.includes(q) || String(totalHorarios).includes(q);
     });
   }, [contratos, busca, clientesMap, horariosPorContrato]);
+
+  const todosFiltradosSelecionados =
+    contratosFiltrados.length > 0 && contratosFiltrados.every((c) => selectedContratoIds.includes(c.id));
+
+  function toggleSelecionarContrato(contratoId: string) {
+    setSelectedContratoIds((prev) =>
+      prev.includes(contratoId) ? prev.filter((id) => id !== contratoId) : [...prev, contratoId]
+    );
+  }
+
+  function toggleSelecionarTodosFiltrados() {
+    setSelectedContratoIds((prev) => {
+      if (todosFiltradosSelecionados) {
+        const filtradosIds = new Set(contratosFiltrados.map((c) => c.id));
+        return prev.filter((id) => !filtradosIds.has(id));
+      }
+      const merged = new Set(prev);
+      contratosFiltrados.forEach((c) => merged.add(c.id));
+      return Array.from(merged);
+    });
+  }
 
   function abrirEdicao(h: HorarioRow) {
     setEditDraft({
@@ -276,6 +320,67 @@ export default function FretamentoRecorrentePage() {
     setGerarOsContrato(null);
   }
 
+  async function gerarOsPeriodoSelecionados(quantidadeDias: number) {
+    if (selectedContratoIds.length === 0) return;
+
+    setGerandoOs(true);
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const selecionados = contratos.filter((c) => selectedContratoIds.includes(c.id));
+    let totalGerado = 0;
+    let contratosComDatasValidas = 0;
+    const erros: string[] = [];
+
+    for (const contrato of selecionados) {
+      const datasValidas: string[] = [];
+
+      for (let i = 0; i < quantidadeDias; i++) {
+        const ymd = toYmdLocal(addDays(hoje, i));
+        if (contrato.data_inicio && ymd < contrato.data_inicio) continue;
+        if (contrato.data_fim && ymd > contrato.data_fim) continue;
+        datasValidas.push(ymd);
+      }
+
+      if (datasValidas.length === 0) continue;
+      contratosComDatasValidas += 1;
+
+      for (const dataRef of datasValidas) {
+        const { data, error } = await supabase.rpc("gerar_os_do_contrato", {
+          p_contrato_id: contrato.id,
+          p_data: dataRef,
+        });
+
+        if (error) {
+          erros.push(`${contrato.nome} (${dataRef}): ${error.message}`);
+          continue;
+        }
+
+        totalGerado += Number(data ?? 0);
+      }
+    }
+
+    setGerandoOs(false);
+
+    if (contratosComDatasValidas === 0) {
+      alert("Nenhuma data válida dentro da vigência dos contratos selecionados para geração de OS.");
+      return;
+    }
+
+    if (erros.length > 0) {
+      alert(
+        `OSs geradas: ${totalGerado}\n\nOcorreram ${erros.length} erro(s):\n- ${erros
+          .slice(0, 5)
+          .join("\n- ")}${erros.length > 5 ? "\n- ..." : ""}`
+      );
+    } else {
+      alert(`OSs geradas: ${totalGerado}`);
+    }
+
+    setSelectedContratoIds([]);
+  }
+
   return (
     <section className="space-y-6">
       <PageHeader
@@ -304,6 +409,50 @@ export default function FretamentoRecorrentePage() {
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl p-6">
+        {selectedContratoIds.length > 0 ? (
+          <div className="mb-4 p-3 rounded-lg border border-emerald-200 bg-emerald-50">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <p className="text-sm text-emerald-900">
+                <strong>{selectedContratoIds.length}</strong> contrato(s) selecionado(s)
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void gerarOsPeriodoSelecionados(1)}
+                  className="px-3 py-2 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-60"
+                  disabled={gerandoOs}
+                >
+                  {gerandoOs ? "Gerando..." : "Gerar OS hoje"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void gerarOsPeriodoSelecionados(3)}
+                  className="px-3 py-2 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-60"
+                  disabled={gerandoOs}
+                >
+                  {gerandoOs ? "Gerando..." : "Gerar OS 3 dias"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void gerarOsPeriodoSelecionados(7)}
+                  className="px-3 py-2 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-60"
+                  disabled={gerandoOs}
+                >
+                  {gerandoOs ? "Gerando..." : "Gerar OS 7 dias"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedContratoIds([])}
+                  className="px-3 py-2 text-sm border border-slate-300 rounded-md hover:bg-white"
+                  disabled={gerandoOs}
+                >
+                  Limpar seleção
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {loading ? (
           <div className="text-slate-600">Carregando...</div>
         ) : contratosFiltrados.length === 0 ? (
@@ -313,6 +462,14 @@ export default function FretamentoRecorrentePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b">
+                  <th className="py-2 pr-3 w-[44px]">
+                    <input
+                      type="checkbox"
+                      checked={todosFiltradosSelecionados}
+                      onChange={toggleSelecionarTodosFiltrados}
+                      title="Selecionar todos os contratos filtrados"
+                    />
+                  </th>
                   <th className="py-2 pr-4">Contrato</th>
                   <th className="py-2 pr-4">Cliente</th>
                   <th className="py-2 pr-4">Horários</th>
@@ -324,10 +481,19 @@ export default function FretamentoRecorrentePage() {
                 {contratosFiltrados.map((c) => {
                   const itens = horariosPorContrato[c.id] ?? [];
                   const expanded = expandedContratoId === c.id;
+                  const status = getContratoStatus(c);
 
                   return (
                     <Fragment key={c.id}>
                       <tr className="border-b hover:bg-slate-50 transition">
+                        <td className="py-2 pr-3 align-middle">
+                          <input
+                            type="checkbox"
+                            checked={selectedContratoIds.includes(c.id)}
+                            onChange={() => toggleSelecionarContrato(c.id)}
+                            title={`Selecionar contrato ${c.nome}`}
+                          />
+                        </td>
                         <td className="py-2 pr-4 font-medium">
                           <Link href={`/fretamentos/recorrente/${c.id}`} className="hover:underline">
                             {c.nome}
@@ -336,13 +502,13 @@ export default function FretamentoRecorrentePage() {
                         <td className="py-2 pr-4">{clientesMap[c.cliente_id] ?? "—"}</td>
                         <td className="py-2 pr-4">{itens.length}</td>
                         <td className="py-2 pr-4">
-                          <span
-                            className={`inline-flex items-center px-2 py-1 rounded-md text-xs border ${
-                              c.ativo ? "border-green-200 text-green-700 bg-green-50" : "border-slate-200 text-slate-700 bg-slate-50"
-                            }`}
+                          <Link
+                            href={`/contratos/${c.id}`}
+                            className={`inline-flex items-center px-2 py-1 rounded-md text-xs border hover:opacity-90 ${status.className}`}
+                            title="Abrir contrato"
                           >
-                            {c.ativo ? "Ativo" : "Inativo"}
-                          </span>
+                            {status.label}
+                          </Link>
                         </td>
                         <td className="py-2 pr-0 text-right">
                           <div className="flex items-center justify-end gap-2">
@@ -368,7 +534,7 @@ export default function FretamentoRecorrentePage() {
 
                       {expanded ? (
                         <tr className="border-b bg-slate-50/40">
-                          <td colSpan={5} className="p-4">
+                          <td colSpan={6} className="p-4">
                             {itens.length === 0 ? (
                               <div className="text-sm text-slate-600">Este contrato ainda não possui horários recorrentes.</div>
                             ) : (

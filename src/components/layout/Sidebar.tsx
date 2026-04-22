@@ -49,7 +49,6 @@ const MANUTENCAO_SUBLINKS = [
   { href: "/manutencao/solicitacoes", label: "Solicitações" },
   { href: "/manutencao/preventivas", label: "Preventivas" },
   { href: "/manutencao/planos", label: "Planos" },
-  { href: "/manutencao/indicadores", label: "Indicadores" },
 ];
 
 const OFICINA_SUBLINKS = [
@@ -107,10 +106,10 @@ const LINKS: NavItem[] = [
   { href: "/agenda", label: "Agenda", icon: "📅", group: "Gestão", modulo: "agenda" },
   { href: "/viagens", label: "Viagens", icon: "🧭", group: "Gestão", modulo: "viagens" },
   { href: "/central-negocios", label: "Central de Negócios", icon: "🏢", group: "Gestão", modulo: "operacional" },
-  { href: "/relatorios", label: "Relatórios", icon: "📈", group: "Gestão", modulo: "relatorios" },
-  { href: "/bi/rentabilidade", label: "BI Rentabilidade", icon: "📉", group: "Gestão", modulo: "relatorios" },
-  { href: "/suporte", label: "Suporte", icon: "🛟", group: "Administrativo", modulo: "suporte" },
-  { href: "/configuracoes", label: "Configurações", icon: "⚙️", group: "Administrativo", modulo: "configuracoes" },
+  { href: "/masteria", label: "MasterIA", icon: "🤖", group: "Gestão", modulo: "operacional" },
+  { href: "/relatorios", label: "Relatórios", icon: "📈", group: "Gestão", modulo: "operacional" },
+  { href: "/suporte", label: "Suporte", icon: "🛟", group: "Administrativo", modulo: "operacional" },
+  { href: "/configuracoes", label: "Configurações", icon: "⚙️", group: "Administrativo", modulo: "operacional" },
 ];
 
 export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: SidebarProps) {
@@ -130,6 +129,7 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
   const [supportUnread, setSupportUnread] = useState(0);
   const [canShowReferralMenu, setCanShowReferralMenu] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [billingRestricted, setBillingRestricted] = useState(false);
 
   useEffect(() => {
     async function loadModules() {
@@ -156,6 +156,8 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
     async function loadReferralMenuVisibility() {
       const { data } = await supabase.rpc("get_billing_current");
       setCanShowReferralMenu((data?.status ?? "") === "ativa");
+      const status = String(data?.status ?? "").toLowerCase();
+      setBillingRestricted(status === "bloqueada");
     }
     const t = setTimeout(() => {
       void loadReferralMenuVisibility();
@@ -183,7 +185,7 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
   const escolarOpen = escolarOpenManual ?? Boolean(pathname?.startsWith("/escolar"));
   const fretamentosOpen = fretamentosOpenManual ?? Boolean(pathname?.startsWith("/fretamentos"));
   const configuracoesOpen = configuracoesOpenManual ?? Boolean(pathname?.startsWith("/configuracoes"));
-  const relatoriosOpen = relatoriosOpenManual ?? Boolean(pathname?.startsWith("/relatorios") || pathname?.startsWith("/bi/"));
+  const relatoriosOpen = relatoriosOpenManual ?? Boolean(pathname?.startsWith("/relatorios"));
 
   function isAtivo(href: string) {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -266,6 +268,9 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
       <nav className="flex-1 overflow-y-auto py-2">
         {GROUPS.map((group) => {
           const items = LINKS.filter((l) => {
+            if (billingRestricted) {
+              return l.group === group && l.href === "/financeiro";
+            }
             if (l.href === "/convide-e-ganhe" && !canShowReferralMenu) return false;
             return l.group === group && hasModulo(l.modulo);
           });
@@ -322,6 +327,19 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
                 }
 
                 if (link.href === "/financeiro") {
+                  if (billingRestricted) {
+                    const ativoMeuPlano = pathname === "/configuracoes/meu-plano" || pathname?.startsWith("/configuracoes/meu-plano/");
+                    return (
+                      <div key={link.href} className="mx-2">
+                        <Link href="/configuracoes/meu-plano" className={parentItemClass(Boolean(ativoMeuPlano))} onClick={onClose}>
+                          <span className="flex items-center gap-2">
+                            <span className="text-base leading-none">{link.icon}</span>
+                            <span>Meu plano</span>
+                          </span>
+                        </Link>
+                      </div>
+                    );
+                  }
                   return (
                     <div key={link.href} className="mx-2">
                       <div
@@ -540,6 +558,9 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
                 }
 
                 if (link.href === "/configuracoes") {
+                  if (billingRestricted) {
+                    return null;
+                  }
                   return (
                     <div key={link.href} className="mx-2">
                       <div
@@ -563,7 +584,7 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
 
                       {configuracoesOpen ? (
                         <div className="mt-1 mb-2 ml-3 border-l border-slate-700/80 pl-2 space-y-0.5">
-                          {CONFIGURACOES_SUBLINKS.filter(() => hasModulo("configuracoes")).map((sub) => {
+                          {CONFIGURACOES_SUBLINKS.filter(() => hasModulo("operacional")).map((sub) => {
                             const subAtivo = isAtivo(sub.href);
                             return (
                               <Link
@@ -594,7 +615,7 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
                         </Link>
                         <button
                           type="button"
-                          onClick={() => setRelatoriosOpenManual((v) => !(v ?? Boolean(pathname?.startsWith("/relatorios") || pathname?.startsWith("/bi/"))))}
+                          onClick={() => setRelatoriosOpenManual((v) => !(v ?? Boolean(pathname?.startsWith("/relatorios"))))}
                           className="text-xs text-slate-400 hover:text-slate-200"
                           aria-label={relatoriosOpen ? "Recolher submenu de relatórios" : "Expandir submenu de relatórios"}
                         >
@@ -604,7 +625,7 @@ export default function Sidebar({ mobileOpen = false, onClose, empresaNome }: Si
 
                       {relatoriosOpen ? (
                         <div className="mt-1 mb-2 ml-3 border-l border-slate-700/80 pl-2 space-y-0.5">
-                          {RELATORIOS_SUBLINKS.filter(() => hasModulo("relatorios")).map((sub) => {
+                          {RELATORIOS_SUBLINKS.filter(() => hasModulo("operacional")).map((sub) => {
                             const subAtivo = isAtivo(sub.href);
                             return (
                               <Link

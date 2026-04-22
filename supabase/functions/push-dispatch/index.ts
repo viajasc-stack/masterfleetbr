@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 type PushOutboxRow = {
   id: string;
   empresa_id: string;
+  motorista_id: string | null;
   expo_push_token: string;
   titulo: string;
   mensagem: string | null;
@@ -11,6 +12,10 @@ type PushOutboxRow = {
   attempts: number;
   max_attempts: number;
 };
+
+function normalizeText(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -106,7 +111,7 @@ serve(async (req) => {
 
     const { data: queued, error: fetchError } = await supabase
       .from("motorista_push_outbox")
-      .select("id, empresa_id, expo_push_token, titulo, mensagem, payload, attempts, max_attempts")
+      .select("id, empresa_id, motorista_id, expo_push_token, titulo, mensagem, payload, attempts, max_attempts")
       .eq("status", "queued")
       .or("next_retry_at.is.null,next_retry_at.lte.now()")
       .order("created_at", { ascending: true })
@@ -151,6 +156,57 @@ serve(async (req) => {
       processed += 1;
       const nextAttempt = Number(row.attempts ?? 0) + 1;
 
+      if (!row.motorista_id) {
+        await supabase
+          .from("motorista_push_outbox")
+          .update({
+            status: "failed",
+            attempts: nextAttempt,
+            last_error: "missing_motorista_id",
+            next_retry_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", row.id);
+
+        failed += 1;
+        continue;
+      }
+
+      const { data: tokenOwner, error: tokenOwnerError } = await supabase
+        .from("motorista_push_tokens")
+        .select("motorista_id, ativo")
+        .eq("empresa_id", row.empresa_id)
+        .eq("expo_push_token", row.expo_push_token)
+        .maybeSingle();
+
+      if (
+        tokenOwnerError ||
+        !tokenOwner ||
+        tokenOwner.ativo === false ||
+        tokenOwner.motorista_id !== row.motorista_id
+      ) {
+        await supabase
+          .from("motorista_push_tokens")
+          .update({ ativo: false, updated_at: new Date().toISOString() })
+          .eq("empresa_id", row.empresa_id)
+          .eq("expo_push_token", row.expo_push_token);
+
+        await supabase
+          .from("motorista_push_outbox")
+          .update({
+            status: "failed",
+            attempts: nextAttempt,
+            last_error: "token_motorista_mismatch_or_inactive",
+            next_retry_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", row.id);
+
+        failed += 1;
+        tokensDeactivated += 1;
+        continue;
+      }
+
       if (!isLikelyExpoToken(row.expo_push_token)) {
         await supabase
           .from("motorista_push_tokens")
@@ -175,10 +231,16 @@ serve(async (req) => {
       }
 
       try {
+        const normalizedTitle = normalizeText(row.titulo);
+        const normalizedBody = normalizeText(row.mensagem ?? "");
+
+        const safeTitle = normalizedTitle || "Atualização para motorista";
+        const safeBody = normalizedBody || safeTitle;
+
         const result = await sendExpoPush({
           to: row.expo_push_token,
-          title: row.titulo,
-          body: row.mensagem ?? "",
+          title: safeTitle,
+          body: safeBody,
           data: {
             ...(row.payload ?? {}),
             outbox_id: row.id,

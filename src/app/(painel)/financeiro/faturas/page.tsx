@@ -22,12 +22,10 @@ export default function FinanceiroFaturasPage() {
   const [loading, setLoading] = useState(true);
   const [faturas, setFaturas] = useState<Fatura[]>([]);
   const [selected, setSelected] = useState<Fatura | null>(null);
-  const [metodo, setMetodo] = useState<"pix" | "cartao" | "boleto">("pix");
+  const [metodo, setMetodo] = useState<"pix" | "cartao">("pix");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
   const [okMsg, setOkMsg] = useState("");
-  const [boletoUrl, setBoletoUrl] = useState<string | null>(null);
-  const [boletoBarcode, setBoletoBarcode] = useState<string | null>(null);
 
   const [cardName, setCardName] = useState("");
   const [cardNumber, setCardNumber] = useState("");
@@ -138,8 +136,6 @@ export default function FinanceiroFaturasPage() {
     setBusy(true);
     setErro("");
     setOkMsg("");
-    setBoletoUrl(null);
-    setBoletoBarcode(null);
 
     try {
       const token = await getAccessTokenOrThrow();
@@ -184,62 +180,13 @@ export default function FinanceiroFaturasPage() {
     }
   }
 
-  async function gerarBoleto() {
-    if (!selected) return;
-    if (selected.status !== "aberta") {
-      setErro("Somente faturas em aberto podem gerar boleto.");
-      return;
-    }
-    if (!payerDoc.trim()) {
-      setErro("Informe CPF/CNPJ do pagador.");
-      return;
-    }
-
-    setBusy(true);
-    setErro("");
-    setOkMsg("");
-
-    try {
-      const token = await getAccessTokenOrThrow();
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/mp-create-payment`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          fatura_id: selected.id,
-          method: "boleto",
-          payer: {
-            doc_number: payerDoc,
-          },
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok || json.error) {
-        throw new Error(json.error ?? "Erro ao gerar boleto");
-      }
-
-      logInfo("financeiro.faturas", "Boleto gerado", { fatura_id: selected.id });
-      setBoletoUrl(json.boleto_url ?? null);
-      setBoletoBarcode(json.boleto_barcode ?? null);
-      setOkMsg("Boleto gerado com sucesso.");
-    } catch (e) {
-      logError("financeiro.faturas", "Erro ao gerar boleto", e, { fatura_id: selected.id });
-      setErro(financeiroErrorMessage(e, "Erro ao gerar boleto."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const fmt = (v: number) => (v / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Faturas e Pagamentos</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Selecione uma fatura e pague por PIX, cartão ou boleto sem sair do sistema.</p>
+        <p className="text-sm text-slate-500 mt-0.5">Selecione uma fatura e pague por PIX ou cartão sem sair do sistema.</p>
       </div>
 
       {erro && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{erro}</div>}
@@ -286,7 +233,6 @@ export default function FinanceiroFaturasPage() {
                 <div className="flex gap-2">
                   <button onClick={() => setMetodo("pix")} className={`px-3 py-1.5 rounded-md text-sm ${metodo === "pix" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"}`}>PIX</button>
                   <button onClick={() => setMetodo("cartao")} className={`px-3 py-1.5 rounded-md text-sm ${metodo === "cartao" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"}`}>Cartão</button>
-                  <button onClick={() => setMetodo("boleto")} className={`px-3 py-1.5 rounded-md text-sm ${metodo === "boleto" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"}`}>Boleto</button>
                 </div>
 
                 {metodo === "pix" ? (
@@ -317,37 +263,17 @@ export default function FinanceiroFaturasPage() {
                       />
                     </div>
 
-                    {metodo === "cartao" ? (
-                      <>
-                        <div className="grid md:grid-cols-2 gap-2">
-                          <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Nome no cartão" value={cardName} onChange={(e) => setCardName(e.target.value)} />
-                          <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Número do cartão" value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} />
-                          <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Mês (MM)" value={cardExpMonth} onChange={(e) => setCardExpMonth(e.target.value)} />
-                          <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Ano (YYYY)" value={cardExpYear} onChange={(e) => setCardExpYear(e.target.value)} />
-                          <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="CVV" value={cardCvv} onChange={(e) => setCardCvv(e.target.value)} />
-                          <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Parcelas" value={cardInstallments} onChange={(e) => setCardInstallments(e.target.value)} />
-                        </div>
-                        <button disabled={busy} onClick={pagarCartao} className="px-4 py-2 rounded-md text-sm bg-amber-500 text-slate-900 hover:bg-amber-400 disabled:opacity-60">
-                          {busy ? "Processando..." : "Pagar com cartão"}
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button disabled={busy} onClick={gerarBoleto} className="px-4 py-2 rounded-md text-sm bg-amber-500 text-slate-900 hover:bg-amber-400 disabled:opacity-60">
-                          {busy ? "Gerando..." : "Gerar boleto"}
-                        </button>
-                        {boletoUrl && (
-                          <a href={boletoUrl} target="_blank" rel="noreferrer" className="block text-sm text-indigo-600 hover:underline">
-                            Abrir boleto em nova aba
-                          </a>
-                        )}
-                        {boletoBarcode && (
-                          <div className="text-xs bg-slate-50 border border-slate-200 rounded-md p-2 break-all font-mono">
-                            {boletoBarcode}
-                          </div>
-                        )}
-                      </>
-                    )}
+                    <div className="grid md:grid-cols-2 gap-2">
+                      <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Nome no cartão" value={cardName} onChange={(e) => setCardName(e.target.value)} />
+                      <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Número do cartão" value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} />
+                      <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Mês (MM)" value={cardExpMonth} onChange={(e) => setCardExpMonth(e.target.value)} />
+                      <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Ano (YYYY)" value={cardExpYear} onChange={(e) => setCardExpYear(e.target.value)} />
+                      <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="CVV" value={cardCvv} onChange={(e) => setCardCvv(e.target.value)} />
+                      <input className="border border-slate-300 rounded-md px-3 py-2 text-sm" placeholder="Parcelas" value={cardInstallments} onChange={(e) => setCardInstallments(e.target.value)} />
+                    </div>
+                    <button disabled={busy} onClick={pagarCartao} className="px-4 py-2 rounded-md text-sm bg-amber-500 text-slate-900 hover:bg-amber-400 disabled:opacity-60">
+                      {busy ? "Processando..." : "Pagar com cartão"}
+                    </button>
                   </div>
                 )}
               </>

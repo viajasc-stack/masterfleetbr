@@ -7,8 +7,8 @@ import { getRequiredModuleForPath, loadEmpresaModuleAccess } from "@/lib/moduleA
 
 const ROTAS_PUBLICAS = ["/", "/login", "/cadastro", "/orcamento"];
 const ROTAS_MASTER = ["/master"];
-const ROTA_BLOQUEADO = "/bloqueado";
 const ROTA_PRIMEIRO_ACESSO = "/primeiro-acesso";
+const ROTA_MEU_PLANO = "/configuracoes/meu-plano";
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -39,35 +39,39 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       }
 
       const isMaster = ROTAS_MASTER.some((r) => pathname === r || pathname?.startsWith(r + "/"));
-      const isBloqueado = pathname === ROTA_BLOQUEADO || pathname?.startsWith(ROTA_BLOQUEADO + "/");
 
-      if (!isMaster && !isBloqueado) {
-        let block = false;
-        const moduleAccess = await loadEmpresaModuleAccess();
+      if (!isMaster) {
+        const isMeuPlano = pathname === ROTA_MEU_PLANO || pathname?.startsWith(ROTA_MEU_PLANO + "/");
+
+        let blockByBilling = false;
         const { data: billing } = await supabase.rpc("get_billing_current");
-        if (billing && (billing.status === "bloqueada" || billing.status === "past_due")) {
-          block = true;
-        } else {
-          if (moduleAccess.empresaId) {
-            const status = moduleAccess.assinaturaStatus ?? "trial";
-            if (status === "bloqueada" || status === "past_due") {
-              block = true;
-            }
+        if (billing && billing.status === "bloqueada") {
+          blockByBilling = true;
+        }
+
+        const moduleAccess = await loadEmpresaModuleAccess();
+        if (!blockByBilling && moduleAccess.empresaId) {
+          const status = moduleAccess.assinaturaStatus ?? "trial";
+          if (status === "bloqueada") {
+            blockByBilling = true;
           }
         }
-        if (block) {
-          router.replace(ROTA_BLOQUEADO);
+
+        if (blockByBilling && !isMeuPlano) {
+          router.replace(ROTA_MEU_PLANO);
           return;
         }
 
-        const requiredModule = getRequiredModuleForPath(pathname);
-        if (
-          requiredModule &&
-          !moduleAccess.canUseAllModules &&
-          !moduleAccess.allowedModules.includes(requiredModule)
-        ) {
-          router.replace(`${ROTA_BLOQUEADO}?motivo=modulo`);
-          return;
+        if (!blockByBilling) {
+          const requiredModule = getRequiredModuleForPath(pathname);
+          if (
+            requiredModule &&
+            !moduleAccess.canUseAllModules &&
+            !moduleAccess.allowedModules.includes(requiredModule)
+          ) {
+            router.replace("/dashboard");
+            return;
+          }
         }
       }
 

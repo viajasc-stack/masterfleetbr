@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { financeiroErrorMessage } from "@/lib/financeiro";
 import { supabase } from "@/lib/supabase/client";
 import { logError, logInfo } from "@/lib/observability";
@@ -32,6 +32,8 @@ type Modulo = {
   venda_ativa: boolean;
   base_obrigatoria: boolean;
 };
+
+const LEGACY_OPERATIONAL_CODES = new Set(["configuracoes", "usuarios", "suporte", "relatorios"]);
 
 export default function AssinaturaPage() {
   const [loading, setLoading] = useState(true);
@@ -118,7 +120,12 @@ export default function AssinaturaPage() {
 
   const fmt = (v?: number | null) => ((v ?? 0) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  const hasOperationalModule = modulos.some((m) => m.codigo === "operacional" && m.ativo_empresa);
+  const modulosVisiveis = useMemo(
+    () => modulos.filter((m) => !LEGACY_OPERATIONAL_CODES.has(m.codigo)),
+    [modulos],
+  );
+
+  const hasOperationalModule = modulosVisiveis.some((m) => m.codigo === "operacional" && m.ativo_empresa);
 
   async function toggleModulo(modulo: Modulo) {
     setSavingModulo(modulo.codigo);
@@ -239,14 +246,14 @@ export default function AssinaturaPage() {
               <div className="text-sm font-medium text-slate-800 mb-2">Módulos contratáveis</div>
               {hasOperationalModule ? (
                 <div className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
-                  <strong>Operacional</strong> é o módulo padrão da plataforma e já contempla dashboard, OS, veículos, motoristas, fretamentos, contratos e clientes.
+                  <strong>Operacional</strong> é o módulo padrão da plataforma e já contempla dashboard, OS, veículos, motoristas, fretamentos, contratos, clientes, relatórios, configurações, usuários e suporte.
                 </div>
               ) : null}
-              {modulos.length === 0 ? (
+              {modulosVisiveis.length === 0 ? (
                 <p className="text-sm text-slate-500">Nenhum módulo disponível no momento.</p>
               ) : (
                 <div className="grid md:grid-cols-2 gap-3">
-                  {modulos.map((m) => {
+                  {modulosVisiveis.map((m) => {
                     return (
                       <div key={m.codigo} className="rounded-lg border border-slate-200 p-3">
                         <div className="flex items-start justify-between gap-3">
@@ -319,7 +326,7 @@ export default function AssinaturaPage() {
                 {savingFatura ? "Gerando..." : "Gerar fatura manual"}
               </button>
               {(billing.status === "past_due" || billing.status === "bloqueada") && (
-                <Link href="/bloqueado" className="px-4 py-2 rounded-md text-sm border border-amber-300 text-amber-700 hover:bg-amber-50">
+                <Link href="/configuracoes/meu-plano" className="px-4 py-2 rounded-md text-sm border border-amber-300 text-amber-700 hover:bg-amber-50">
                   Regularizar agora
                 </Link>
               )}

@@ -139,7 +139,7 @@ export default function MasterEmpresaEditarPage() {
   }
 
   function toggleModulo(codigo: string) {
-    const base = ["operacional", "configuracoes", "usuarios", "suporte"];
+    const base = ["operacional"];
     if (base.includes(codigo)) return;
     setModulosSelecionados((prev) => prev.includes(codigo) ? prev.filter((m) => m !== codigo) : [...prev, codigo]);
   }
@@ -240,7 +240,7 @@ export default function MasterEmpresaEditarPage() {
           <div className="grid md:grid-cols-2 gap-3">
             {modulosCatalogo.map((modulo) => {
               const ativo = modulosSelecionados.includes(modulo.codigo);
-              const base = ["operacional", "configuracoes", "usuarios", "suporte"].includes(modulo.codigo);
+              const base = ["operacional"].includes(modulo.codigo);
               return (
                 <button
                   key={modulo.codigo}

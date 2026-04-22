@@ -26,7 +26,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    const { fatura_id, provider } = await req.json();
+    const { fatura_id, provider, expected_valor_centavos } = await req.json();
     if (!fatura_id) return new Response(JSON.stringify({ error: "fatura_id obrigatório" }), { status: 400, headers: CORS });
 
     const supabase = createClient(
@@ -54,7 +54,32 @@ serve(async (req) => {
       resolvedProvider = asaasActive?.ativo ? "asaas" : "mercado_pago";
     }
 
-    const valor = fatura.valor_centavos / 100;
+    const expectedValorCentavos = Number(expected_valor_centavos ?? NaN);
+    const hasExpectedValor = Number.isFinite(expectedValorCentavos) && expectedValorCentavos > 0;
+
+    let valorCentavos = Number(fatura.valor_centavos ?? 0);
+    const descontoCentavos = Number(fatura.desconto_centavos ?? 0);
+    if (hasExpectedValor) {
+      valorCentavos = Math.round(expectedValorCentavos);
+      await supabase.from("faturas").update({
+        valor_centavos: valorCentavos,
+        ...(descontoCentavos <= 0 ? { valor_bruto_centavos: valorCentavos } : {}),
+      }).eq("id", fatura_id);
+    } else if (descontoCentavos <= 0) {
+      const { data: valorAtualAssinatura } = await supabase.rpc("get_assinatura_valor_atual", {
+        p_empresa_id: fatura.empresa_id,
+      });
+      const valorAtualCentavos = Number(valorAtualAssinatura ?? valorCentavos);
+      if (Number.isFinite(valorAtualCentavos) && valorAtualCentavos >= 0 && valorAtualCentavos !== valorCentavos) {
+        valorCentavos = valorAtualCentavos;
+        await supabase.from("faturas").update({
+          valor_centavos: valorAtualCentavos,
+          valor_bruto_centavos: valorAtualCentavos,
+        }).eq("id", fatura_id);
+      }
+    }
+
+    const valor = valorCentavos / 100;
 
     if (resolvedProvider === "asaas") {
       const { data: gateway } = await supabase
@@ -154,7 +179,7 @@ serve(async (req) => {
     MP_ACCESS_TOKEN = MP_ACCESS_TOKEN ?? Deno.env.get("MP_ACCESS_TOKEN");
     if (!MP_ACCESS_TOKEN) return new Response(JSON.stringify({ error: "MP_ACCESS_TOKEN não configurado" }), { status: 500, headers: CORS });
 
-    const idempotencyKey = `fatura-${fatura_id}`;
+    const idempotencyKey = `fatura-${fatura_id}-pix-${valorCentavos}`;
     const mpRes = await fetch("https://api.mercadopago.com/v1/payments", {
       method: "POST",
       headers: {

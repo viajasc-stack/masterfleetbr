@@ -44,11 +44,11 @@ export default function ManutencaoDashboardPage() {
         title="Manutenção · Dashboard"
         description="Triagem, diagnóstico e gestão de preventivas"
         actions={
-          <div className="flex gap-2">
-            <Link href="/manutencao/solicitacoes" className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 text-sm">
+          <div className="flex flex-wrap gap-2">
+            <Link href="/manutencao/solicitacoes" className="border border-slate-300 px-4 py-2 rounded-md hover:bg-slate-50 text-sm font-medium">
               Inbox de Triagem
             </Link>
-            <Link href="/oficina/ordens" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500 text-sm">
+            <Link href="/oficina/ordens" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-500 text-sm font-medium shadow-sm">
               Abrir Oficina
             </Link>
           </div>
@@ -56,35 +56,39 @@ export default function ManutencaoDashboardPage() {
       />
 
       {loading ? (
-        <div className="text-center py-12 text-slate-500">Carregando...</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-24 rounded-2xl border border-slate-200 bg-slate-100/70 animate-pulse" />
+          ))}
+        </div>
       ) : (
         <>
           {/* KPIs */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <KpiCard label="Solicitações Novas" value={kpis?.solicitacoes_novas ?? 0} color="amber" />
-            <KpiCard label="Em Diagnóstico" value={emDiagnostico} color="blue" />
-            <KpiCard label="Aprovadas p/ Encaminhar" value={aprovadasParaEncaminhar} color="indigo" />
-            <KpiCard label="Preventivas Vencidas" value={kpis?.preventivas_vencidas ?? 0} color="red" />
-            <KpiCard label="Alertas Pendentes" value={kpis?.alertas_nao_lidos ?? 0} color="orange" />
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+            <KpiCard label="Solicitações Novas" value={kpis?.solicitacoes_novas ?? 0} color="amber" icon="📥" />
+            <KpiCard label="Em Diagnóstico" value={emDiagnostico} color="blue" icon="🩺" />
+            <KpiCard label="Aprovadas p/ Encaminhar" value={aprovadasParaEncaminhar} color="indigo" icon="✅" />
+            <KpiCard label="Preventivas Vencidas" value={kpis?.preventivas_vencidas ?? 0} color="red" icon="⏰" />
+            <KpiCard label="Alertas Pendentes" value={kpis?.alertas_nao_lidos ?? 0} color="orange" icon="🔔" />
           </div>
 
           <div className="grid lg:grid-cols-3 gap-6">
             {/* Alertas */}
-            <div className="lg:col-span-1 bg-white border border-slate-200 rounded-xl p-5">
+            <div className="lg:col-span-1 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-slate-900">🔔 Alertas</h2>
+                <h2 className="font-semibold text-slate-900">🔔 Alertas de manutenção</h2>
                 {alertas.length > 0 && (
-                  <button onClick={() => { marcarTodosAlertasLidos(); setAlertas([]); }} className="text-xs text-indigo-600 hover:text-indigo-800">
+                  <button onClick={() => { marcarTodosAlertasLidos(); setAlertas([]); }} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
                     Marcar todos como lidos
                   </button>
                 )}
               </div>
               <div className="space-y-2">
                 {alertas.length === 0 ? (
-                  <p className="text-sm text-slate-500">Nenhum alerta pendente.</p>
+                  <p className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">Nenhum alerta pendente.</p>
                 ) : (
                   alertas.map((a) => (
-                    <div key={a.id} className="p-3 rounded-lg border border-slate-100 bg-slate-50">
+                    <div key={a.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-50 transition">
                       <div className="flex items-center gap-2">
                         <span className={`w-2 h-2 rounded-full ${a.severidade === 'critica' ? 'bg-red-500' : a.severidade === 'alta' ? 'bg-orange-500' : a.severidade === 'media' ? 'bg-yellow-500' : 'bg-blue-500'}`} />
                         <span className="text-sm font-medium text-slate-900">{a.titulo}</span>
@@ -98,19 +102,19 @@ export default function ManutencaoDashboardPage() {
             </div>
 
             {/* Fila de triagem */}
-            <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-5">
+            <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-slate-900">🧭 Fila de Triagem</h2>
-                <Link href="/manutencao/solicitacoes" className="text-xs text-indigo-600 hover:text-indigo-800">Abrir inbox →</Link>
+                <Link href="/manutencao/solicitacoes" className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Abrir inbox →</Link>
               </div>
               <div className="space-y-2">
                 {solicitacoes.length === 0 ? (
-                  <p className="text-sm text-slate-500">Nenhuma solicitação recente.</p>
+                  <p className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">Nenhuma solicitação recente.</p>
                 ) : (
                   solicitacoes.map((s) => (
-                    <div key={s.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-100 hover:bg-slate-50 transition gap-3">
+                    <div key={s.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition gap-3">
                       <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium text-slate-900">{s.veiculos?.placa ?? "—"}</span>
+                        <span className="text-sm font-semibold text-slate-900">{s.veiculos?.placa ?? "—"}</span>
                         <span className="text-xs text-slate-500">{s.titulo}</span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -133,30 +137,30 @@ export default function ManutencaoDashboardPage() {
           </div>
           {/* Links Rápidos */}
           <div className="grid md:grid-cols-5 gap-4">
-            <Link href="/manutencao/solicitacoes" className="p-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition">
+            <Link href="/manutencao/solicitacoes" className="p-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition shadow-sm">
               <span className="text-2xl">🧭</span>
               <p className="font-medium text-slate-900 mt-2">Inbox de Triagem</p>
               <p className="text-xs text-slate-500">Diagnosticar e decidir encaminhamento</p>
             </Link>
-            <Link href="/oficina/ordens" className="p-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition">
+            <Link href="/oficina/ordens" className="p-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition shadow-sm">
               <span className="text-2xl">🏭</span>
               <p className="font-medium text-slate-900 mt-2">Oficina Interna</p>
               <p className="text-xs text-slate-500">Executar serviços encaminhados</p>
             </Link>
-            <Link href="/manutencao/preventivas" className="p-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition">
+            <Link href="/manutencao/preventivas" className="p-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition shadow-sm">
               <span className="text-2xl">📅</span>
               <p className="font-medium text-slate-900 mt-2">Preventivas</p>
               <p className="text-xs text-slate-500">Planos e calendário</p>
             </Link>
-            <Link href="/manutencao/planos" className="p-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition">
+            <Link href="/manutencao/planos" className="p-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition shadow-sm">
               <span className="text-2xl">🔧</span>
               <p className="font-medium text-slate-900 mt-2">Planos</p>
               <p className="text-xs text-slate-500">Configurar estratégias preventivas</p>
             </Link>
-            <Link href="/manutencao/indicadores" className="p-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition">
-              <span className="text-2xl">📊</span>
-              <p className="font-medium text-slate-900 mt-2">Indicadores</p>
-              <p className="text-xs text-slate-500">KPIs e relatórios</p>
+            <Link href="/ordens-servico" className="p-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition shadow-sm">
+              <span className="text-2xl">🧾</span>
+              <p className="font-medium text-slate-900 mt-2">Ordens de Serviço</p>
+              <p className="text-xs text-slate-500">Acompanhar execução e status</p>
             </Link>
           </div>
         </>
@@ -165,7 +169,7 @@ export default function ManutencaoDashboardPage() {
   );
 }
 
-function KpiCard({ label, value, color }: { label: string; value: string | number; color: string }) {
+function KpiCard({ label, value, color, icon }: { label: string; value: string | number; color: string; icon?: string }) {
   const colorClasses: Record<string, string> = {
     blue: "border-blue-200 bg-blue-50",
     indigo: "border-indigo-200 bg-indigo-50",
@@ -183,9 +187,12 @@ function KpiCard({ label, value, color }: { label: string; value: string | numbe
     emerald: "text-emerald-700",
   };
   return (
-    <div className={`rounded-xl border p-4 ${colorClasses[color] || colorClasses.blue}`}>
-      <p className={`text-xs uppercase tracking-wide ${textClasses[color] || textClasses.blue}`}>{label}</p>
-      <p className={`text-2xl font-bold mt-1 ${textClasses[color] || textClasses.blue}`}>{value}</p>
+    <div className={`rounded-2xl border p-4 shadow-sm ${colorClasses[color] || colorClasses.blue}`}>
+      <div className="flex items-start justify-between gap-2">
+        <p className={`text-[11px] uppercase tracking-wide ${textClasses[color] || textClasses.blue}`}>{label}</p>
+        {icon ? <span className="text-base">{icon}</span> : null}
+      </div>
+      <p className={`text-2xl font-bold mt-2 ${textClasses[color] || textClasses.blue}`}>{value}</p>
     </div>
   );
 }

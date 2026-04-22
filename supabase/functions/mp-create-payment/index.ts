@@ -26,7 +26,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    const { fatura_id, method, provider, card, payer } = await req.json();
+    const { fatura_id, method, provider, card, payer, expected_valor_centavos } = await req.json();
     if (!fatura_id) return new Response(JSON.stringify({ error: "fatura_id obrigatório" }), { status: 400, headers: CORS });
 
     const supabase = createClient(
@@ -53,7 +53,32 @@ serve(async (req) => {
       resolvedProvider = asaasActive?.ativo ? "asaas" : "mercado_pago";
     }
 
-    const valor = (fatura.valor_centavos ?? 0) / 100;
+    const expectedValorCentavos = Number(expected_valor_centavos ?? NaN);
+    const hasExpectedValor = Number.isFinite(expectedValorCentavos) && expectedValorCentavos > 0;
+
+    let valorCentavos = Number(fatura.valor_centavos ?? 0);
+    const descontoCentavos = Number(fatura.desconto_centavos ?? 0);
+    if (hasExpectedValor) {
+      valorCentavos = Math.round(expectedValorCentavos);
+      await supabase.from("faturas").update({
+        valor_centavos: valorCentavos,
+        ...(descontoCentavos <= 0 ? { valor_bruto_centavos: valorCentavos } : {}),
+      }).eq("id", fatura_id);
+    } else if (descontoCentavos <= 0) {
+      const { data: valorAtualAssinatura } = await supabase.rpc("get_assinatura_valor_atual", {
+        p_empresa_id: fatura.empresa_id,
+      });
+      const valorAtualCentavos = Number(valorAtualAssinatura ?? valorCentavos);
+      if (Number.isFinite(valorAtualCentavos) && valorAtualCentavos >= 0 && valorAtualCentavos !== valorCentavos) {
+        valorCentavos = valorAtualCentavos;
+        await supabase.from("faturas").update({
+          valor_centavos: valorAtualCentavos,
+          valor_bruto_centavos: valorAtualCentavos,
+        }).eq("id", fatura_id);
+      }
+    }
+
+    const valor = valorCentavos / 100;
 
     if (resolvedProvider === "asaas") {
       const { data: gateway } = await supabase
@@ -88,46 +113,7 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: customerData?.errors?.[0]?.description ?? "Erro ao criar cliente no Asaas" }), { status: 500, headers: CORS });
       }
 
-      if (method === "boleto") {
-        const dueDate = (fatura.vencimento ?? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
-        const payRes = await fetchWithRetry(`${apiUrl}/payments`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            access_token: apiKey,
-          },
-          body: JSON.stringify({
-            customer: customerData.id,
-            billingType: "BOLETO",
-            value: valor,
-            dueDate,
-            description: "MasterFleetBR - Assinatura",
-            externalReference: String(fatura_id),
-          }),
-        });
-
-        const payData = await payRes.json();
-        if (!payRes.ok || !payData?.id) {
-          return new Response(JSON.stringify({ error: payData?.errors?.[0]?.description ?? "Erro ao gerar boleto no Asaas" }), { status: 500, headers: CORS });
-        }
-
-        await supabase.from("faturas").update({
-          payment_provider: "asaas",
-          provider_payment_id: String(payData.id),
-          provider_external_reference: String(fatura_id),
-          provider_payload: payData,
-        }).eq("id", fatura_id);
-
-        return new Response(JSON.stringify({
-          payment_id: payData.id,
-          status: payData.status,
-          boleto_url: payData.invoiceUrl ?? null,
-          boleto_barcode: payData.identificationField ?? null,
-          provider: "asaas",
-        }), { headers: { ...CORS, "Content-Type": "application/json" } });
-      }
-
-      return new Response(JSON.stringify({ error: "Para Asaas, use PIX em mp-create-pix ou BOLETO neste endpoint." }), { status: 400, headers: CORS });
+      return new Response(JSON.stringify({ error: "Provedor Asaas não suportado neste endpoint. Utilize PIX via mp-create-pix ou cartão com Mercado Pago." }), { status: 400, headers: CORS });
     }
 
     let MP_ACCESS_TOKEN = fatura.empresas?.mp_access_token ?? null;
@@ -142,7 +128,6 @@ serve(async (req) => {
     MP_ACCESS_TOKEN = MP_ACCESS_TOKEN ?? Deno.env.get("MP_ACCESS_TOKEN");
     if (!MP_ACCESS_TOKEN) return new Response(JSON.stringify({ error: "MP_ACCESS_TOKEN não configurado" }), { status: 500, headers: CORS });
 
-    const empresaNome = fatura.empresas?.nome ?? "Empresa";
     const empresaEmail = fatura.empresas?.email ?? "pagador@masterfleetbr.com.br";
     const docDigits = String(
       payer?.doc_number ?? fatura.empresas?.cnpj ?? "00000000000"
@@ -153,7 +138,7 @@ serve(async (req) => {
     };
 
     if (method === "pix") {
-      const idempotencyKey = `fatura-${fatura_id}`;
+      const idempotencyKey = `fatura-${fatura_id}-pix-${valorCentavos}`;
       const mpRes = await fetch("https://api.mercadopago.com/v1/payments", {
         method: "POST",
         headers: {
@@ -196,52 +181,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ payment_id: mpData.id, pix_copia_cola: qrCode, pix_qr_code: qrImagem, status: mpData.status, provider: "mercado_pago" }), { headers: { ...CORS, "Content-Type": "application/json" } });
     }
 
-    if (method === "boleto") {
-      const idempotencyKey = `fatura-${fatura_id}-boleto`;
-      const mpRes = await fetch("https://api.mercadopago.com/v1/payments", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${MP_ACCESS_TOKEN}`,
-          "X-Idempotency-Key": idempotencyKey,
-        },
-        body: JSON.stringify({
-          transaction_amount: valor,
-          description: "MasterFleetBR - Assinatura",
-          payment_method_id: "bolbradesco",
-          payer: {
-            email: empresaEmail,
-            first_name: empresaNome,
-            last_name: "MasterFleetBR",
-            identification,
-          },
-          external_reference: fatura_id,
-          notification_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1/mp-webhook?provider=mercado_pago&empresa_id=${fatura.empresa_id}`,
-        }),
-      });
-
-      const mpData = await mpRes.json();
-      if (!mpRes.ok || mpData.error) {
-        return new Response(JSON.stringify({ error: mpData.message ?? "Erro ao gerar boleto" }), { status: 500, headers: CORS });
-      }
-
-      await supabase.from("faturas").update({
-        mp_payment_id: String(mpData.id),
-        payment_provider: "mercado_pago",
-        provider_payment_id: String(mpData.id),
-        provider_external_reference: String(fatura_id),
-        provider_payload: mpData,
-      }).eq("id", fatura_id);
-
-      return new Response(JSON.stringify({
-        payment_id: mpData.id,
-        status: mpData.status,
-        boleto_url: mpData.transaction_details?.external_resource_url ?? null,
-        boleto_barcode: mpData.barcode?.content ?? null,
-        provider: "mercado_pago",
-      }), { headers: { ...CORS, "Content-Type": "application/json" } });
-    }
-
     if (method === "card" || method === "cartao") {
       if (!card?.number || !card?.name || !card?.exp_month || !card?.exp_year || !card?.cvv) {
         return new Response(JSON.stringify({ error: "Dados do cartão incompletos" }), { status: 400, headers: CORS });
@@ -270,7 +209,7 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: tokenData.message ?? "Erro ao tokenizar cartão" }), { status: 500, headers: CORS });
       }
 
-      const idempotencyKey = `fatura-${fatura_id}-card`;
+      const idempotencyKey = `fatura-${fatura_id}-card-${valorCentavos}`;
       const payRes = await fetch("https://api.mercadopago.com/v1/payments", {
         method: "POST",
         headers: {
@@ -312,6 +251,10 @@ serve(async (req) => {
         status_detail: paymentData.status_detail,
         provider: "mercado_pago",
       }), { headers: { ...CORS, "Content-Type": "application/json" } });
+    }
+
+    if (method === "boleto") {
+      return new Response(JSON.stringify({ error: "Pagamento via boleto descontinuado. Utilize PIX ou cartão." }), { status: 400, headers: CORS });
     }
 
     const prefRes = await fetch("https://api.mercadopago.com/checkout/preferences", {

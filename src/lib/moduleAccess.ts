@@ -6,7 +6,7 @@ type BillingAccessPayload = {
   modulos_ativos?: unknown;
 };
 
-const BASE_MODULES = ["operacional", "configuracoes", "usuarios", "suporte", "escolar"];
+const BASE_MODULES = ["operacional"];
 
 const ROUTE_MODULE_MAP: Array<{ prefix: string; modulo: string }> = [
   { prefix: "/ordens-servico", modulo: "operacional" },
@@ -17,24 +17,24 @@ const ROUTE_MODULE_MAP: Array<{ prefix: string; modulo: string }> = [
   { prefix: "/veiculos", modulo: "operacional" },
   { prefix: "/abastecimentos", modulo: "operacional" },
   { prefix: "/motoristas", modulo: "operacional" },
-  { prefix: "/usuarios", modulo: "usuarios" },
+  { prefix: "/usuarios", modulo: "operacional" },
   { prefix: "/inventario", modulo: "inventario" },
   { prefix: "/financeiro", modulo: "financeiro" },
   { prefix: "/manutencao", modulo: "manutencao" },
   { prefix: "/oficina", modulo: "oficina" },
-  { prefix: "/relatorios", modulo: "relatorios" },
-  { prefix: "/bi", modulo: "relatorios" },
-  { prefix: "/telemetria", modulo: "relatorios" },
-  { prefix: "/observabilidade", modulo: "relatorios" },
-  { prefix: "/portal-cliente", modulo: "configuracoes" },
-  { prefix: "/escalas", modulo: "configuracoes" },
+  { prefix: "/relatorios", modulo: "operacional" },
+  { prefix: "/telemetria", modulo: "operacional" },
+  { prefix: "/observabilidade", modulo: "operacional" },
+  { prefix: "/portal-cliente", modulo: "operacional" },
+  { prefix: "/escalas", modulo: "operacional" },
   { prefix: "/agenda", modulo: "agenda" },
   { prefix: "/viagens", modulo: "viagens" },
+  { prefix: "/masteria", modulo: "operacional" },
   { prefix: "/escolar", modulo: "escolar" },
   { prefix: "/central-negocios", modulo: "operacional" },
-  { prefix: "/aniversariantes", modulo: "relatorios" },
-  { prefix: "/suporte", modulo: "suporte" },
-  { prefix: "/configuracoes", modulo: "configuracoes" },
+  { prefix: "/aniversariantes", modulo: "operacional" },
+  { prefix: "/suporte", modulo: "operacional" },
+  { prefix: "/configuracoes", modulo: "operacional" },
   { prefix: "/dashboard", modulo: "operacional" },
 ];
 

@@ -66,7 +66,14 @@ const MODULE_LABELS: Record<string, string> = {
   relatorios: "Relatórios",
 };
 
-const HIDDEN_MODULE_CODES = new Set(["api_integracoes", "automacoes"]);
+const HIDDEN_MODULE_CODES = new Set([
+  "api_integracoes",
+  "automacoes",
+  "configuracoes",
+  "usuarios",
+  "suporte",
+  "relatorios",
+]);
 
 function formatModuloLabel(codigo: string) {
   return MODULE_LABELS[codigo] ?? codigo;
@@ -215,7 +222,7 @@ export default function MasterEmpresaDetalhePage() {
           <div className="space-y-3">
             {empresaModulos.includes("operacional") ? (
               <div className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
-                <strong>Operacional</strong> cobre dashboard, OS, veículos, motoristas, fretamentos, contratos e clientes.
+                <strong>Operacional</strong> cobre dashboard, OS, veículos, motoristas, fretamentos, contratos, clientes, relatórios, configurações, usuários e suporte.
               </div>
             ) : null}
             <div className="flex flex-wrap gap-2">

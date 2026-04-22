@@ -48,7 +48,6 @@ export default function MasterLayout({ children }: { children: React.ReactNode }
     { href: "/master/cupons", label: "Cupons" },
     { href: "/master/modulos", label: "Módulos" },
     { href: "/master/suporte", label: "Suporte" },
-    { href: "/master/planos", label: "Catálogo" },
     { href: "/master/financeiro", label: "Financeiro" },
     { href: "/master/seguranca", label: "Segurança" },
     { href: "/master/operacoes", label: "Operações" },
@@ -86,6 +85,7 @@ export default function MasterLayout({ children }: { children: React.ReactNode }
                     <div className="mt-1 mb-1 ml-2 border-l border-slate-800 pl-2">
                       {[
                         { href: "/master/configuracoes", label: "Geral" },
+                        { href: "/master/configuracoes/masteria", label: "MasterIA" },
                         { href: "/master/configuracoes/site", label: "Site" },
                         { href: "/master/configuracoes/aparencia", label: "Aparência" },
                         { href: "/master/configuracoes/aplicativos", label: "Aplicativos" },

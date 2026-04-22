@@ -131,6 +131,13 @@ function ehStatusPausadaOuEmAndamento(status: string) {
   );
 }
 
+function getHorarioOrdenacaoOs(os: OsRow) {
+  const base = os.inicio_em ?? os.assinatura_inicio_em ?? os.created_at;
+  const d = new Date(base);
+  if (Number.isNaN(d.getTime())) return Number.MAX_SAFE_INTEGER;
+  return d.getTime();
+}
+
 export default function OrdensServicoPage() {
   const searchParams = useSearchParams();
   const statusParam = String(searchParams?.get("status") || "").toLowerCase();
@@ -444,6 +451,18 @@ export default function OrdensServicoPage() {
             .toLowerCase();
 
           return alvo.includes(q);
+        })
+        .sort((a, b) => {
+          const horarioA = getHorarioOrdenacaoOs(a);
+          const horarioB = getHorarioOrdenacaoOs(b);
+
+          if (horarioA !== horarioB) return horarioA - horarioB;
+
+          const numeroA = a.numero ?? Number.MAX_SAFE_INTEGER;
+          const numeroB = b.numero ?? Number.MAX_SAFE_INTEGER;
+          if (numeroA !== numeroB) return numeroA - numeroB;
+
+          return a.created_at.localeCompare(b.created_at);
         }),
     [
       osList,
