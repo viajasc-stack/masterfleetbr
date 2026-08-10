@@ -1,0 +1,18 @@
+# dependencies
+node_modules/
+
+# env files
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+.vercel
+.env*
+
+# Supabase CLI runtime metadata
+supabase/.temp/
+
+# Local AI/editor preferences
+.claude/

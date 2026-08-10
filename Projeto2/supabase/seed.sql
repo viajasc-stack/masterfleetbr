@@ -1,0 +1,2 @@
+-- Seed intencionalmente vazio: não criamos usuários de demonstração em um
+-- ambiente adulto. O plano Premium nasce na migration de fundação.

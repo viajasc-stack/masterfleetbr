@@ -1,0 +1,27 @@
+{
+  "name": "projeto2",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monorepo web + mobile com base compartilhada",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace web",
+    "build:web": "npm run build --workspace web",
+    "lint:web": "npm run lint --workspace web",
+    "dev:mobile": "npm run start --workspace mobile",
+    "android": "npm run android --workspace mobile",
+    "ios": "npm run ios --workspace mobile",
+    "mobile:web": "npm run web --workspace mobile"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "pg": "^8.21.0",
+    "supabase": "^2.111.0"
+  }
+}
